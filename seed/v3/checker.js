@@ -52,26 +52,58 @@ function loadSeedMeta(db) {
   return out;
 }
 
+// Package loading is set-based (G10 performance, 2026-10-07): ONE statement per table for the whole package, never one
+// per lineage (the per-lineage form ran 3 statements per lineage: 6,566 for google-closure-compiler). Loading stays
+// eager and complete. Each per-lineage row order is the one the per-lineage statements produced (lineage_state in its
+// primary-key order (grp); events ORDER BY ord, grp; spine ORDER BY ord), and rows are parsed and assembled lineage by
+// lineage in `ORDER BY ord`, so the loaded package -- and the first malformed row a load meets -- are unchanged.
+// Statements are prepared lazily, in the order the per-lineage loader prepared them, and reused per connection;
+// they hold no data between calls.
+const LOAD_SQL = {
+  package: 'SELECT id, package_name FROM packages WHERE package_name = ?',
+  lineages: 'SELECT id, lineage_key, n_versions, first_published_s, last_published_s FROM lineages WHERE package_id = ? ORDER BY ord',
+  states: 'SELECT s.lineage_id, s.grp, s.initial_state FROM lineages l JOIN lineage_state s ON s.lineage_id = l.id '
+    + 'WHERE l.package_id = ? ORDER BY s.lineage_id, s.grp',
+  events: 'SELECT e.lineage_id, e.grp, e.ord, e.version, e.published_s, e.after_state FROM lineages l '
+    + 'JOIN events e ON e.lineage_id = l.id WHERE l.package_id = ? ORDER BY e.lineage_id, e.ord, e.grp',
+  spine: 'SELECT s.lineage_id, s.ord, s.version, s.published_s, s.size_bytes, s.tool_key, s.shasum, s.capture_class '
+    + 'FROM lineages l JOIN spine s ON s.lineage_id = l.id WHERE l.package_id = ? ORDER BY s.lineage_id, s.ord',
+};
+const LOAD_STATEMENTS = new WeakMap();
+function loadStatement(db, key) {
+  let m = LOAD_STATEMENTS.get(db);
+  if (!m) { m = new Map(); LOAD_STATEMENTS.set(db, m); }
+  let st = m.get(key);
+  if (!st) { st = db.prepare(LOAD_SQL[key]); m.set(key, st); }
+  return st;
+}
+function byLineage(rows) {
+  const out = new Map();
+  for (const r of rows) {
+    let a = out.get(r.lineage_id);
+    if (!a) { a = []; out.set(r.lineage_id, a); }
+    a.push(r);
+  }
+  return out;
+}
+const NONE = Object.freeze([]);
+
 function loadPackage(db, packageName, seedMeta) {
-  const row = db.prepare('SELECT id, package_name FROM packages WHERE package_name = ?').get(packageName);
+  const row = loadStatement(db, 'package').get(packageName);
   if (!row) return null;
   const pv = { package_id: row.id, package_name: row.package_name, lineages: new Map(), seed_meta: seedMeta };
-  const lrows = db.prepare(
-    'SELECT id, lineage_key, n_versions, first_published_s, last_published_s FROM lineages WHERE package_id = ? ORDER BY ord',
-  ).all(pv.package_id);
-  const qState = db.prepare('SELECT grp, initial_state FROM lineage_state WHERE lineage_id = ?');
-  const qEvents = db.prepare(
-    'SELECT grp, ord, version, published_s, after_state FROM events WHERE lineage_id = ? ORDER BY ord, grp');
-  const qSpine = db.prepare(
-    'SELECT ord, version, published_s, size_bytes, tool_key, shasum, capture_class FROM spine WHERE lineage_id = ? ORDER BY ord');
+  const lrows = loadStatement(db, 'lineages').all(pv.package_id);
+  const states = byLineage(loadStatement(db, 'states').all(pv.package_id));
+  const evRows = byLineage(loadStatement(db, 'events').all(pv.package_id));
+  const spRows = byLineage(loadStatement(db, 'spine').all(pv.package_id));
   for (const l of lrows) {
     const initial = {};
-    for (const s of qState.all(l.id)) initial[s.grp] = JSON.parse(s.initial_state);
-    const events = qEvents.all(l.id).map((e) => ({
+    for (const s of states.get(l.id) || NONE) initial[s.grp] = JSON.parse(s.initial_state);
+    const events = (evRows.get(l.id) || NONE).map((e) => ({
       grp: e.grp, ord: e.ord, version: e.version, published_s: e.published_s, after: JSON.parse(e.after_state),
     }));
     const spine = new Map();
-    for (const s of qSpine.all(l.id)) {
+    for (const s of spRows.get(l.id) || NONE) {
       spine.set(s.ord, {
         version: s.version, published_s: s.published_s, size_bytes: s.size_bytes, tool_key: s.tool_key,
         shasum: Buffer.isBuffer(s.shasum) ? s.shasum.toString('hex') : s.shasum, capture_class: s.capture_class,
