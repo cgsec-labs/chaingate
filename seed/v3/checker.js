@@ -58,7 +58,8 @@ function loadSeedMeta(db) {
 // primary-key order (grp); events ORDER BY ord, grp; spine ORDER BY ord), and rows are parsed and assembled lineage by
 // lineage in `ORDER BY ord`, so the loaded package -- and the first malformed row a load meets -- are unchanged.
 // Statements are prepared lazily, in the order the per-lineage loader prepared them, and reused per connection;
-// they hold no data between calls.
+// they hold no data between calls. The four bulk statements return rows as ARRAYS (raw mode, G10 2026-10-08): the same
+// values in the same order, without materialising one object per row; columns are read by position (LOAD_COLS).
 const LOAD_SQL = {
   package: 'SELECT id, package_name FROM packages WHERE package_name = ?',
   lineages: 'SELECT id, lineage_key, n_versions, first_published_s, last_published_s FROM lineages WHERE package_id = ? ORDER BY ord',
@@ -69,19 +70,27 @@ const LOAD_SQL = {
   spine: 'SELECT s.lineage_id, s.ord, s.version, s.published_s, s.size_bytes, s.tool_key, s.shasum, s.capture_class '
     + 'FROM lineages l JOIN spine s ON s.lineage_id = l.id WHERE l.package_id = ? ORDER BY s.lineage_id, s.ord',
 };
+const LOAD_RAW = new Set(['lineages', 'states', 'events', 'spine']);
+// column positions of the raw rows, in LOAD_SQL's SELECT order
+const LOAD_COLS = {
+  lineages: { id: 0, lineage_key: 1, n_versions: 2, first_published_s: 3, last_published_s: 4 },
+  states: { lineage_id: 0, grp: 1, initial_state: 2 },
+  events: { lineage_id: 0, grp: 1, ord: 2, version: 3, published_s: 4, after_state: 5 },
+  spine: { lineage_id: 0, ord: 1, version: 2, published_s: 3, size_bytes: 4, tool_key: 5, shasum: 6, capture_class: 7 },
+};
 const LOAD_STATEMENTS = new WeakMap();
 function loadStatement(db, key) {
   let m = LOAD_STATEMENTS.get(db);
   if (!m) { m = new Map(); LOAD_STATEMENTS.set(db, m); }
   let st = m.get(key);
-  if (!st) { st = db.prepare(LOAD_SQL[key]); m.set(key, st); }
+  if (!st) { st = db.prepare(LOAD_SQL[key]); if (LOAD_RAW.has(key)) st.raw(true); m.set(key, st); }
   return st;
 }
 function byLineage(rows) {
   const out = new Map();
   for (const r of rows) {
-    let a = out.get(r.lineage_id);
-    if (!a) { a = []; out.set(r.lineage_id, a); }
+    let a = out.get(r[0]);                 // column 0 of every bulk statement is the lineage id
+    if (!a) { a = []; out.set(r[0], a); }
     a.push(r);
   }
   return out;
@@ -96,22 +105,25 @@ function loadPackage(db, packageName, seedMeta) {
   const states = byLineage(loadStatement(db, 'states').all(pv.package_id));
   const evRows = byLineage(loadStatement(db, 'events').all(pv.package_id));
   const spRows = byLineage(loadStatement(db, 'spine').all(pv.package_id));
+  const L = LOAD_COLS.lineages; const S = LOAD_COLS.states; const E = LOAD_COLS.events; const P = LOAD_COLS.spine;
   for (const l of lrows) {
+    const id = l[L.id];
     const initial = {};
-    for (const s of states.get(l.id) || NONE) initial[s.grp] = JSON.parse(s.initial_state);
-    const events = (evRows.get(l.id) || NONE).map((e) => ({
-      grp: e.grp, ord: e.ord, version: e.version, published_s: e.published_s, after: JSON.parse(e.after_state),
+    for (const s of states.get(id) || NONE) initial[s[S.grp]] = JSON.parse(s[S.initial_state]);
+    const events = (evRows.get(id) || NONE).map((e) => ({
+      grp: e[E.grp], ord: e[E.ord], version: e[E.version], published_s: e[E.published_s], after: JSON.parse(e[E.after_state]),
     }));
     const spine = new Map();
-    for (const s of spRows.get(l.id) || NONE) {
-      spine.set(s.ord, {
-        version: s.version, published_s: s.published_s, size_bytes: s.size_bytes, tool_key: s.tool_key,
-        shasum: Buffer.isBuffer(s.shasum) ? s.shasum.toString('hex') : s.shasum, capture_class: s.capture_class,
+    for (const s of spRows.get(id) || NONE) {
+      const sh = s[P.shasum];
+      spine.set(s[P.ord], {
+        version: s[P.version], published_s: s[P.published_s], size_bytes: s[P.size_bytes], tool_key: s[P.tool_key],
+        shasum: Buffer.isBuffer(sh) ? sh.toString('hex') : sh, capture_class: s[P.capture_class],
       });
     }
-    pv.lineages.set(l.id, new LineageView({
-      lineage_id: l.id, lineage_key: l.lineage_key, n_versions: l.n_versions,
-      first_published_s: l.first_published_s, last_published_s: l.last_published_s, initial, events, spine,
+    pv.lineages.set(id, new LineageView({
+      lineage_id: id, lineage_key: l[L.lineage_key], n_versions: l[L.n_versions],
+      first_published_s: l[L.first_published_s], last_published_s: l[L.last_published_s], initial, events, spine,
     }));
   }
   return pv;
