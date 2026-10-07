@@ -139,15 +139,18 @@ function buildSeed(n) {
   return dbPath;
 }
 
-/** A database wrapper that counts every statement execution (get/all/iterate/run). */
+/** A database wrapper that counts every statement execution (get/all/iterate/run) and records, per execution, whether the
+ * statement was in raw (array-row) mode. */
 function counting(db) {
-  const stats = { prepared: 0, executed: 0 };
+  const stats = { prepared: 0, executed: 0, rawAll: 0, objectAll: 0 };
   return { stats, db: {
     prepare(sql) {
       stats.prepared += 1;
-      const st = db.prepare(sql);
-      const wrap = (fn) => (...a) => { stats.executed += 1; return st[fn](...a); };
-      return { get: wrap('get'), all: wrap('all'), iterate: wrap('iterate'), run: wrap('run') };
+      const st = db.prepare(sql); let raw = false;
+      const wrap = (fn) => (...a) => { stats.executed += 1; if (fn === 'all') stats[raw ? 'rawAll' : 'objectAll'] += 1; return st[fn](...a); };
+      const w = { get: wrap('get'), all: wrap('all'), iterate: wrap('iterate'), run: wrap('run'),
+        raw(on = true) { raw = Boolean(on); st.raw(on); return w; } };
+      return w;
     },
   } };
 }
@@ -256,5 +259,26 @@ test('a malformed stored state fails exactly as the published loader fails (same
     try { C.loadPackage(db, 'big', {}); } catch (e) { gotErr = e; }
     assert.ok(refErr && gotErr);
     assert.strictEqual(gotErr.name, refErr.name); assert.strictEqual(gotErr.message, refErr.message);
+  } finally { db.close(); }
+});
+
+// G10 follow-up 2026-10-08 (bounded performance pass): the four bulk statements fetch rows as arrays (raw mode), which
+// profiling showed lowers the warm load on the largest packages; the row values, their order and the view are unchanged.
+test('the bulk package-load statements fetch rows as arrays (raw mode); only the package lookup returns an object', () => {
+  const db = new Database(buildSeed(12), { readonly: true });
+  try {
+    const c = counting(db);
+    const pv = C.loadPackage(c.db, 'big', {});
+    assert.strictEqual(pv.lineages.size, 12);
+    assert.deepStrictEqual({ rawAll: c.stats.rawAll, objectAll: c.stats.objectAll }, { rawAll: 4, objectAll: 0 });
+  } finally { db.close(); }
+});
+
+test('raw-mode loading leaves the reused statements usable by a second load on the same connection', () => {
+  const db = new Database(buildSeed(12), { readonly: true });
+  try {
+    const a = canon(C.loadPackage(db, 'big', {})); const b = canon(C.loadPackage(db, 'other', {})); const c = canon(C.loadPackage(db, 'big', {}));
+    assert.deepStrictEqual(a, canon(refLoadPackage(db, 'big', {}))); assert.deepStrictEqual(c, a);
+    assert.deepStrictEqual(b, canon(refLoadPackage(db, 'other', {})));
   } finally { db.close(); }
 });
