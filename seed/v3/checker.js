@@ -2,6 +2,7 @@
 // It computes findings itself from the shipped seed representation; it never calls Python and never
 // reads an expected answer. Mirrors tools/seedgen/checker.py.
 import K from './contract.js';
+import RL from './read-layout.js';
 
 const SEED_BINDING_KEYS = ['corpus_snapshot_digest', 'contract_version', 'schema_version', 'history_cutoff'];
 
@@ -60,8 +61,16 @@ function loadSeedMeta(db) {
 // Statements are prepared lazily, in the order the per-lineage loader prepared them, and reused per connection;
 // they hold no data between calls. The four bulk statements return rows as ARRAYS (raw mode, G10 2026-10-08): the same
 // values in the same order, without materialising one object per row; columns are read by position (LOAD_COLS).
+// G10 2026-10-08 (EXPERIMENTAL read layout g10-rl1, seed/v3/read-layout.js): the package lookup also returns the seed's
+// declared read layout (one scalar subquery, no extra statement); a database without seed_metadata keeps the original
+// lookup (`packageLegacy`), so a legacy seed is read exactly as before. For a package with >= RL1_MIN_LINEAGES lineages
+// in a seed that declares g10-rl1, its initial states come from the ONE derived row (`rl1`) instead of one row per lineage
+// and group; the dictionary texts are parsed in the same traversal order the canonical rows were (lineages by ord, groups
+// by grp), each lineage gets its own state objects, and a corrupt or inconsistent row is refused (ReadLayoutError).
 const LOAD_SQL = {
-  package: 'SELECT id, package_name FROM packages WHERE package_name = ?',
+  package: "SELECT id, package_name, (SELECT value FROM seed_metadata WHERE key = 'read_layout') AS read_layout FROM packages WHERE package_name = ?",
+  packageLegacy: 'SELECT id, package_name FROM packages WHERE package_name = ?',
+  rl1: `SELECT package_id, n_lineages, groups, dict, idx FROM ${RL.RL1_TABLE} WHERE package_id = ?`,
   lineages: 'SELECT id, lineage_key, n_versions, first_published_s, last_published_s FROM lineages WHERE package_id = ? ORDER BY ord',
   states: 'SELECT s.lineage_id, s.grp, s.initial_state FROM lineages l JOIN lineage_state s ON s.lineage_id = l.id '
     + 'WHERE l.package_id = ? ORDER BY s.lineage_id, s.grp',
@@ -83,8 +92,34 @@ function loadStatement(db, key) {
   let m = LOAD_STATEMENTS.get(db);
   if (!m) { m = new Map(); LOAD_STATEMENTS.set(db, m); }
   let st = m.get(key);
-  if (!st) { st = db.prepare(LOAD_SQL[key]); if (LOAD_RAW.has(key)) st.raw(true); m.set(key, st); }
+  if (!st) {
+    if (key === 'package') {
+      try { st = db.prepare(LOAD_SQL.package); } catch { st = loadStatement(db, 'packageLegacy'); }   // no seed_metadata
+    } else if (key === 'rl1') {
+      try { st = db.prepare(LOAD_SQL.rl1); } catch (e) { throw new RL.ReadLayoutError(`declared, but ${RL.RL1_TABLE} is unreadable (${e.message})`); }
+    } else { st = db.prepare(LOAD_SQL[key]); if (LOAD_RAW.has(key)) st.raw(true); }
+    m.set(key, st);
+  }
   return st;
+}
+const isFlat = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+  && Object.values(v).every((x) => x === null || typeof x !== 'object');
+/** Initial states of a g10-rl1 package, one function call per lineage in `ord` order (see LOAD_SQL). */
+function rl1States(d, lineageIds) {
+  const { groups, texts, idx } = RL.decodeRow(d, lineageIds);
+  const tpl = new Array(texts.length); const flat = new Array(texts.length);
+  let i = 0;
+  return () => {
+    const x = idx[i]; i += 1;
+    const initial = {};
+    for (let k = 0; k < groups.length; k += 1) {
+      const j = x[k + 1];
+      if (tpl[j] === undefined) {          // first use: parsed here, as the canonical row would have been
+        const v = JSON.parse(texts[j]); tpl[j] = v; flat[j] = isFlat(v); initial[groups[k]] = v;
+      } else initial[groups[k]] = flat[j] ? { ...tpl[j] } : JSON.parse(texts[j]);
+    }
+    return initial;
+  };
 }
 function byLineage(rows) {
   const out = new Map();
@@ -102,14 +137,19 @@ function loadPackage(db, packageName, seedMeta) {
   if (!row) return null;
   const pv = { package_id: row.id, package_name: row.package_name, lineages: new Map(), seed_meta: seedMeta };
   const lrows = loadStatement(db, 'lineages').all(pv.package_id);
-  const states = byLineage(loadStatement(db, 'states').all(pv.package_id));
+  const L = LOAD_COLS.lineages; const S = LOAD_COLS.states; const E = LOAD_COLS.events; const P = LOAD_COLS.spine;
+  const layout = row.read_layout ?? null;
+  if (layout !== null && layout !== RL.RL1) throw new RL.ReadLayoutError(`unknown read layout ${JSON.stringify(layout)}`);
+  const d = layout !== null && lrows.length >= RL.RL1_MIN_LINEAGES ? loadStatement(db, 'rl1').get(pv.package_id) : undefined;
+  const derived = d === undefined ? null : rl1States(d, lrows.map((l) => l[L.id]));
+  const states = derived === null ? byLineage(loadStatement(db, 'states').all(pv.package_id)) : null;
   const evRows = byLineage(loadStatement(db, 'events').all(pv.package_id));
   const spRows = byLineage(loadStatement(db, 'spine').all(pv.package_id));
-  const L = LOAD_COLS.lineages; const S = LOAD_COLS.states; const E = LOAD_COLS.events; const P = LOAD_COLS.spine;
   for (const l of lrows) {
     const id = l[L.id];
-    const initial = {};
-    for (const s of states.get(id) || NONE) initial[s[S.grp]] = JSON.parse(s[S.initial_state]);
+    let initial;
+    if (derived !== null) initial = derived();
+    else { initial = {}; for (const s of states.get(id) || NONE) initial[s[S.grp]] = JSON.parse(s[S.initial_state]); }
     const events = (evRows.get(id) || NONE).map((e) => ({
       grp: e[E.grp], ord: e[E.ord], version: e[E.version], published_s: e[E.published_s], after: JSON.parse(e[E.after_state]),
     }));

@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import K from './contract.js';
 import C from './checker.js';
+import RL from './read-layout.js';
 import { pyStrip } from './normalize.js';
 import { CAPS, FileRefused, openRegular, readBounded, readBoundedIfPresent, sha256Regular } from './bounded-file.js';
 
@@ -190,7 +191,7 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
   let trustedKeyError = null;
   try { trustedKey = resolvePubkey({ pubkeyPath, pubkey }); } catch (e) { trustedKeyError = `${e.name}: ${e.message}`; }
   if (!TRUST_MODES.includes(trust)) throw new Error(`trust must be one of ${JSON.stringify(TRUST_MODES)}`);
-  const checks = {}; let meta = {};
+  const checks = {}; let meta = {}; let readLayout = null;
   const base = { trust_mode: trust, authenticated: false, path: String(dbPath) };
   if (!fs.existsSync(dbPath)) return { ...base, ok: false, checks: { present: `no such file: ${dbPath}` }, meta: {} };
   checks.present = true;
@@ -256,6 +257,9 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
         checks.rule_versions = `seed carries rule families this reader does not implement: ${JSON.stringify(extra)}`;
       } else checks.rule_versions = true;
     }
+    // G10 EXPERIMENTAL read layout (read-layout.js): checked only when the seed declares one; a legacy seed's report is unchanged
+    const rl = RL.verifyReadLayout(db, raw, tables);
+    if (rl !== null) { checks.read_layout = rl; readLayout = { id: raw.read_layout, digest: raw.read_layout_digest ?? null }; }
   } finally { db.close(); }
 
   const shaSide = `${dbPath}.sha256`;
@@ -307,7 +311,7 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
       : `seed says ${JSON.stringify(got)}, caller expected ${JSON.stringify(want)}`;
   }
   return { ...base, authenticated, content_sha256: contentSha256,
-    ok: Object.values(checks).every((v) => v === true), checks, meta };
+    ok: Object.values(checks).every((v) => v === true), checks, meta, ...(readLayout ? { read_layout: readLayout } : {}) };
 }
 
 /** The signed MESSAGE is the 64-character ASCII hex digest, matching sign.py and seed_verify.js. */
