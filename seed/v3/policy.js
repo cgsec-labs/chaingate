@@ -47,9 +47,13 @@
 // and under BLOCK the decision named the input instead of the advisory. Under 1.1 the pin row comes first and the
 // input row stays beside it. A pin lookup that FAILS is recorded (`not_evaluated` policy/pin_lookup) and the input
 // rule decides; it is never read as "no advisory". Everything else in the decision table is unchanged.
+//
+// CFT-POLICY-1.2 (0.1.4; identity allocated by the operator, release doc r3 §18.5 item 3). I1 moves the identity
+// before any 0.1.4 change to the decision record, with nothing else changed (decision tables
+// 0.1.4-IMPL-DECISION-TABLES-I1-A8-20261011.md, T-2' E1/E2). Each later 0.1.4 change is enumerated there.
 import K from './contract.js';
 
-const POLICY_CONTRACT_VERSION = 'cft-policy-1.1';
+const POLICY_CONTRACT_VERSION = 'cft-policy-1.2';
 const PIN_GATE = 'seed-v3:known-malicious-pin';
 // The seed contract whose pins are keyed by package name (reader.js SEED_CONTRACT_1_1). A literal here, not an import:
 // policy.js imports nothing from the detection path.

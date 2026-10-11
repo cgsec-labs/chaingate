@@ -1,4 +1,5 @@
-// U-01 — build one check record: `chaingate.check/2` since 0.1.3 (U-05 Amendment 1), `/1` before.
+// U-01 — build one check record: `chaingate.check/3` since 0.1.4 (cft-policy-1.2), `/2` in 0.1.3 (U-05 Amendment 1),
+// `/1` before.
 //
 // Three shapes, and an absent member is OMITTED, never null-filled (plan §3.7):
 //   evaluated   seed, candidate, finding, decision, effective, explanation
@@ -16,11 +17,11 @@ import { createHash } from 'node:crypto';
 import G from '../seed/v3/gate.js';
 import { explain } from '../seed/v3/explain.js';
 
-export const CHECK_SCHEMA_ID = 'chaingate.check/2';
+export const CHECK_SCHEMA_ID = 'chaingate.check/3';
 
 /**
- * The combinations a check record may carry, one per schema (U-05 Amendment 1). 0.1.3 writes only /2; /1 records are
- * what 0.1.2 and earlier wrote, and are still read. Anything else -- including a /1 record claiming policy 1.1 or a
+ * The combinations a check record may carry, one per schema (U-05 Amendment 1). 0.1.4 writes only /3; /2 records are
+ * what 0.1.3 wrote and /1 records what 0.1.2 and earlier wrote, and both are still read. Anything else -- including a /1 record claiming policy 1.1 or a
  * 1.1 seed, which no release ever wrote -- is refused by name, never guessed at.
  */
 export const SUPPORTED_RECORDS = Object.freeze({
@@ -29,12 +30,15 @@ export const SUPPORTED_RECORDS = Object.freeze({
   'chaingate.check/2': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.1',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
+  'chaingate.check/3': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
+    detection_contract_version: 'cft-detection-contract-1.0',
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
 });
 export const CHECK_SCHEMA_IDS = Object.freeze(Object.keys(SUPPORTED_RECORDS));
 
 /**
  * Why a saved record is not one this runtime reads, or [] when it is. Checks the version combination, and that a
- * refused explanation's `decided_by` (/2) is exactly the decision's deciding rows -- the structured attribution must
+ * refused explanation's `decided_by` (/2, /3) is exactly the decision's deciding rows -- the structured attribution must
  * say what the decision says. Shape is the schema's job; this is about meaning.
  */
 export function recordCompatibility(rec) {
@@ -67,7 +71,7 @@ export function recordCompatibility(rec) {
     if (rec.schema === 'chaingate.check/1' && has) {
       p.push('explanation.structured.decided_by is not a member of a chaingate.check/1 refused explanation');
     }
-    if (rec.schema === 'chaingate.check/2') {
+    if (rec.schema === 'chaingate.check/2' || rec.schema === 'chaingate.check/3') {
       const deciding = (Array.isArray(d.results) ? d.results : []).filter((x) => x && x.result === d.disposition)
         .map((x) => ({ gate: x.gate, detail: x.detail }));
       if (!has || !Array.isArray(s.decided_by)) p.push('explanation.structured.decided_by is missing');

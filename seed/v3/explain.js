@@ -4,7 +4,7 @@
 //
 // It reads only the object it is given: no seed, no network, no clock, no environment. The same
 // input renders the same bytes, and its strings are never rule inputs. `result` is a
-// `chaingate.check/1` or `/2` record (its own `explanation` member, if present, is ignored), so a SAVED
+// `chaingate.check/1`, `/2` or `/3` record (its own `explanation` member, if present, is ignored), so a SAVED
 // output can be explained again later without evaluating anything (`why --from`).
 //
 // TWO RENDERERS, chosen by the record's schema (U-05 Amendment 1). `chaingate.check/1` records -- written by 0.1.2
@@ -12,6 +12,8 @@
 // version 2, which differs in one respect: a REFUSED explanation names the rows that decided it, in the text and in
 // the structure (`decided_by`). Under cft-policy-1.1 a refusal can be decided by a recorded advisory pin, and version
 // 1 could only say "an unusable input is decided by on_unusable_input", which would misattribute that BLOCK.
+// `chaingate.check/3` records (0.1.4, cft-policy-1.2) use version 2 unchanged: the format did not change, and the
+// policy version is printed from the decision itself.
 //
 // What it must never do (R5/R6):
 //   * render NOT_EVALUATED as clean, or let it disappear. Every group, publisher constituent and
@@ -29,6 +31,7 @@ const EXPLAIN_VERSION = EXPLAIN_VERSION_2;
 const EXPLAIN_VERSION_FOR_SCHEMA = Object.freeze({
   'chaingate.check/1': EXPLAIN_VERSION_1,
   'chaingate.check/2': EXPLAIN_VERSION_2,
+  'chaingate.check/3': EXPLAIN_VERSION_2,
 });
 
 const has = (o, k) => o !== null && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);

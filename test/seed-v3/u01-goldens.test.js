@@ -8,6 +8,8 @@
 // T-2, and only those: D1 the decision's policy_version, D2 the policy prefix of the gate detail. The tables
 // predict no other difference on these inputs (no pinned refusal, no absent-package stub, no failure path), so
 // anything else fails here.
+// 0.1.4 I1 (0.1.4-IMPL-DECISION-TABLES-I1-A8-20261011.md T-2' E1/E2): this runtime is cft-policy-1.2. The same two
+// differences now end at 1.2; still nothing else.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -30,13 +32,13 @@ const isRefusal = (d) => d.results.length === 1 && d.results[0].gate === 'seed-v
 
 // T-2 D1/D2, written from the decision tables (not from runtime output). Applied to a COPY of the golden.
 const POLICY_1_0 = 'cft-policy-1.0';
-const POLICY_1_1 = 'cft-policy-1.1';
-function expectedUnder11(g) {
+const POLICY_CURRENT = 'cft-policy-1.2';   // U-05 D1/D2 to 1.1, then I1 E1/E2 to 1.2
+function expectedUnderCurrent(g) {
   const out = structuredClone(g);
   assert.equal(out.decision.policy_version, POLICY_1_0, `${g.id}: the golden records policy 1.0`);
-  out.decision.policy_version = POLICY_1_1;                                          // D1
+  out.decision.policy_version = POLICY_CURRENT;                                      // D1, E1
   assert.ok(out.gate_result.detail.startsWith(`${POLICY_1_0}: `), `${g.id}: golden detail prefix`);
-  out.gate_result.detail = `${POLICY_1_1}: ${out.gate_result.detail.slice(POLICY_1_0.length + 2)}`;   // D2
+  out.gate_result.detail = `${POLICY_CURRENT}: ${out.gate_result.detail.slice(POLICY_1_0.length + 2)}`;   // D2, E2
   return out;
 }
 
@@ -60,7 +62,7 @@ function compareAll(seed, cases, golden, label) {
   assert.deepEqual(cases.map((c) => c.id), golden.records.map((r) => r.id), `${label}: case set drifted from the goldens`);
   let n = 0;
   for (const c of cases) {
-    const g = expectedUnder11(byId.get(c.id));
+    const g = expectedUnderCurrent(byId.get(c.id));
     assert.equal(sha256(canonical(c.doc)), g.request.document_sha256, `${c.id}: input document changed since capture`);
     assert.equal(g.threw, null);
 

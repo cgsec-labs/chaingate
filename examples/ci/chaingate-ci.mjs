@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// chaingate-ci — one offline CI consumer of `chaingate.check/2` results (0.1.3) and of historical
-// `chaingate.check/1` results (0.1.2 and earlier). Node standard library only.
+// chaingate-ci — one offline CI consumer of `chaingate.check/3` results (0.1.4) and of historical
+// `chaingate.check/2` (0.1.3) and `chaingate.check/1` results (0.1.2 and earlier). Node standard library only.
 //
 //   node chaingate-ci.mjs --expected <manifest> --results <dir> --trusted-seed <sha256> [...]
 //                         [--trusted-seeds-file <file>] [--ignore-overrides] [--summary <file>]
@@ -17,9 +17,10 @@
 // Exit 2: usage error.
 //
 // WHAT IT CHECKS. Not full JSON Schema validation (that runs in the chaingate test suite, against
-// seed/v3/chaingate-check-1.schema.json and chaingate-check-2.schema.json). It performs this specified structural
+// seed/v3/chaingate-check-1.schema.json, chaingate-check-2.schema.json and chaingate-check-3.schema.json). It performs
+// this specified structural
 // validation:
-//   schema id chaingate.check/1 or /2, with that schema's version COMBINATION (below) · result one of
+//   schema id chaingate.check/1, /2 or /3, with that schema's version COMBINATION (below) · result one of
 //   evaluated|refused|tool_error · the members
 //   each shape requires and no others · inside every object the contract defines (tool, request,
 //   source, seed, candidate, placement, decision and its rows, effective, override, explanation,
@@ -31,9 +32,9 @@
 //   truncated files fail.
 //
 // VERSION COMBINATIONS. Each schema carries exactly one combination of explanation, policy, detection-contract and
-// seed-contract versions (COMBINATIONS below); any other is rejected naming the member. A /2 refused result must name
+// seed-contract versions (COMBINATIONS below); any other is rejected naming the member. A /2 or /3 refused result must name
 // its deciding rows in explanation.structured.decided_by, equal to the decision rows whose result is the disposition
-// (under cft-policy-1.1 a recorded advisory pin can decide a refusal); a /1 refused result carries no decided_by.
+// (since cft-policy-1.1 a recorded advisory pin can decide a refusal); a /1 refused result carries no decided_by.
 //
 // THE OVERRIDE RULE. decision.disposition is the evaluated disposition and is never rewritten.
 // effective.action is ALLOW with basis "override" and the override's provenance when an exact-version
@@ -50,6 +51,9 @@ const COMBINATIONS = {
   'chaingate.check/1': { explain_version: 'chaingate-explain-1', policy_version: 'cft-policy-1.0',
     detection_contract_version: 'cft-detection-contract-1.0', seed_contract_versions: ['cft-seed-v3-contract-1.0'] },
   'chaingate.check/2': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.1',
+    detection_contract_version: 'cft-detection-contract-1.0',
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
+  'chaingate.check/3': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
 };
@@ -262,10 +266,10 @@ function combinationProblems(rec) {
   if (rec.result === 'refused') {
     if (rec.schema === 'chaingate.check/1' && has(s, 'decided_by')) {
       p.push('explanation.structured.decided_by is not a member of a chaingate.check/1 refused explanation');
-    } else if (rec.schema === 'chaingate.check/2') {
+    } else if (rec.schema === 'chaingate.check/2' || rec.schema === 'chaingate.check/3') {
       const deciding = rec.decision.results.filter((x) => x.result === rec.decision.disposition)
         .map((x) => JSON.stringify([x.gate, x.detail]));
-      if (!Array.isArray(s.decided_by)) p.push('explanation.structured.decided_by is missing (required in chaingate.check/2)');
+      if (!Array.isArray(s.decided_by)) p.push(`explanation.structured.decided_by is missing (required in ${rec.schema})`);
       else if (JSON.stringify(s.decided_by.map((x) => JSON.stringify([isObj(x) ? x.gate : null, isObj(x) ? x.detail : null])))
         !== JSON.stringify(deciding)) {
         p.push("explanation.structured.decided_by does not match the decision's deciding rows");

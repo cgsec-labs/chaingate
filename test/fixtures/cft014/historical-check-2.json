@@ -1,0 +1,587 @@
+{
+  "captured_with": "@cgsec/chaingate 0.1.3 source b66edfdd (tag cgsec-chaingate-v0.1.3)",
+  "capture_script": "test/fixtures/cft014/capture-historical-check-2.mjs",
+  "records": [
+    {
+      "id": "evaluated-append-live",
+      "record": {
+        "schema": "chaingate.check/2",
+        "result": "evaluated",
+        "tool": {
+          "name": "chaingate",
+          "version": "0.1.3"
+        },
+        "request": {
+          "package": "p",
+          "version": "1.4.0"
+        },
+        "seed": {
+          "bundle_id": null,
+          "sha256": "8365f109e254b58f0823727d970fe3956cd335acf50fb676bd2e905fd42b895f",
+          "trust": "unsigned-development",
+          "authenticated": false,
+          "contract_version": "cft-seed-v3-contract-1.1",
+          "rule_versions": {
+            "channel_a": "infra5d-1.2+fu2final+norm1+sizeshrink",
+            "dac_trajectory": "dac-trajectory-1.0"
+          },
+          "corpus_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "candidate": {
+          "candidate_digest": "6fc81d48f5a3321b4ac857f52c08fa1666d4d6d955958397e231b56d1e97dc7c",
+          "placement": {
+            "kind": "append",
+            "reason": null,
+            "lineage_id": 1,
+            "ord": null,
+            "channel_a_usable": true
+          }
+        },
+        "finding": {
+          "contract_version": "cft-detection-contract-1.0",
+          "timestamp_precision": "unix_seconds_utc",
+          "candidate": {
+            "package": "p",
+            "version": "1.4.0",
+            "published_s": 1767525600,
+            "lineage_id": 1,
+            "ord": null,
+            "candidate_digest": "6fc81d48f5a3321b4ac857f52c08fa1666d4d6d955958397e231b56d1e97dc7c",
+            "provider_class": "verified-corporate"
+          },
+          "corpus_context": "unavailable",
+          "channel_a": {
+            "predecessor_version": "1.2.0",
+            "groups": {
+              "publisher": {
+                "value": false,
+                "coverage": "EVALUATED"
+              },
+              "provenance": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor_present": true,
+                  "candidate_present": true
+                }
+              },
+              "install": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor_has_scripts": false,
+                  "candidate_has_scripts": false
+                }
+              },
+              "git": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor_head_present": true,
+                  "candidate_head_present": true,
+                  "repo_digest_changed": false
+                }
+              },
+              "size": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor_size": 1000,
+                  "candidate_size": 1000
+                }
+              }
+            },
+            "publisher_constituents": {
+              "identity": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor": "6fc81d48f5a3321b",
+                  "candidate": "6fc81d48f5a3321b"
+                }
+              },
+              "maintainers": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor": "7a11fcbef37bd0c1",
+                  "candidate": "7a11fcbef37bd0c1",
+                  "candidate_empty": false
+                }
+              },
+              "tool_downgrade": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "predecessor_tool_key": 10002003,
+                  "candidate_tool_key": 10002003
+                }
+              }
+            },
+            "install_body": {
+              "predecessor_body_digest": "",
+              "candidate_body_digest": "",
+              "changed": false,
+              "counts_toward_n": false
+            },
+            "M": 5,
+            "n_broke": 0,
+            "n_evaluable": 5,
+            "n_unevaluable": 0,
+            "thresholds": [
+              {
+                "name": "critical",
+                "threshold": 3,
+                "threshold_result": false,
+                "threshold_determinacy": "determinate",
+                "interval": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          },
+          "dac_trajectory": {
+            "predicates": {
+              "install_introduced": {
+                "value": false,
+                "coverage": "EVALUATED"
+              },
+              "prov_dropped": {
+                "value": false,
+                "coverage": "EVALUATED"
+              },
+              "first_pkg_appearance_new_publisher": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "prior_tuple_count": 1
+                }
+              },
+              "size_jump_5x": {
+                "value": false,
+                "coverage": "EVALUATED",
+                "evidence": {
+                  "reference_sizes": [
+                    1000
+                  ],
+                  "candidate_size": 1000
+                }
+              }
+            },
+            "history": {
+              "prior_versions": ">=1",
+              "ambiguous": false
+            },
+            "M": 4,
+            "n_broke": 0,
+            "n_evaluable": 4,
+            "n_unevaluable": 0,
+            "thresholds": [
+              {
+                "name": "surface",
+                "threshold": 2,
+                "threshold_result": false,
+                "threshold_determinacy": "determinate",
+                "interval": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "name": "any",
+                "threshold": 1,
+                "threshold_result": false,
+                "threshold_determinacy": "determinate",
+                "interval": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          },
+          "seed": {
+            "corpus_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "contract_version": "cft-seed-v3-contract-1.1",
+            "schema_version": "3",
+            "history_cutoff": "2026-12-31T00:00:00Z",
+            "rule_versions": {
+              "channel_a": "infra5d-1.2+fu2final+norm1+sizeshrink",
+              "dac_trajectory": "dac-trajectory-1.0"
+            },
+            "seed_contract_version": "cft-seed-v3-contract-1.1",
+            "detection_contract_version": "cft-detection-contract-1.0"
+          }
+        },
+        "decision": {
+          "policy_version": "cft-policy-1.1",
+          "policy_config_sha256": "8528a1d6fb8e3f1ad8049da1fede03c910e1113f8af6d7c29e76392cbeca9742",
+          "disposition": "ALLOW",
+          "results": [
+            {
+              "gate": "seed-v3:known-malicious-pin",
+              "result": "ALLOW",
+              "detail": "no recorded advisory pins this version"
+            },
+            {
+              "gate": "seed-v3:channel-a:critical",
+              "result": "ALLOW",
+              "detail": "0/5 broke, threshold 3 cannot be reached (retained interval [0, 0])"
+            },
+            {
+              "gate": "seed-v3:dac-trajectory:surface",
+              "result": "ALLOW",
+              "detail": "0/4 broke, threshold 2 cannot be reached (retained interval [0, 0])"
+            },
+            {
+              "gate": "seed-v3:dac-trajectory:any",
+              "result": "ALLOW",
+              "detail": "0/4 broke, threshold 1 cannot be reached (retained interval [0, 0])"
+            }
+          ],
+          "evidence_complete": true,
+          "not_evaluated": []
+        },
+        "effective": {
+          "action": "ALLOW",
+          "basis": "evaluation"
+        },
+        "explanation": {
+          "text": [
+            "p@1.4.0: ALLOW",
+            "  evaluated disposition: ALLOW under cft-policy-1.1",
+            "  placement: append",
+            "  decided by:",
+            "    seed-v3:known-malicious-pin: no recorded advisory pins this version",
+            "    seed-v3:channel-a:critical: 0/5 broke, threshold 3 cannot be reached (retained interval [0, 0])",
+            "    seed-v3:dac-trajectory:surface: 0/4 broke, threshold 2 cannot be reached (retained interval [0, 0])",
+            "    seed-v3:dac-trajectory:any: 0/4 broke, threshold 1 cannot be reached (retained interval [0, 0])",
+            "  all results:",
+            "    [ALLOW] seed-v3:known-malicious-pin: no recorded advisory pins this version",
+            "    [ALLOW] seed-v3:channel-a:critical: 0/5 broke, threshold 3 cannot be reached (retained interval [0, 0])",
+            "    [ALLOW] seed-v3:dac-trajectory:surface: 0/4 broke, threshold 2 cannot be reached (retained interval [0, 0])",
+            "    [ALLOW] seed-v3:dac-trajectory:any: 0/4 broke, threshold 1 cannot be reached (retained interval [0, 0])",
+            "  channel-a witness groups:",
+            "    publisher: held",
+            "      constituent identity: held",
+            "      constituent maintainers: held",
+            "      constituent tool_downgrade: held",
+            "    provenance: held",
+            "    install: held",
+            "    size: held",
+            "    git: held",
+            "  dac trajectory predicates:",
+            "    install_introduced: held",
+            "    size_jump_5x: held",
+            "    prov_dropped: held",
+            "    first_pkg_appearance_new_publisher: held"
+          ],
+          "structured": {
+            "explain_version": "chaingate-explain-2",
+            "result": "evaluated",
+            "package": "p",
+            "version": "1.4.0",
+            "effective": {
+              "action": "ALLOW",
+              "basis": "evaluation"
+            },
+            "disposition": "ALLOW",
+            "policy_version": "cft-policy-1.1",
+            "placement": {
+              "kind": "append",
+              "reason": null
+            },
+            "decided_by": [
+              {
+                "gate": "seed-v3:known-malicious-pin",
+                "detail": "no recorded advisory pins this version"
+              },
+              {
+                "gate": "seed-v3:channel-a:critical",
+                "detail": "0/5 broke, threshold 3 cannot be reached (retained interval [0, 0])"
+              },
+              {
+                "gate": "seed-v3:dac-trajectory:surface",
+                "detail": "0/4 broke, threshold 2 cannot be reached (retained interval [0, 0])"
+              },
+              {
+                "gate": "seed-v3:dac-trajectory:any",
+                "detail": "0/4 broke, threshold 1 cannot be reached (retained interval [0, 0])"
+              }
+            ],
+            "results": [
+              {
+                "gate": "seed-v3:known-malicious-pin",
+                "result": "ALLOW",
+                "detail": "no recorded advisory pins this version"
+              },
+              {
+                "gate": "seed-v3:channel-a:critical",
+                "result": "ALLOW",
+                "detail": "0/5 broke, threshold 3 cannot be reached (retained interval [0, 0])"
+              },
+              {
+                "gate": "seed-v3:dac-trajectory:surface",
+                "result": "ALLOW",
+                "detail": "0/4 broke, threshold 2 cannot be reached (retained interval [0, 0])"
+              },
+              {
+                "gate": "seed-v3:dac-trajectory:any",
+                "result": "ALLOW",
+                "detail": "0/4 broke, threshold 1 cannot be reached (retained interval [0, 0])"
+              }
+            ],
+            "channel_a": {
+              "groups": [
+                {
+                  "name": "publisher",
+                  "state": "HELD"
+                },
+                {
+                  "name": "provenance",
+                  "state": "HELD"
+                },
+                {
+                  "name": "install",
+                  "state": "HELD"
+                },
+                {
+                  "name": "size",
+                  "state": "HELD"
+                },
+                {
+                  "name": "git",
+                  "state": "HELD"
+                }
+              ],
+              "publisher_constituents": [
+                {
+                  "name": "identity",
+                  "state": "HELD"
+                },
+                {
+                  "name": "maintainers",
+                  "state": "HELD"
+                },
+                {
+                  "name": "tool_downgrade",
+                  "state": "HELD"
+                }
+              ]
+            },
+            "dac_trajectory": {
+              "predicates": [
+                {
+                  "name": "install_introduced",
+                  "state": "HELD"
+                },
+                {
+                  "name": "size_jump_5x",
+                  "state": "HELD"
+                },
+                {
+                  "name": "prov_dropped",
+                  "state": "HELD"
+                },
+                {
+                  "name": "first_pkg_appearance_new_publisher",
+                  "state": "HELD"
+                }
+              ]
+            },
+            "not_evaluated": [],
+            "evidence_complete": true,
+            "evaluated_any": true
+          }
+        }
+      }
+    },
+    {
+      "id": "refused-pinned-live",
+      "record": {
+        "schema": "chaingate.check/2",
+        "result": "refused",
+        "tool": {
+          "name": "chaingate",
+          "version": "0.1.3"
+        },
+        "request": {
+          "package": "p",
+          "version": "1.3.0"
+        },
+        "seed": {
+          "bundle_id": null,
+          "sha256": "8365f109e254b58f0823727d970fe3956cd335acf50fb676bd2e905fd42b895f",
+          "trust": "unsigned-development",
+          "authenticated": false,
+          "contract_version": "cft-seed-v3-contract-1.1",
+          "rule_versions": {
+            "channel_a": "infra5d-1.2+fu2final+norm1+sizeshrink",
+            "dac_trajectory": "dac-trajectory-1.0"
+          },
+          "corpus_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "decision": {
+          "policy_version": "cft-policy-1.1",
+          "policy_config_sha256": "8528a1d6fb8e3f1ad8049da1fede03c910e1113f8af6d7c29e76392cbeca9742",
+          "disposition": "BLOCK",
+          "results": [
+            {
+              "gate": "seed-v3:known-malicious-pin",
+              "result": "BLOCK",
+              "detail": "recorded advisory ADV-P-130 pins p@1.3.0 (source synthetic-fixture)"
+            },
+            {
+              "gate": "seed-v3:input",
+              "result": "BLOCK",
+              "detail": "Error: no raw packument manifest supplied for p@1.3.0"
+            }
+          ],
+          "evidence_complete": false,
+          "not_evaluated": [
+            {
+              "where": "policy",
+              "name": "input",
+              "reason": "Error: no raw packument manifest supplied for p@1.3.0"
+            }
+          ]
+        },
+        "effective": {
+          "action": "BLOCK",
+          "basis": "evaluation"
+        },
+        "explanation": {
+          "text": [
+            "p@1.3.0: BLOCK \u2014 REFUSED: no finding exists for this input",
+            "  reason: Error: no raw packument manifest supplied for p@1.3.0",
+            "  evaluated disposition: BLOCK under cft-policy-1.1",
+            "  decided by:",
+            "    seed-v3:known-malicious-pin: recorded advisory ADV-P-130 pins p@1.3.0 (source synthetic-fixture)",
+            "    seed-v3:input: Error: no raw packument manifest supplied for p@1.3.0",
+            "  no finding was evaluated: this is NOT a clean result"
+          ],
+          "structured": {
+            "explain_version": "chaingate-explain-2",
+            "result": "refused",
+            "package": "p",
+            "version": "1.3.0",
+            "refusal": "Error: no raw packument manifest supplied for p@1.3.0",
+            "disposition": "BLOCK",
+            "effective": {
+              "action": "BLOCK",
+              "basis": "evaluation"
+            },
+            "decided_by": [
+              {
+                "gate": "seed-v3:known-malicious-pin",
+                "detail": "recorded advisory ADV-P-130 pins p@1.3.0 (source synthetic-fixture)"
+              },
+              {
+                "gate": "seed-v3:input",
+                "detail": "Error: no raw packument manifest supplied for p@1.3.0"
+              }
+            ],
+            "not_evaluated": [
+              {
+                "where": "policy",
+                "name": "input",
+                "reason": "Error: no raw packument manifest supplied for p@1.3.0"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "refused-pinned-warn",
+      "record": {
+        "schema": "chaingate.check/2",
+        "result": "refused",
+        "tool": {
+          "name": "chaingate",
+          "version": "0.1.3"
+        },
+        "request": {
+          "package": "p",
+          "version": "1.3.0"
+        },
+        "seed": {
+          "bundle_id": null,
+          "sha256": "8365f109e254b58f0823727d970fe3956cd335acf50fb676bd2e905fd42b895f",
+          "trust": "unsigned-development",
+          "authenticated": false,
+          "contract_version": "cft-seed-v3-contract-1.1",
+          "rule_versions": {
+            "channel_a": "infra5d-1.2+fu2final+norm1+sizeshrink",
+            "dac_trajectory": "dac-trajectory-1.0"
+          },
+          "corpus_snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "decision": {
+          "policy_version": "cft-policy-1.1",
+          "policy_config_sha256": "6471cdd663952d95b411f7dd6712444e6fea22af95282366fa52747d4e1214dd",
+          "disposition": "BLOCK",
+          "results": [
+            {
+              "gate": "seed-v3:known-malicious-pin",
+              "result": "BLOCK",
+              "detail": "recorded advisory ADV-P-130 pins p@1.3.0 (source synthetic-fixture)"
+            },
+            {
+              "gate": "seed-v3:input",
+              "result": "WARN",
+              "detail": "Error: no raw packument manifest supplied for p@1.3.0"
+            }
+          ],
+          "evidence_complete": false,
+          "not_evaluated": [
+            {
+              "where": "policy",
+              "name": "input",
+              "reason": "Error: no raw packument manifest supplied for p@1.3.0"
+            }
+          ]
+        },
+        "effective": {
+          "action": "BLOCK",
+          "basis": "evaluation"
+        },
+        "explanation": {
+          "text": [
+            "p@1.3.0: BLOCK \u2014 REFUSED: no finding exists for this input",
+            "  reason: Error: no raw packument manifest supplied for p@1.3.0",
+            "  evaluated disposition: BLOCK under cft-policy-1.1",
+            "  decided by:",
+            "    seed-v3:known-malicious-pin: recorded advisory ADV-P-130 pins p@1.3.0 (source synthetic-fixture)",
+            "  no finding was evaluated: this is NOT a clean result"
+          ],
+          "structured": {
+            "explain_version": "chaingate-explain-2",
+            "result": "refused",
+            "package": "p",
+            "version": "1.3.0",
+            "refusal": "Error: no raw packument manifest supplied for p@1.3.0",
+            "disposition": "BLOCK",
+            "effective": {
+              "action": "BLOCK",
+              "basis": "evaluation"
+            },
+            "decided_by": [
+              {
+                "gate": "seed-v3:known-malicious-pin",
+                "detail": "recorded advisory ADV-P-130 pins p@1.3.0 (source synthetic-fixture)"
+              }
+            ],
+            "not_evaluated": [
+              {
+                "where": "policy",
+                "name": "input",
+                "reason": "Error: no raw packument manifest supplied for p@1.3.0"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
