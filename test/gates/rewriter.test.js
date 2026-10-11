@@ -53,7 +53,7 @@ test('one WARN → kept, summary.warned has entry, changed=false', () => {
   assert.equal(out.changed, false);
   assert.equal(out.summary.warned.length, 1);
   assert.equal(out.summary.warned[0].version, '1.1.0');
-  assert.equal(out.summary.warned[0].reason, 'publisher changed');
+  assert.equal(out.summary.warned[0].reason, 'stub: publisher changed');   // 0.1.4 E13: the deciding reason is `<gate>: <detail>`
 });
 
 test('one BLOCK middle version → removed from versions + time', () => {
@@ -67,7 +67,7 @@ test('one BLOCK middle version → removed from versions + time', () => {
   assert.ok('created' in out.packument.time);
   assert.ok('modified' in out.packument.time);
   assert.equal(out.summary.blocked.length, 1);
-  assert.equal(out.summary.blocked[0].reason, 'hash mismatch');
+  assert.equal(out.summary.blocked[0].reason, 'stub: hash mismatch');   // 0.1.4 E13: the deciding reason is `<gate>: <detail>`
 });
 
 test('block latest → latest downgrades to next highest non-prerelease', () => {

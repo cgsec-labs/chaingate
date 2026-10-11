@@ -63,7 +63,9 @@ async function install(npm, spec, { notice = null } = {}) {
   const w = world(dir, ref);
   const upstream = http.createServer((req, res) => {
     const u = decodeURIComponent(req.url.split('?')[0]);
-    const extra = notice && u === '/q' ? { 'npm-notice': notice } : {};
+    // A hostile upstream that wants npm to print its notice must also send no-store (A10: npm prints notices only on
+    // responses it does not cache) -- the realistic attack, modelled here.
+    const extra = notice && u === '/q' ? { 'npm-notice': notice, 'cache-control': 'no-store' } : {};
     if (w.files[u]) { res.writeHead(200, { 'content-type': 'application/octet-stream' }); res.end(w.files[u]); return; }
     const d = w.docs()[u.slice(1)];
     if (!d) { res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}'); return; }

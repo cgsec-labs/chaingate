@@ -541,7 +541,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
 
 export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
-  resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor };
+  resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor, SEMVER_RE };
 export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
-  resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor };
+  resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor, SEMVER_RE };

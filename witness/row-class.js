@@ -62,4 +62,29 @@ export function classSignature(disposition, results) {
   return JSON.stringify([disposition ?? null, c.named, c.contributing, c.facts, policyPrefix(results)]);
 }
 
-export default { classify, classSignature, policyPrefix };
+export default { classify, classSignature, policyPrefix, decidingReason };
+
+const PIN_MARKER = 'seed-v3:known-malicious-pin: recorded advisory';
+/** Rank of one row for the deciding reason (D-V1): fact 0, named 1, coverage 2, other 3, synthetic chaingate 4. */
+function rank(x) {
+  if (!x || typeof x !== 'object') return 9;
+  if (x.gate === 'chaingate') return 4;
+  if (x.result === 'BLOCK' && (x.gate === 'content-hash'
+    || (x.gate === 'seed-v3' && typeof x.detail === 'string' && x.detail.includes(PIN_MARKER)))) return 0;
+  const c = classify([x]);
+  if (c.named.length) return 1;
+  if (c.coverage.length) return 2;
+  return 3;
+}
+
+/**
+ * 0.1.4 group 2b (D-V1, A1): the reason a decision says what it says -- the rows whose result equals the disposition (all
+ * rows when none does), ranked fact > named > coverage > other > synthetic, stable within a rank, `<gate>: <detail>`.
+ */
+export function decidingReason(results, disposition) {
+  const list = (Array.isArray(results) ? results : []).filter((x) => x && typeof x === 'object');
+  const bearing = list.filter((x) => x.result === disposition);
+  const rows = (bearing.length ? bearing : list).map((x, i) => ({ x, i, r: rank(x) }));
+  rows.sort((a, b) => (a.r - b.r) || (a.i - b.i));
+  return rows.map(({ x }) => `${x.gate}: ${typeof x.detail === 'string' ? x.detail : ''}`).join(' | ');
+}

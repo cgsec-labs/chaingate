@@ -40,6 +40,31 @@ export function createLogBoundary(inner, opts = {}) {
   let suppressedSinceSummary = 0;
   let lastFallbackAt = -Infinity;
   const channels = new Map();               // channel -> { value, at, pending: {value, message} | null }
+  // 0.1.4 group 2b (D-V6, A4): RESERVED channels for fact and named lines. Each has its own bucket, its own dedup window
+  // and its own suppression summary, and never draws on (or is starved by) the general budget above.
+  const RESERVED = { burst: 50, perSecond: 1, dedupMs: 10 * 60_000 };
+  const reservedState = new Map();          // kind -> { tokens, last, lastSummaryAt, suppressedSinceSummary, seen: Map, stats }
+  function reservedFor(kind) {
+    let r = reservedState.get(kind);
+    if (!r) {
+      r = { tokens: RESERVED.burst, last: now(), lastSummaryAt: now(), suppressedSinceSummary: 0, seen: new Map(),
+        stats: { emitted: 0, suppressed: 0, deduped: 0 } };
+      reservedState.set(kind, r);
+    }
+    return r;
+  }
+  function reservedSummary(kind, r, force = false) {
+    const t = now();
+    if (r.suppressedSinceSummary > 0 && (force || t - r.lastSummaryAt >= o.summaryMs)) {
+      const secs = Math.max(1, Math.round((t - r.lastSummaryAt) / 1000));
+      const n = r.suppressedSinceSummary;
+      r.suppressedSinceSummary = 0; r.lastSummaryAt = t;
+      write('warn', `[log] suppressed ${n} ${kind} line(s) in the last ${secs} s (reserved ${kind} budget: ${RESERVED.burst} `
+        + `burst, ${RESERVED.perSecond}/s); \`chaingate report\` reads the decision store, not this log`);
+    } else if (r.suppressedSinceSummary === 0 && t - r.lastSummaryAt >= o.summaryMs) {
+      r.lastSummaryAt = t;
+    }
+  }
 
   function fallback(err) {
     const t = now();
@@ -109,9 +134,33 @@ export function createLogBoundary(inner, opts = {}) {
       c.pending = { value, line };
       stats.transitions_suppressed += 1;
     },
-    /** Periodic work: the suppression summary and pending transitions. Called by a timer, or by tests. */
-    tick() { refill(); summary(); flushPending(); },
-    stats() { return { ...stats, tokens: Math.floor(tokens) }; },
+    /**
+     * A reserved line (D-V6): `kind` 'fact' | 'named'. A `key` seen within the dedup window is counted, not written.
+     */
+    reserved(kind, message, key = null) {
+      const r = reservedFor(kind);
+      const t = now();
+      for (const [k, at] of r.seen) if (t - at >= RESERVED.dedupMs) r.seen.delete(k);
+      if (key !== null && r.seen.has(key)) { r.stats.deduped += 1; return; }
+      let line;
+      try { line = clip(message, o.lineBytes, stats); } catch { line = `[log] (unprintable ${kind} line)`; }
+      if (t > r.last) { r.tokens = Math.min(RESERVED.burst, r.tokens + ((t - r.last) / 1000) * RESERVED.perSecond); r.last = t; }
+      reservedSummary(kind, r);
+      if (key !== null) r.seen.set(key, t);
+      if (r.tokens >= 1) { r.tokens -= 1; r.stats.emitted += 1; write('warn', line); } else {
+        r.stats.suppressed += 1; r.suppressedSinceSummary += 1;
+      }
+    },
+    /** Periodic work: the suppression summaries and pending transitions. Called by a timer, or by tests. */
+    tick() {
+      refill(); summary(); flushPending();
+      for (const [kind, r] of reservedState) reservedSummary(kind, r);
+    },
+    stats() {
+      const reserved = { fact: { emitted: 0, suppressed: 0, deduped: 0 }, named: { emitted: 0, suppressed: 0, deduped: 0 } };
+      for (const [kind, r] of reservedState) reserved[kind] = { ...r.stats };
+      return { ...stats, tokens: Math.floor(tokens), reserved };
+    },
     close() { if (timer) clearInterval(timer); },
   };
   let timer = null;

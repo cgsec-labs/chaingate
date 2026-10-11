@@ -36,6 +36,8 @@
 //      npm packuments contain historical oddities we should not drop.
 
 import semver from 'semver';
+// 0.1.4 group 2b (D-V1, A1): the deciding reason replaces the first non-empty detail.
+import { decidingReason } from '../witness/row-class.js';
 
 const BLOCK = 'BLOCK';
 const WARN = 'WARN';
@@ -48,14 +50,6 @@ function pickHighestCandidate(versionStrings, { nonPrereleaseOnly }) {
     if (best == null || semver.gt(v, best)) best = v;
   }
   return best;
-}
-
-function firstDetail(results) {
-  if (!Array.isArray(results)) return '';
-  for (const r of results) {
-    if (r && typeof r.detail === 'string' && r.detail) return r.detail;
-  }
-  return '';
 }
 
 export function rewritePackument(packument, decisions) {
@@ -93,14 +87,14 @@ export function rewritePackument(packument, decisions) {
       blockedSet.add(v);
       summary.blocked.push({
         version: v,
-        reason: typeof dec === 'object' ? firstDetail(dec?.results) : '',
+        reason: typeof dec === 'object' ? decidingReason(dec?.results, BLOCK) : '',
       });
       continue;
     }
     if (disposition === WARN) {
       summary.warned.push({
         version: v,
-        reason: typeof dec === 'object' ? firstDetail(dec?.results) : '',
+        reason: typeof dec === 'object' ? decidingReason(dec?.results, WARN) : '',
       });
     }
     newVersions[v] = entry;
