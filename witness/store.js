@@ -295,10 +295,13 @@ export function createWitness({ db, runGates, config, logger }) {
             // result that definitively clears a pending reason is recorded even when the disposition repeats (a
             // clearance must not be lost behind an earlier non-definitive row of the same disposition).
             const prior = skipInsert ? null : (overrideBased ? (stored.at(-1) ?? null) : before.latest);
-            // 0.1.4 group 2a (D-N7, E12): also when the CLASS of the record changed (named rows, fact reasons, policy
-            // identity) under the same disposition -- e.g. a 1.1 coverage WARN that is a 1.2 strict-tier WARN. C2-neutral.
+            // 0.1.4 group 2a (D-N7, E12): also when the CLASS of the record changed (named, contributing, facts, policy
+            // identity) under the same NON-BLOCK disposition -- e.g. a 1.1 coverage WARN that is a 1.2 strict-tier WARN, or
+            // contributing signals under an ALLOW. BLOCK -> BLOCK keeps the C2 rule exactly as before (review fix): a row
+            // there could add a pending reason and become the cited applicable BLOCK.
             if (!skipInsert && (!prior || prior.disposition !== disposition || after.cleared.length > 0
-              || classSignature(prior.disposition, prior.gates_fired) !== classSignature(disposition, gateResults))) {
+              || (disposition !== 'BLOCK'
+                && classSignature(prior.disposition, prior.gates_fired) !== classSignature(disposition, gateResults)))) {
               db.insertGateDecision(packageName, incoming.version, disposition, gateResults);
               inserted += 1;
             }
