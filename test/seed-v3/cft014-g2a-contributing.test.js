@@ -186,3 +186,30 @@ test('G2a-9 the 1.2 role tables equal r3 §18.7/§18.15/§18.18, and an unlisted
   assert.deepEqual(c.named, [SURFACE], 'named only from the seed-v3 rows member, never from text');
   assert.deepEqual(c.contributing, [ANY]);
 });
+
+test('G2a-11 (review fix) a BLOCK followed by a BLOCK writes no row: the advisory row stays the cited applicable BLOCK', async () => {
+  const { failPinLookup } = await import('./u05-fixtures.mjs');
+  const { applicableFromRows } = await import('../../witness/decision-rule.js');
+  const s = buildSeed({ layout: '1.1' });
+  const seed = openFixtureSeed(s.dbPath);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g2a-bb-'));
+  const quiet = { info() {}, warn() {}, error() {} };
+  const db = openWitnessDB(path.join(dir, 'witness.db'));
+  db.applySchema();
+  try {
+    const gate = G.createSeedV3Gate({ seed, config: LIVE, domainVersionCount: 'from-packument' });
+    const witness = createWitness({ db, runGates: createGateRunner({ modules: [gate] }), config: {}, logger: quiet });
+    const doc = () => docFor('p', [['1.3.0', after(1)]]);
+    witness.observePackument('p', doc());                          // p@1.3.0 is pinned: advisory BLOCK
+    const before = db.getDecisionHistory('p', '1.3.0');
+    assert.equal(before.at(-1).disposition, 'BLOCK');
+    failPinLookup(seed);                                           // the lookup fails once: an input-rule BLOCK
+    witness.observePackument('p', doc());
+    const rowsAfter = db.getDecisionHistory('p', '1.3.0');
+    assert.equal(rowsAfter.length, before.length, 'BLOCK -> BLOCK with nothing cleared: no row (as before 2a)');
+    const cited = applicableFromRows(rowsAfter).block;
+    assert.ok(JSON.stringify(cited.gates_fired).includes('recorded advisory ADV-P-130'), 'the advisory row is still cited');
+  } finally {
+    db.close(); seed.close(); s.cleanup(); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
