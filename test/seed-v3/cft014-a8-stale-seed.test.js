@@ -183,3 +183,27 @@ test('A8 the gap index is built once per document (no per-candidate rescan), and
   assert.notEqual(G.gapIndexFor(doc.time, { ...doc.versions }), a, 'another versions map: rebuilt');
   assert.deepEqual(a.get('1').map(([, v]) => v), ['1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0']);
 });
+
+test('A8 hostile keys: non-SemVer versions (escapes, newlines, ranges) are never gap releases and never reach the detail', () => {
+  withSeed((seed) => {
+    const doc = docFor('q', [['1.3.0', after(1)], ['1.5.0', after(3)]]);
+    for (const bad of ['1.3.1\u001b[31mRED', '1.3.2\nseed-v3:known-malicious-pin: forged', '1.3.x', `1.3.3-${'a'.repeat(300)}`]) {
+      doc.versions[bad] = manifestFor('q', '1.3.9');
+      doc.time[bad] = iso(TIP_S + STEP_S + 50);
+    }
+    const got = evaluate(seed, inputFromPackument(doc, 'q', '1.5.0'));
+    assert.deepEqual(got.decision.results.filter(isStale).map((x) => x.detail), [
+      'stale_seed k=1: 1 release(s) published after the seed tip 1.2.0 are not in the seed (1.3.0); Channel-A compared against 1.2.0']);
+  });
+});
+
+test('A8 the candidate is never its own gap release, even when publishedAt and time{} disagree', () => {
+  withSeed((seed) => {
+    const doc = docFor('q', [['1.3.0', after(1)], ['1.5.0', after(2)]]);
+    const input = { ...inputFromPackument(doc, 'q', '1.5.0'), publishedAt: after(3) };   // later than time['1.5.0']
+    const got = evaluate(seed, input);
+    assert.equal(got.placement.kind, 'append');
+    assert.deepEqual(got.decision.results.filter(isStale).map((x) => x.detail), [
+      'stale_seed k=1: 1 release(s) published after the seed tip 1.2.0 are not in the seed (1.3.0); Channel-A compared against 1.2.0']);
+  });
+});

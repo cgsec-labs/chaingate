@@ -12,7 +12,7 @@
 // gives the underlying decision.
 //
 // Classification reads the exact texts the shipped producers write (gates/content-hash.js, seed/v3/policy.js and
-// seed/v3/gate.js, policy 1.0 and 1.1). There is no structured field: chaingate.check/2 carries a decision's results
+// seed/v3/gate.js, policy 1.0, 1.1 and 1.2). There is no structured field: chaingate.check/2 carries a decision's results
 // verbatim, so a new field would change the public schema. Text written by the published 0.1.0-0.1.2 runtimes is
 // covered by fixtures captured from those runtimes (test/fixtures/u05-d10-historical).
 
@@ -26,9 +26,12 @@ export const REASON = Object.freeze({
   UNCLASSIFIED: 'unclassified',
 });
 
-const POLICY_PREFIXES = Object.freeze(['cft-policy-1.0: ', 'cft-policy-1.1: ']);
-// D4: under policy 1.0 "no recorded advisory pins this version" could be said of a pinned version, so only 1.1 clears a pin.
-const PIN_CLEARING_PREFIXES = Object.freeze(['cft-policy-1.1: ']);
+// 0.1.4 (cft-policy-1.2, I1): 1.2 changed no clearance semantics, so it is listed beside 1.1 (test/cli/cft014-i1-clearance
+// guards that the current identity is listed; a new identity must be added here deliberately, never by default).
+const POLICY_PREFIXES = Object.freeze(['cft-policy-1.0: ', 'cft-policy-1.1: ', 'cft-policy-1.2: ']);
+// D4: under policy 1.0 "no recorded advisory pins this version" could be said of a pinned version, so only 1.1 and later
+// (1.2 keeps D4) clear a pin.
+const PIN_CLEARING_PREFIXES = Object.freeze(['cft-policy-1.1: ', 'cft-policy-1.2: ']);
 const INPUT_MARKERS = Object.freeze(['seed-v3:input', 'could not run']);
 const PIN_BLOCK_MARKER = 'seed-v3:known-malicious-pin: recorded advisory';
 const CONTENT_HASH_CLEARANCE = Object.freeze([/^integrity hash matches baseline/, /^shasum matches baseline/]);

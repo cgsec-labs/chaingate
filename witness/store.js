@@ -172,9 +172,12 @@ export function createWitness({ db, runGates, config, logger }) {
     // projection, and must never guess at what it cannot see.
     const rawVersions = packument && typeof packument === 'object' && packument.versions
       && typeof packument.versions === 'object' ? packument.versions : {};
+    const rawTimes = packument && typeof packument === 'object' && packument.time
+      && typeof packument.time === 'object' ? packument.time : {};
+    // 0.1.4 A8: only a plain-object time map is handed to the gate for the stale-seed count; `publishedAt` above and
+    // below is read exactly as before (an array-valued time{} included).
     const timesSupplied = Boolean(packument && typeof packument === 'object' && packument.time
       && typeof packument.time === 'object' && !Array.isArray(packument.time));
-    const rawTimes = timesSupplied ? packument.time : {};
 
     // A document whose manifests are ALL unreadable still contains versions, and serving it raw
     // would serve every one of them unexamined.

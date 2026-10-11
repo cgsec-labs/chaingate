@@ -243,22 +243,34 @@ function resolvePlacement(seed, packageName, version, publishedS) {
 // packument, and scanning the whole time map per candidate was quadratic (N candidates x N entries). Keyed on the
 // `time{}` object itself, and valid only for the `versions{}` object it was built with.
 const GAP_INDEX = new WeakMap();
+const STALE_LISTED = 10;   // the policy row lists at most this many (policy.js STALE_LISTED)
 
-/** major -> [[published_s, version], ...] sorted, over served, timed, non-stub releases of this document. */
+// SemVer 2.0.0 (semver.org's recommended pattern). A gap release must be a version npm can resolve; a key that is not
+// one is not a release (and its text, which a hostile registry controls, never reaches a decision's detail).
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+/**
+ * major -> [[published_s, version], ...] sorted, over served, timed, non-stub, SemVer releases of this document; plus
+ * `seconds`: version -> published_s for those releases.
+ */
 function gapIndexFor(times, versions) {
   const memo = GAP_INDEX.get(times);
   if (memo && memo.versions === versions) return memo.byMajor;
   const byMajor = new Map();
+  const seconds = new Map();
   for (const [v, t] of Object.entries(times)) {
     if (typeof t !== 'string' || !Object.prototype.hasOwnProperty.call(versions, v) || isStub(v)) continue;
+    if (v.length > 256 || !SEMVER_RE.test(v)) continue;
     let s;
     try { s = A.publishedSeconds(t); } catch { continue; }
     if (s === null || s === undefined) continue;
     const m = majorOf(v);
     if (!byMajor.has(m)) byMajor.set(m, []);
     byMajor.get(m).push([s, v]);
+    seconds.set(v, s);
   }
   for (const arr of byMajor.values()) arr.sort((a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  byMajor.seconds = seconds;
   GAP_INDEX.set(times, { versions, byMajor });
   return byMajor;
 }
@@ -291,12 +303,20 @@ function staleSeedGap(seed, place, input, candidateS, version) {
   const versions = input.rawVersions;
   const isMap = (o) => o !== null && typeof o === 'object' && !Array.isArray(o);
   if (!isMap(times) || !isMap(versions)) return { checked: false, tip };
-  const arr = gapIndexFor(times, versions).get(majorOf(version)) || [];
-  // strictly after the tip, strictly before the candidate (the candidate itself sits at candidateS and is excluded)
+  const index = gapIndexFor(times, versions);
+  const arr = index.get(majorOf(version)) || [];
+  // strictly after the tip, strictly before the candidate. O(log n) per candidate: k comes from the two positions and
+  // only the first STALE_LISTED versions are materialised (the store evaluates every version of a packument).
   const lo = firstIndex(arr, (s) => s > ln.last_published_s);
   const hi = firstIndex(arr, (s) => s >= candidateS);
-  const gap = hi > lo ? arr.slice(lo, hi) : [];
-  return { checked: true, k: gap.length, tip, versions: gap.map(([, v]) => v) };
+  let k = Math.max(0, hi - lo);
+  // The candidate is never its own gap release, even when a caller's publishedAt and time{} disagree.
+  const own = index.seconds.get(version);
+  const ownInside = own !== undefined && own > ln.last_published_s && own < candidateS;
+  if (ownInside) k -= 1;
+  const listed = arr.slice(lo, Math.min(hi, lo + STALE_LISTED + 1)).map(([, v]) => v).filter((v) => v !== version)
+    .slice(0, STALE_LISTED);
+  return { checked: true, k, tip, versions: listed };
 }
 
 /**
