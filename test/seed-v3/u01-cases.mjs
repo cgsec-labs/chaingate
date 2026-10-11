@@ -166,6 +166,8 @@ export function inputFromPackument(doc, version) {
     rawManifest: Object.prototype.hasOwnProperty.call(versions, version) ? versions[version] : undefined,
     publishedAt: time[version],
     rawVersions: versions,
+    // 0.1.4 A8: the proxy's store now passes the document's time map (absent when it has none); mirrored here.
+    rawTimes: doc && typeof doc.time === 'object' && doc.time !== null && !Array.isArray(doc.time) ? doc.time : undefined,
   };
 }
 

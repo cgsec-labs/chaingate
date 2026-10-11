@@ -183,6 +183,21 @@ function thresholdResults(prefix, agg) {
   return out;
 }
 
+const STALE_LISTED = 10;
+/** The A8 coverage row for a gate-supplied gap count, or null (no append placement, or k = 0). */
+function staleSeedRow(st) {
+  if (!st || typeof st !== 'object') return null;
+  if (st.checked === false) {
+    return r('seed-v3:coverage', SKIP, 'stale_seed not checked: no packument publication times were supplied; '
+      + `Channel-A compared against the seed tip ${st.tip}`);
+  }
+  if (!Number.isInteger(st.k) || st.k < 1) return null;
+  const shown = st.versions.slice(0, STALE_LISTED).join(', ');
+  const more = st.k > STALE_LISTED ? `, … +${st.k - STALE_LISTED} more` : '';
+  return r('seed-v3:coverage', SKIP, `stale_seed k=${st.k}: ${st.k} release(s) published after the seed tip ${st.tip} `
+    + `are not in the seed (${shown}${more}); Channel-A compared against ${st.tip}`);
+}
+
 /**
  * Map one finding (plus any recorded pin for the same package and version) to a disposition.
  *
@@ -193,6 +208,8 @@ function thresholdResults(prefix, agg) {
  *   ctx.refusal    the SeedRefused / CandidateRejected that prevented evaluation, or null
  *   ctx.config     the operator's answers to OPEN_CHOICES
  *   ctx.override   an override row (D1 short-circuit), or null
+ *   ctx.staleSeed  (cft-policy-1.2, A8) the gate's gap count for an `append` placement, or null:
+ *                  {checked: true, k, tip, versions} or {checked: false, tip}. A coverage fact, never an alert.
  * @returns {object} a decision. `disposition` is null when policy declines to decide; it is never
  *   ALLOW merely because something could not be established.
  */
@@ -303,6 +320,13 @@ function decide(finding, ctx = {}) {
       + 'the finding are over an empty comparison and are NOT used.'));
   }
   results.push(...thresholdResults('seed-v3:dac-trajectory', finding.dac_trajectory));
+
+  // 3b. STALE SEED (cft-policy-1.2, 0.1.4 A8; seed-base table R1/R7/P3, Q1). Channel-A compared an `append` release
+  //     against the seed tip; registry releases between that tip and this release are not in the seed. The count is
+  //     a COVERAGE fact: a SKIP row (D1 aggregation ignores it), never in not_evaluated, never an alert. With no
+  //     publication times to count from it says "not checked" rather than implying k = 0.
+  const stale = staleSeedRow(ctx.staleSeed);
+  if (stale) results.push(stale);
 
   // 4. INCOMPLETE EVIDENCE. Never folded into the disposition silently: it is a SKIP with the
   //    reasons named, it sets evidence_complete=false, and when NOTHING was evaluated the

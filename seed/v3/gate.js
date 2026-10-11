@@ -240,6 +240,41 @@ function resolvePlacement(seed, packageName, version, publishedS) {
 }
 
 /**
+ * 0.1.4 A8 (cft-policy-1.2; seed-base table R7/P3): how many registry releases sit between the seed tip and an `append`
+ * candidate. Channel-A compares against the tip (R1) whatever the registry published since; this only COUNTS what the
+ * seed has not seen, for policy to state as a coverage row. Never throws: a malformed time on another version is not
+ * counted, and must not turn this candidate's evaluation into a refusal.
+ *
+ * A gap release: in `rawVersions` (served; a removed release is takedown context, not staleness), a parsable string
+ * time, not a stub, the candidate's major (the lineage key an `append` placement matched), and published strictly
+ * after the tip and strictly before the candidate (same-second ties are not orderable, as in `resolvePlacement`).
+ *
+ * @returns {null | {checked: false, tip} | {checked: true, k, tip, versions}}  null for any other placement
+ */
+function staleSeedGap(seed, place, input, candidateS, version) {
+  if (!place || place.kind !== PLACEMENTS.APPEND) return null;
+  const ln = seed.db.prepare('SELECT last_version, last_published_s FROM lineages WHERE id = ?').get(place.lineage_id);
+  if (!ln) return null;
+  const tip = ln.last_version;
+  const times = input.rawTimes;
+  const versions = input.rawVersions;
+  const isMap = (o) => o !== null && typeof o === 'object' && !Array.isArray(o);
+  if (!isMap(times) || !isMap(versions)) return { checked: false, tip };
+  const major = majorOf(version);
+  const gap = [];
+  for (const [v, t] of Object.entries(times)) {
+    if (v === version || typeof t !== 'string' || !Object.prototype.hasOwnProperty.call(versions, v)) continue;
+    if (isStub(v) || majorOf(v) !== major) continue;
+    let s;
+    try { s = A.publishedSeconds(t); } catch { continue; }
+    if (s === null || s === undefined || !(s > ln.last_published_s && s < candidateS)) continue;
+    gap.push([s, v]);
+  }
+  gap.sort((a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  return { checked: true, k: gap.length, tip, versions: gap.map(([, v]) => v) };
+}
+
+/**
  * The checks the gate makes ONCE, at construction, before it will evaluate anything. `check` makes
  * the same checks before its single evaluation, so neither can evaluate under a configuration the
  * other would refuse. Returns the normalised policy configuration.
@@ -333,10 +368,11 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
       domainVersionCount: dvc.count,
     });
     finding = seed.check(candidate);
+    const staleSeed = staleSeedGap(seed, place, input, publishedS, version);
     // The placement travels WITH the finding. Where Channel-A cannot be compared, policy records
     // the gate's own reason rather than the checker's `uncovered_package`, and keeps what does not
     // depend on placement: the DAC trajectory and an exact-version advisory pin.
-    decision = POL.decide(finding, { ...pinCtx, config, override: null, placement: place });
+    decision = POL.decide(finding, { ...pinCtx, config, override: null, placement: place, staleSeed });
   } catch (e) {
     // A refusal from any layer is an UNUSABLE INPUT, and policy decides what that means — this
     // module does not get to turn it into an ALLOW. The pin found above survives it.
@@ -453,7 +489,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
 
 export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
-  resolveDomainVersionCount, domainCountsFor };
+  resolveDomainVersionCount, domainCountsFor, staleSeedGap };
 export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
-  resolveDomainVersionCount, domainCountsFor };
+  resolveDomainVersionCount, domainCountsFor, staleSeedGap };

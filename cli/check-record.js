@@ -134,6 +134,8 @@ export function inputFromPackument(doc, packageName, version) {
     rawManifest: own(versions, version) ? versions[version] : undefined,
     publishedAt: own(time, version) ? time[version] : undefined,
     rawVersions: versions,
+    // 0.1.4 A8: the document's own time map, for the stale-seed count; absent when the document has none.
+    rawTimes: doc && typeof doc.time === 'object' && doc.time !== null && !Array.isArray(doc.time) ? doc.time : undefined,
   };
 }
 
