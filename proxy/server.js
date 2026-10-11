@@ -697,6 +697,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           schema_version: seedV3.meta?.schema_version ?? null,
           corpus_snapshot_digest: seedV3.meta?.corpus_snapshot_digest ?? null,
           contract_version: seedV3.meta?.contract_version ?? null,
+          // 0.1.4 A7: how old the history behind every seed comparison is. The seed binds it (SEED_BINDING_KEYS);
+          // null when the seed does not carry it, never a guessed date.
+          history_cutoff: seedV3.meta?.history_cutoff ?? null,
           policy: {
             on_unusable_input: config.policyOnUnusableInput,
             on_no_evidence: config.policyOnNoEvidence,
