@@ -24,6 +24,7 @@ import { validateRecord } from '../../examples/ci/chaingate-ci.mjs';
 import { syntheticCases, buildSyntheticSeed } from './u01-cases.mjs';
 import { EXPLAIN_GOLDEN_IDS } from './u01-explain-goldens.capture.mjs';
 import { buildSeed, openFixtureSeed, docFor, after, LIVE, WARNCFG } from './u05-fixtures.mjs';
+import { explanationG2a } from './cft014-g2a-transform.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const V3 = path.join(HERE, '..', '..', 'seed', 'v3');
@@ -84,11 +85,12 @@ test('T-V3 /2 is byte-unchanged (the schema 0.1.3 shipped)', () => {
     '788a3f670d9d841c2deea096f56ba0bb0bae85916b4c2dbad56efbafe0f10802');
 });
 
-test('T-V3 /3 equals /2 with exactly the schema const changed', () => {
+test('T-V3 /3 equals /2 with exactly the schema const changed and NOTE added to result_row (group 2a E9)', () => {
   const want = read(S2);
   const got = read(S3);
   want.$id = 'https://chaingate.dev/schemas/chaingate-check-3.json';
   for (const shape of want.oneOf) shape.properties.schema.const = 'chaingate.check/3';
+  want.$defs.result_row.properties.result.enum = [...want.$defs.result_row.properties.result.enum, 'NOTE'];   // E9
   // title and description are prose and may name /3; nothing else may differ (explain_version stays 2)
   want.title = got.title; want.description = got.description;
   assert.deepEqual(got, want);
@@ -155,6 +157,7 @@ test('T-2 D3 + E1/E4 the 0.1.4 explanation of each explain-golden case is the en
       if (g.structured.result === 'evaluated') {
         want = { text: g.text.map(pol), structured: JSON.parse(pol(JSON.stringify(g.structured))) };
         want.structured.explain_version = 'chaingate-explain-2';
+        want = explanationG2a(want).explanation;     // 0.1.4 group 2a E6/E7, from the golden's own rows
       } else {
         // refused: an unpinned refusal is decided by the input row alone
         const reason = g.structured.refusal;

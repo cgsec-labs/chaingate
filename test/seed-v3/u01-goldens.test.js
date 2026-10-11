@@ -22,6 +22,7 @@ import { buildCheckRecord, inputFromPackument as checkInput } from '../../cli/ch
 import {
   syntheticCases, rc3Cases, buildSyntheticSeed, inputFromPackument, canonical, sha256, RC3_DIR,
 } from './u01-cases.mjs';
+import { recordG2a } from './cft014-g2a-transform.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GOLD = path.join(HERE, '..', 'fixtures', 'u01-goldens');
@@ -39,7 +40,28 @@ function expectedUnderCurrent(g) {
   out.decision.policy_version = POLICY_CURRENT;                                      // D1, E1
   assert.ok(out.gate_result.detail.startsWith(`${POLICY_1_0}: `), `${g.id}: golden detail prefix`);
   out.gate_result.detail = `${POLICY_CURRENT}: ${out.gate_result.detail.slice(POLICY_1_0.length + 2)}`;   // D2, E2
-  return out;
+  // 0.1.4 group 2a (E6, E7, E10, E11), from the golden's own frozen rows: cft014-g2a-transform.mjs
+  const { record, changed } = recordG2a(out, POLICY_CURRENT);
+  if (changed) ROWS_CHANGED.add(g.id);
+  if (record.decision.disposition !== out.decision.disposition) DISPOSITION_CHANGED.add(g.id);
+  return record;
+}
+// Which frozen cases E6/E7 touch, read from the goldens' own decision rows when the 2a tables were written (A9'(b)): the
+// transform must touch exactly these, so a wrong E6/E7 cannot hide behind an empty exception list.
+const ROWS_CHANGED = new Set();          // an `any` WARN row became NOTE
+const DISPOSITION_CHANGED = new Set();   // ...and it was the only WARN (E7)
+const ANY_ROW_CASES = {
+  synthetic: ['publisher-broke-beside-unevaluated', 'warn-trajectory'],
+  rc3: ['rc3:bufferutil.json:1.3.0', 'rc3:left-pad.json:0.0.3', 'rc3:left-pad.json:1.1.0'],
+};
+const ANY_ONLY_CASES = {
+  synthetic: ['publisher-broke-beside-unevaluated'],
+  rc3: ['rc3:bufferutil.json:1.3.0', 'rc3:left-pad.json:0.0.3', 'rc3:left-pad.json:1.1.0'],
+};
+function assertTouched(label, prefix) {
+  const pick = (s) => [...s].filter((id) => id.startsWith(prefix)).sort();
+  assert.deepEqual(pick(ROWS_CHANGED), [...ANY_ROW_CASES[label]].sort(), `${label}: cases whose any row became NOTE (E6)`);
+  assert.deepEqual(pick(DISPOSITION_CHANGED), [...ANY_ONLY_CASES[label]].sort(), `${label}: cases whose disposition moved (E7)`);
 }
 
 function viaGate(seed, c) {
@@ -112,6 +134,7 @@ test('A2 synthetic: refactored gate and check reproduce every frozen golden exac
   const seed = R.openSeed(dbPath, { trust: R.TRUST_UNSIGNED_DEV });
   try {
     assert.equal(compareAll(seed, syntheticCases(), golden, 'synthetic'), golden.n);
+    assertTouched('synthetic', '');
   } finally { seed.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -139,6 +162,7 @@ test('A2 rc3: refactored gate and check reproduce every frozen golden exactly on
     try {
       assert.equal(seed.report.content_sha256, golden.seed_sha256, 'the goldens were captured on this seed');
       assert.equal(compareAll(seed, rc3Cases(seed.db), golden, 'rc3'), golden.n);
+      assertTouched('rc3', 'rc3:');
     } finally { seed.close(); }
   });
 

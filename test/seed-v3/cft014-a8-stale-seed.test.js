@@ -129,7 +129,8 @@ test('A8 the gate detail is unchanged: the SKIP row never bears the disposition'
     const gate = G.createSeedV3Gate({ seed, config: LIVE, domainVersionCount: DVC });
     const a = gate.evaluate(inputFromPackument(GAP_DOC(), 'q', '1.5.0'));
     const b = gate.evaluate(inputFromPackument(NO_GAP_DOC(), 'q', '1.5.0'));
-    assert.deepEqual(a, b);
+    // `rows` (group 2a, E11) lists every row, so it carries the coverage row; result and detail are what bears.
+    assert.deepEqual({ result: a.result, detail: a.detail }, { result: b.result, detail: b.detail });
   });
 });
 

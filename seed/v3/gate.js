@@ -472,10 +472,17 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
     const bearing = decision.results.filter((x) => x.result === decision.disposition);
     const why = (bearing.length ? bearing : decision.results)
       .map((x) => `${x.gate}: ${x.detail}`).join(' | ');
+    // cft-policy-1.2 (0.1.4 group 2a, D-N5): contributing rows never bear the disposition, so they are shown after the
+    // bearing rows -- the detail is what `why --cached` and the store keep. (When nothing bears, `why` already lists them.)
+    const also = bearing.length ? decision.results.filter((x) => x.result === POL.NOTE)
+      .map((x) => ` | also (contributing): ${x.gate}: ${x.detail}`).join('') : '';
     return {
       gate: SEED_V3_GATE,
       result: decision.disposition,
-      detail: `${decision.policy_version}: ${why}`
+      // D-N4: the decision's rows, structured (closed vocabulary), so a reader classifies named / contributing / coverage
+      // rows without parsing the detail text.
+      rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
+      detail: `${decision.policy_version}: ${why}${also}`
         + (decision.placement ? ` [placement: ${decision.placement}]` : '')
         + (decision.evidence_complete ? '' : ` [evidence incomplete: ${decision.not_evaluated.length}`
           + ' observation(s) NOT_EVALUATED]')

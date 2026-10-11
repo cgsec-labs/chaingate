@@ -64,7 +64,18 @@ const ALLOW = 'ALLOW';
 const WARN = 'WARN';
 const BLOCK = 'BLOCK';
 const SKIP = 'SKIP';
+// cft-policy-1.2 (0.1.4 group 2a, D-N1): a ROW value, "a contributing signal fired". Never a disposition: aggregate()
+// counts only BLOCK and WARN, so a NOTE row can never make a WARN on its own (r3 §18.7, §18.15).
+const NOTE = 'NOTE';
 const DISPOSITIONS = Object.freeze([ALLOW, WARN, BLOCK]);
+// The 1.2 role of the threshold rows (r3 §18.18: the seed strict tier is named; the loose `any` rule contributes).
+// A new identity changes these deliberately; test/seed-v3/cft014-g2a-contributing.test.js guards them.
+const NAMED_ROWS = Object.freeze(['seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface']);
+const CONTRIBUTING_ROWS = Object.freeze(['seed-v3:dac-trajectory:any']);
+// Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member, D-N4).
+const POLICY_ROW_GATES = Object.freeze(['override', 'seed-v3:known-malicious-pin', 'seed-v3:input', 'seed-v3:channel-a',
+  'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage']);
+const ROW_RESULTS = Object.freeze([ALLOW, WARN, BLOCK, SKIP, NOTE]);
 
 /** The two genuinely unlocked choices, with the values an operator may pick and what each means. */
 const OPEN_CHOICES = Object.freeze({
@@ -169,7 +180,11 @@ function thresholdResults(prefix, agg) {
   for (const t of agg.thresholds) {
     const [lo, hi] = t.interval;
     const name = `${prefix}:${t.name}`;
-    if (t.threshold_determinacy === 'determinate' && t.threshold_result === true) {
+    if (t.threshold_determinacy === 'determinate' && t.threshold_result === true
+      && CONTRIBUTING_ROWS.includes(name)) {
+      out.push(r(name, NOTE, `${agg.n_broke}/${agg.M} witnesses broke, threshold ${t.threshold} `
+        + '(contributing in cft-policy-1.2: shown beside a named row, never a warning on its own)'));
+    } else if (t.threshold_determinacy === 'determinate' && t.threshold_result === true) {
       out.push(r(name, WARN, `${agg.n_broke}/${agg.M} witnesses broke, threshold ${t.threshold} `
         + '(threshold over history: warns, never blocks — D1)'));
     } else if (t.threshold_determinacy === 'determinate') {
@@ -410,9 +425,11 @@ export {
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
   thresholdResults, decide, pinFor, lookupPin, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
+  NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
 };
 export default {
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
   thresholdResults, decide, pinFor, lookupPin, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
+  NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
 };

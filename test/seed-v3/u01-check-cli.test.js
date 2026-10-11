@@ -12,6 +12,7 @@ import { writeConfig } from '../../config-store.js';
 import { openWitnessDB } from '../../witness/db.js';
 import { explain } from '../../seed/v3/explain.js';
 import { syntheticCases, buildSyntheticSeed, PROXY_POLICY } from './u01-cases.mjs';
+import { decisionG2a } from './cft014-g2a-transform.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
@@ -84,11 +85,12 @@ test('check CLI: every PROXY_POLICY synthetic golden, exit code follows the disp
   let n = 0;
   for (const g of GOLD.records.filter((r) => r.policy.on_unusable_input === 'BLOCK')) {
     const { status, rec } = checkJson(HOST, g.id);
-    assert.equal(status, EXIT[g.decision.disposition], `${g.id}: exit`);
-    assert.equal(rec.decision.disposition, g.decision.disposition, g.id);
-    assert.deepEqual(rec.decision.results, g.decision.results, g.id);
-    assert.deepEqual(rec.decision.not_evaluated, g.decision.not_evaluated, g.id);
-    if (rec.result === 'evaluated') assert.equal(rec.candidate.placement.kind, g.decision.placement, g.id);
+    const gd = decisionG2a(g.decision).decision;    // 0.1.4 group 2a E6/E7, from the golden's own rows
+    assert.equal(status, EXIT[gd.disposition], `${g.id}: exit`);
+    assert.equal(rec.decision.disposition, gd.disposition, g.id);
+    assert.deepEqual(rec.decision.results, gd.results, g.id);
+    assert.deepEqual(rec.decision.not_evaluated, gd.not_evaluated, g.id);
+    if (rec.result === 'evaluated') assert.equal(rec.candidate.placement.kind, gd.placement, g.id);
     assert.equal(rec.request.source.kind, 'packument-file');
     assert.equal(rec.request.source.sha256.length, 64);
     assert.equal(rec.seed.trust, 'unsigned-development');

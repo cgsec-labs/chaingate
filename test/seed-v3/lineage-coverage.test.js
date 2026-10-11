@@ -311,7 +311,11 @@ test('an APPEND is fully evaluated against the tip, and a break there is SEEN', 
 
     const dropped = decideFor(seed, 'p', '1.3.0', {
       publishedAt: AFTER, manifest: manifestFor('1.3.0', { dist: { unpackedSize: 1000 } }) });
-    assert.strictEqual(dropped.decision.disposition, 'WARN', 'a provenance drop at the tip surfaces');
+    // 0.1.4 (cft-policy-1.2 E6/E7): a provenance drop alone breaks one DAC predicate, which is the contributing `any` rule.
+    // The break is still SEEN -- recorded as NOTE -- and is not a warning on its own.
+    const anyRow = dropped.decision.results.find((x) => x.gate === 'seed-v3:dac-trajectory:any');
+    assert.strictEqual(anyRow.result, 'NOTE', 'a provenance drop at the tip is seen (contributing)');
+    assert.strictEqual(dropped.decision.disposition, 'ALLOW', 'one contributing signal is not a warning (E7)');
   } finally { seed.close(); }
 });
 

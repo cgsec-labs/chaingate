@@ -6,6 +6,10 @@
 // dep-structure WARN, publisher-identity WARN, provenance-continuity WARN,
 // scope-boundary WARN (V2-demoted from BLOCK). Overall disposition: WARN.
 //
+// 0.1.4 (cft-policy-1.2, group 2a E8; r3 §18.7/§18.15): these four pilot gates are CONTRIBUTING rows. Each still fires
+// and is recorded, as NOTE, and none of them is a warning on its own, so the disposition is ALLOW. The signals stay in the
+// record (detail, `why`); a named row (seed strict tier, install-introduced, N1h) is what makes a 1.2 WARN.
+//
 // V2 foundation note (Section 7 item 1 of docs/V2_DESIGN.md): during the
 // V2 dev window only content-hash can BLOCK. The four advisory signals
 // are all observed and persisted to gate_decisions, but the packument is
@@ -215,10 +219,10 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
       assert.equal(parsed['dist-tags'].latest, '1.14.1');
     });
 
-    await t.test('gate_decisions for 1.14.1: WARN with 4 gates firing WARN', async () => {
+    await t.test('gate_decisions for 1.14.1: the 4 pilot signals are recorded as NOTE (cft-policy-1.2 E8)', async () => {
       const decision = proxy.server.witnessDb.getLatestDecision('axios', '1.14.1');
-      assert.equal(decision.disposition, 'WARN',
-        'V1 post-demotion: 4 WARNs do not escalate to BLOCK');
+      assert.equal(decision.disposition, 'ALLOW',
+        'cft-policy-1.2 E8: four contributing signals and no named row: ALLOW, the signals kept as NOTE');
 
       const gateMap = {};
       for (const g of decision.gates_fired) {
@@ -232,17 +236,17 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
 
       // dep-structure: WARN (plain-crypto-js not in prior 8 versions)
       assert.ok(gateMap['dep-structure'], 'dep-structure gate should be present');
-      assert.equal(gateMap['dep-structure'].result, 'WARN');
+      assert.equal(gateMap['dep-structure'].result, 'NOTE');
       assert.match(gateMap['dep-structure'].detail, /plain-crypto-js/);
 
       // publisher-identity: WARN (email changed)
       assert.ok(gateMap['publisher-identity'], 'publisher-identity gate should be present');
-      assert.equal(gateMap['publisher-identity'].result, 'WARN');
+      assert.equal(gateMap['publisher-identity'].result, 'NOTE');
       assert.match(gateMap['publisher-identity'].detail, /publisher changed/i);
 
       // provenance-continuity: WARN (prior had OIDC, this doesn't)
       assert.ok(gateMap['provenance-continuity'], 'provenance-continuity gate should be present');
-      assert.equal(gateMap['provenance-continuity'].result, 'WARN');
+      assert.equal(gateMap['provenance-continuity'].result, 'NOTE');
 
       // release-age: ALLOW (96h > 72h threshold)
       assert.ok(gateMap['release-age'], 'release-age gate should be present');
@@ -250,8 +254,8 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
 
       // scope-boundary: WARN (V2-demoted from BLOCK; detail still names the fresh dep)
       assert.ok(gateMap['scope-boundary'], 'scope-boundary gate should be present');
-      assert.equal(gateMap['scope-boundary'].result, 'WARN',
-        'V2 foundation: scope-boundary BLOCK demoted to WARN');
+      assert.equal(gateMap['scope-boundary'].result, 'NOTE',
+        'V2 foundation demoted scope-boundary to WARN; cft-policy-1.2 records it as NOTE (contributing)');
       assert.match(gateMap['scope-boundary'].detail, /plain-crypto-js/);
     });
 

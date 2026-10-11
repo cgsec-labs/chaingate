@@ -50,8 +50,10 @@ import depStructure from './dep-structure.js';
 import provenanceContinuity from './provenance-continuity.js';
 import releaseAge from './release-age.js';
 import scopeBoundary from './scope-boundary.js';
+import { withRole, validRows } from './row-class.js';
 
-const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK']);
+// NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
+const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
 
 // First-seen baseline poisoning protection (V2 foundation, Section 7 item 4
 // of docs/V2_DESIGN.md). The constant lives in `constants.js` because
@@ -134,10 +136,12 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
       detail: 'malformed gate output',
     };
   }
+  const rows = validRows(raw.rows);   // D-N4: kept only when valid; a malformed `rows` never fails the gate
   return {
     gate: typeof raw.gate === 'string' && raw.gate ? raw.gate : moduleName,
     result: raw.result,
     detail: typeof raw.detail === 'string' ? raw.detail : '',
+    ...(rows ? { rows } : {}),
   };
 }
 
@@ -234,12 +238,12 @@ export function createGateRunner({
       }
       try {
         const raw = mod.evaluate(gateInput);
-        results.push(normalizeResult(name, raw, mod, identity));
+        results.push(withRole(normalizeResult(name, raw, mod, identity)));
       } catch (err) {
         log.warn(
           `[gates] ${name} threw on ${gateInput.packageName}@${gateInput.version}: ${err.message}`,
         );
-        results.push(moduleErrorResult(mod, name, err, log, identity));
+        results.push(withRole(moduleErrorResult(mod, name, err, log, identity)));
       }
     }
 
@@ -272,7 +276,7 @@ export function createGateRunner({
       }
       id = { ...id, overridden };
     }
-    const results = modules.map((mod) => moduleErrorResult(mod, mod?.name ?? 'anonymous', err, log, id));
+    const results = modules.map((mod) => withRole(moduleErrorResult(mod, mod?.name ?? 'anonymous', err, log, id)));
     return { disposition: aggregate(results), results, override: null };
   };
 

@@ -314,7 +314,8 @@
             "ALLOW",
             "WARN",
             "BLOCK",
-            "SKIP"
+            "SKIP",
+            "NOTE"
           ]
         },
         "detail": {

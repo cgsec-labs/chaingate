@@ -60,6 +60,9 @@ const COMBINATIONS = {
 const SCHEMA_IDS = Object.keys(COMBINATIONS);
 const DISPOSITIONS = ['ALLOW', 'WARN', 'BLOCK'];
 const RESULT_VALUES = ['ALLOW', 'WARN', 'BLOCK', 'SKIP'];
+// chaingate.check/3 (0.1.4, cft-policy-1.2) adds the row value NOTE: a contributing signal, never a warning on its own.
+// /1 and /2 records stay strict.
+const RESULT_VALUES_3 = [...RESULT_VALUES, 'NOTE'];
 const HEX64 = /^[0-9a-f]{64}$/;
 const SHAPES = {
   evaluated: ['schema', 'result', 'tool', 'request', 'seed', 'candidate', 'finding', 'decision', 'effective', 'explanation'],
@@ -169,6 +172,7 @@ const SPEC = {
     results: expect((v) => Array.isArray(v) && v.length > 0, 'a non-empty array'),
     evidence_complete: T.bool, not_evaluated: expect(Array.isArray, 'an array') },
   result_row: { gate: T.nonEmpty, result: expect(T.oneOf(RESULT_VALUES), 'ALLOW|WARN|BLOCK|SKIP'), detail: T.str },
+  result_row_3: { gate: T.nonEmpty, result: expect(T.oneOf(RESULT_VALUES_3), 'ALLOW|WARN|BLOCK|SKIP|NOTE'), detail: T.str },
   not_evaluated_row: { where: T.nonEmpty, name: T.nonEmpty, reason: T.nstr,
     stated_by: expect(T.constant('placement'), '"placement"') },
   effective: { action: expect(T.oneOf(DISPOSITIONS), 'ALLOW|WARN|BLOCK'),
@@ -208,7 +212,8 @@ export function validateRecord(rec) {
   checkObject('seed', rec.seed, SPEC.seed, p);
   const d = rec.decision;
   if (checkObject('decision', d, SPEC.decision, p)) {
-    if (Array.isArray(d.results)) d.results.forEach((r, i) => checkObject(`decision.results[${i}]`, r, SPEC.result_row, p));
+    const rowSpec = rec.schema === 'chaingate.check/3' ? SPEC.result_row_3 : SPEC.result_row;
+    if (Array.isArray(d.results)) d.results.forEach((r, i) => checkObject(`decision.results[${i}]`, r, rowSpec, p));
     if (Array.isArray(d.not_evaluated)) {
       d.not_evaluated.forEach((m, i) => checkObject(`decision.not_evaluated[${i}]`, m, SPEC.not_evaluated_row, p,
         { optional: ['stated_by'] }));

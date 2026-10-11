@@ -185,23 +185,24 @@ test('shai-hulud: publisher takeover across 3 packages', async (t) => {
           assert.ok(v.ver in parsed.versions, `${v.ver} should be present (WARN does not strip)`);
         }
 
-        // Overall disposition: WARN (1 WARN, below 4-WARN escalation threshold)
+        // 0.1.4 (cft-policy-1.2 E8; r3 §18.7): publisher-identity is a CONTRIBUTING row. It still fires and is recorded,
+        // as NOTE; on its own it is not a warning, so the disposition is ALLOW.
         const decision = proxy.server.witnessDb.getLatestDecision(pkg.name, pkg.attackVersion);
         assert.ok(decision, `decision should exist for ${pkg.name}@${pkg.attackVersion}`);
-        assert.equal(decision.disposition, 'WARN');
+        assert.equal(decision.disposition, 'ALLOW');
 
-        // publisher-identity gate fired WARN
+        // publisher-identity gate fired (recorded as NOTE)
         const pubGate = decision.gates_fired.find((g) => g.gate === 'publisher-identity');
         assert.ok(pubGate, 'publisher-identity gate should be in gates_fired');
-        assert.equal(pubGate.result, 'WARN');
+        assert.equal(pubGate.result, 'NOTE');
         assert.match(pubGate.detail, /publisher changed/i);
 
         // Other gates should NOT be WARN or BLOCK (isolated signal)
         const otherFiring = decision.gates_fired.filter(
           (g) => g.gate !== 'first-seen' && g.gate !== 'publisher-identity' &&
-                 (g.result === 'WARN' || g.result === 'BLOCK'),
+                 (g.result === 'WARN' || g.result === 'BLOCK' || g.result === 'NOTE'),
         );
-        assert.equal(otherFiring.length, 0, 'only publisher-identity should fire WARN/BLOCK');
+        assert.equal(otherFiring.length, 0, 'only publisher-identity should fire (WARN/BLOCK/NOTE)');
       });
     }
   } finally {
