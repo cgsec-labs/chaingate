@@ -175,3 +175,11 @@ test('A8 through the proxy: the witness store passes the time map, so the decisi
     seed.close(); s.cleanup(); fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('A8 the gap index is built once per document (no per-candidate rescan), and only for the versions map it was built with', () => {
+  const doc = GAP_DOC();
+  const a = G.gapIndexFor(doc.time, doc.versions);
+  assert.equal(G.gapIndexFor(doc.time, doc.versions), a, 'same document: the memoised index');
+  assert.notEqual(G.gapIndexFor(doc.time, { ...doc.versions }), a, 'another versions map: rebuilt');
+  assert.deepEqual(a.get('1').map(([, v]) => v), ['1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0']);
+});

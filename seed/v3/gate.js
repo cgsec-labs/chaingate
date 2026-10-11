@@ -239,6 +239,37 @@ function resolvePlacement(seed, packageName, version, publishedS) {
     + 'seed did not retain, not a new release, and its position in the chain is not recoverable');
 }
 
+// The gap index is computed ONCE PER DOCUMENT, like the domain map above: the store evaluates every version of a
+// packument, and scanning the whole time map per candidate was quadratic (N candidates x N entries). Keyed on the
+// `time{}` object itself, and valid only for the `versions{}` object it was built with.
+const GAP_INDEX = new WeakMap();
+
+/** major -> [[published_s, version], ...] sorted, over served, timed, non-stub releases of this document. */
+function gapIndexFor(times, versions) {
+  const memo = GAP_INDEX.get(times);
+  if (memo && memo.versions === versions) return memo.byMajor;
+  const byMajor = new Map();
+  for (const [v, t] of Object.entries(times)) {
+    if (typeof t !== 'string' || !Object.prototype.hasOwnProperty.call(versions, v) || isStub(v)) continue;
+    let s;
+    try { s = A.publishedSeconds(t); } catch { continue; }
+    if (s === null || s === undefined) continue;
+    const m = majorOf(v);
+    if (!byMajor.has(m)) byMajor.set(m, []);
+    byMajor.get(m).push([s, v]);
+  }
+  for (const arr of byMajor.values()) arr.sort((a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  GAP_INDEX.set(times, { versions, byMajor });
+  return byMajor;
+}
+
+/** First index in sorted `arr` whose published second satisfies `pred` (monotone), or arr.length. */
+function firstIndex(arr, pred) {
+  let lo = 0; let hi = arr.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (pred(arr[mid][0])) hi = mid; else lo = mid + 1; }
+  return lo;
+}
+
 /**
  * 0.1.4 A8 (cft-policy-1.2; seed-base table R7/P3): how many registry releases sit between the seed tip and an `append`
  * candidate. Channel-A compares against the tip (R1) whatever the registry published since; this only COUNTS what the
@@ -260,17 +291,11 @@ function staleSeedGap(seed, place, input, candidateS, version) {
   const versions = input.rawVersions;
   const isMap = (o) => o !== null && typeof o === 'object' && !Array.isArray(o);
   if (!isMap(times) || !isMap(versions)) return { checked: false, tip };
-  const major = majorOf(version);
-  const gap = [];
-  for (const [v, t] of Object.entries(times)) {
-    if (v === version || typeof t !== 'string' || !Object.prototype.hasOwnProperty.call(versions, v)) continue;
-    if (isStub(v) || majorOf(v) !== major) continue;
-    let s;
-    try { s = A.publishedSeconds(t); } catch { continue; }
-    if (s === null || s === undefined || !(s > ln.last_published_s && s < candidateS)) continue;
-    gap.push([s, v]);
-  }
-  gap.sort((a, b) => (a[0] - b[0]) || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  const arr = gapIndexFor(times, versions).get(majorOf(version)) || [];
+  // strictly after the tip, strictly before the candidate (the candidate itself sits at candidateS and is excluded)
+  const lo = firstIndex(arr, (s) => s > ln.last_published_s);
+  const hi = firstIndex(arr, (s) => s >= candidateS);
+  const gap = hi > lo ? arr.slice(lo, hi) : [];
   return { checked: true, k: gap.length, tip, versions: gap.map(([, v]) => v) };
 }
 
@@ -489,7 +514,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
 
 export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
-  resolveDomainVersionCount, domainCountsFor, staleSeedGap };
+  resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor };
 export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
-  resolveDomainVersionCount, domainCountsFor, staleSeedGap };
+  resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor };
