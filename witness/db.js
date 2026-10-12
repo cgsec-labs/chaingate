@@ -106,6 +106,25 @@ CREATE TABLE IF NOT EXISTS dep_first_publish (
     attempts      INTEGER NOT NULL DEFAULT 1
 );
 
+-- 0.1.4 group 2c (D-R2, O3, E20): the only per-install facts kept on disk -- named warnings served, refusals resting on a
+-- fact, and dist-tags moved off a fact-withheld version. Written by the proxy once per install and event; pruned at its
+-- start (365 days, at most 100,000 rows). Its statements are prepared LAZILY (namedFactStmts), never in _prepare(): a
+-- read-only handle on a database the 0.1.3 code created has no such table, and must still open (it reads as empty).
+CREATE TABLE IF NOT EXISTS named_fact_events (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    at             TEXT NOT NULL,
+    kind           TEXT NOT NULL CHECK (kind IN ('named-served','fact-refused','fact-tag-moved')),
+    package_name   TEXT NOT NULL,
+    version        TEXT NOT NULL,
+    classes        TEXT NOT NULL,
+    reason         TEXT,
+    policy_version TEXT,
+    seed_sha256    TEXT,
+    install_key    TEXT,
+    k_version      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_named_fact_events_at ON named_fact_events(at);
+
 CREATE INDEX IF NOT EXISTS idx_versions_pkg      ON versions(package_id);
 CREATE INDEX IF NOT EXISTS idx_versions_pub_at   ON versions(package_id, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vfiles_ver        ON version_files(version_id);
@@ -345,6 +364,59 @@ export class WitnessDB {
       return versionId;
     });
     return write(packageName, version, data);
+  }
+
+  /**
+   * 0.1.4 group 2c (D-R2): the named_fact_events statements, prepared on first use. Null when the table does not exist
+   * (a database the 0.1.3 code created, opened read-only): readers treat that as empty.
+   */
+  _namedFactStmts() {
+    if (this._nfStmts !== undefined) return this._nfStmts;
+    const exists = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'named_fact_events'").get();
+    if (!exists) return null;                 // not cached: applySchema on a read-write handle may create it later
+    this._nfStmts = {
+      insert: this.db.prepare(
+        `INSERT INTO named_fact_events (at, kind, package_name, version, classes, reason, policy_version, seed_sha256,
+           install_key, k_version)
+         VALUES (@at, @kind, @package_name, @version, @classes, @reason, @policy_version, @seed_sha256, @install_key, @k_version)`,
+      ),
+      since: this.db.prepare(
+        `SELECT id, at, kind, package_name, version, classes, reason, policy_version, seed_sha256, install_key, k_version
+         FROM named_fact_events WHERE at >= ? ORDER BY at ASC, id ASC LIMIT ?`,
+      ),
+      pruneOlder: this.db.prepare('DELETE FROM named_fact_events WHERE at < ?'),
+      pruneBeyond: this.db.prepare(
+        `DELETE FROM named_fact_events WHERE id NOT IN
+           (SELECT id FROM named_fact_events ORDER BY at DESC, id DESC LIMIT ?)`,
+      ),
+    };
+    return this._nfStmts;
+  }
+
+  insertNamedFactEvent(e) {
+    const st = this._namedFactStmts();
+    if (!st) throw new Error('the named_fact_events table does not exist (applySchema was not run on this handle)');
+    return st.insert.run({ at: e.at, kind: e.kind, package_name: e.package_name, version: e.version,
+      classes: JSON.stringify(e.classes ?? {}), reason: e.reason ?? null, policy_version: e.policy_version ?? null,
+      seed_sha256: e.seed_sha256 ?? null, install_key: e.install_key ?? null, k_version: e.k_version ?? null }).lastInsertRowid;
+  }
+
+  /** Rows at or after `sinceIso` (ISO 8601; default: all), oldest first, at most `limit`. A missing table reads as empty. */
+  listNamedFactEvents({ sinceIso = '', limit = 10_000 } = {}) {
+    const st = this._namedFactStmts();
+    if (!st) return [];
+    return st.since.all(sinceIso, limit).map((r) => {
+      let classes;
+      try { classes = JSON.parse(r.classes); } catch { classes = {}; }
+      return { ...r, classes };
+    });
+  }
+
+  pruneNamedFactEvents({ maxAgeDays = 365, maxRows = 100_000, now = Date.now() } = {}) {
+    const st = this._namedFactStmts();
+    if (!st) return 0;
+    const cutoff = new Date(now - maxAgeDays * 86_400_000).toISOString();
+    return st.pruneOlder.run(cutoff).changes + st.pruneBeyond.run(maxRows).changes;
   }
 
   insertGateDecision(packageName, version, disposition, gatesFired) {

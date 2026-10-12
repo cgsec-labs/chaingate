@@ -20,6 +20,7 @@ const COMMANDS = {
   doctor: () => import('./commands/doctor.js'),
   check: () => import('./commands/check.js'),
   overrides: () => import('./commands/overrides.js'),
+  report: () => import('./commands/report.js'),
 };
 
 function printUsage() {
@@ -36,6 +37,7 @@ Commands:
   doctor            Check local invariants (6 health checks)
   check <p@v>       Evaluate a release from --packument <file> (CI exit codes)
   overrides         List or revoke overrides
+  report            What the proxy served and refused in the last install (--all | --since <dur>)
 
 Options:
   --help            Show this help message
@@ -86,6 +88,8 @@ async function main() {
       doctor: 'chaingate doctor [--json] [--scope user|project]',
       check: 'chaingate check <package>@<version> --packument <file> [--json] [--scope user|project]\n  Exit codes (follow the effective action): 0=ALLOW, 2=WARN, 3=BLOCK, 4=tool error',
       overrides: 'chaingate overrides [list|revoke <package>@<version>] [--json] [--scope user|project]',
+      report: 'chaingate report [--all | --since <dur>] [--json] [--scope user|project]\n'
+        + '  Exit codes: 0=nothing named, refused or tag-moved, 2=named warnings, 3=a refusal or a moved dist-tag, 4=tool error or incomplete record',
     };
     console.log(HELP[cmd] ?? `chaingate ${cmd}`);
     process.exit(EXIT.OK);

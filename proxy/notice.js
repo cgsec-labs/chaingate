@@ -26,6 +26,11 @@ const printable = (s) => String(s).replace(/[^\x20-\x7e]/g, '');
 const validId = (pkg, version) => typeof pkg === 'string' && pkg.length <= 214 && NAME_RE.test(pkg)
   && typeof version === 'string' && version.length <= 256 && SEMVER_RE.test(version);
 
+/** The closed-vocabulary label of one classification key, or null (shared with `chaingate report`, 2c D-R4/D-R6). */
+export function labelFor(key) {
+  return Object.hasOwn(LABELS, key) ? LABELS[key] : null;
+}
+
 /** A validated `pkg@version`, or null. */
 export function identity(pkg, version) {
   return validId(pkg, version) ? `${pkg}@${version}` : null;
@@ -51,4 +56,4 @@ export function sanitizeUpstreamNotice(value) {
   return `registry: ${printable(v).slice(0, UPSTREAM_MAX)}`;
 }
 
-export default { buildNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL, NOTICE_MAX_BYTES };
+export default { buildNotice, sanitizeUpstreamNotice, identity, labelFor, NOTICE_CACHE_CONTROL, NOTICE_MAX_BYTES };

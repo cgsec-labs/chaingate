@@ -102,7 +102,45 @@ export function classSignature(disposition, results) {
   return JSON.stringify([disposition ?? null, c.named, c.contributing, c.facts, policyPrefix(results)]);
 }
 
-export default { classify, classSignature, policyPrefix, decidingReason, factsFromBits, pendingFacts };
+/**
+ * 0.1.4 group 2c (D-R7, dated note 6.4): whether any named rule checked a decision, from the seed-v3 GateResult's `rows`
+ * member (gate and result only; no free text, no placement kind). The first rule that matches decides:
+ *   no-seed         no seed-v3 result
+ *   earlier-policy  a rowless seed-v3 result with a 1.0 / 1.1 prefix (written before re-evaluation)
+ *   failed          any other rowless seed-v3 result (the runner's plain-value fallback), or any `seed-v3:input` row
+ *   not-covered     Channel-A could not place the release (an unsuffixed `seed-v3:channel-a` row) and no named row is
+ *                   determinate
+ *   indeterminate   a named row SKIP, or no named row at all
+ *   checked         every named row present is determinate (ALLOW or WARN)
+ * The `seed-v3:coverage` "nothing evaluated" row is not read: it exists only under on_no_evidence WARN.
+ */
+export function coverageClass(results) {
+  const s = (Array.isArray(results) ? results : []).find((x) => x && x.gate === 'seed-v3');
+  if (!s) return 'no-seed';
+  if (!Array.isArray(s.rows)) {
+    return typeof s.detail === 'string' && LEGACY_PREFIXES.some((p) => s.detail.startsWith(p)) ? 'earlier-policy' : 'failed';
+  }
+  const rows = s.rows.filter((r) => r && typeof r === 'object');
+  if (rows.some((r) => r.gate === 'seed-v3:input')) return 'failed';
+  const namedRows = rows.filter((r) => NAMED.has(r.gate));
+  const determinate = (r) => r.result === 'ALLOW' || r.result === 'WARN';
+  if (rows.some((r) => r.gate === 'seed-v3:channel-a') && !namedRows.some(determinate)) return 'not-covered';
+  if (!namedRows.length || !namedRows.every(determinate)) return 'indeterminate';
+  return 'checked';
+}
+
+/**
+ * 0.1.4 group 2c (D-R1, dated note 6.5): the class of a SERVED tarball's decision -- named > not-checked > contributing >
+ * clean -- with its coverage class and the named and contributing rows.
+ */
+export function servedClass(results) {
+  const c = classify(results);
+  const coverage = coverageClass(results);
+  const cls = c.named.length ? 'named' : (coverage !== 'checked' ? 'not-checked' : (c.contributing.length ? 'contributing' : 'clean'));
+  return { class: cls, coverage, named: c.named, contributing: c.contributing };
+}
+
+export default { classify, classSignature, policyPrefix, decidingReason, factsFromBits, pendingFacts, coverageClass, servedClass };
 
 /** Rank of one row for the deciding reason (D-V1): fact 0, named 1, coverage 2, other 3, synthetic chaingate 4. */
 function rank(x) {

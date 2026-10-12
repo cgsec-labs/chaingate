@@ -182,7 +182,7 @@ test('G2c-7b (D-R6) the tag moved off a pinned `latest` is reported, with "npm i
       'p: dist-tag latest moved from 1.3.0 to 1.2.0: a recorded advisory names this version — npm installed 1.2.0'), text('npm-session:sesstag1'));
     const t2 = text('npm-session:sesstag2');
     assert.ok(t2.includes('p: dist-tag latest moved from 1.3.0 to 1.2.0: a recorded advisory names this version'), t2);
-    assert.ok(!t2.includes('npm installed'));
+    assert.ok(!t2.includes('— npm installed'), 'the D-R6 suffix (the cache footer also says "npm installed")');
     const latest = (await get(`${proxyUrl}/_chaingate/report`)).json;
     assert.deepEqual(latest.installs.map((i) => i.key), ['npm-session:sesstag2'], 'by default: the latest install with a tarball');
   });

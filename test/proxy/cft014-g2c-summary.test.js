@@ -273,7 +273,7 @@ test('G2c-7a (D-R6) fact lines: refused, and a tag moved (with "npm installed" o
   assert.ok(withServe.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version — npm could not install it'));
   const noServe = renderReport(payload([tag, served('a', '1.0.0')]), { source: 'proxy' }).text;
   assert.ok(noServe.includes('p: dist-tag latest moved from 1.3.0 to 1.2.0: a recorded advisory names this version'));
-  assert.ok(!noServe.includes('npm installed'));
+  assert.ok(!noServe.includes('— npm installed'), 'the D-R6 suffix (the cache footer also says "npm installed")');
   const dropped = renderReport(payload([{ ...tag, to: null }, served('a', '1.0.0')]), { source: 'proxy' }).text;
   assert.ok(dropped.includes('p: dist-tag latest dropped (was 1.3.0): a recorded advisory names this version'), dropped);
   const nonFact = renderReport(payload([refused('x', '1.0.0', [], { status: 503, reason: 'seed-v3: cft-policy-1.2: seed-v3:input: boom' })]), { source: 'proxy' }).text;

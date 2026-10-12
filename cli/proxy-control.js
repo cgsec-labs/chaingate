@@ -83,21 +83,30 @@ export function spawnProxy({ pidFile, logFile, env = {} }) {
 
 /** GET /_chaingate/self with its own deadline and a 64 KiB response cap. Never throws. */
 export function fetchSelf(host, port, timeoutMs = 1500) {
+  return fetchLocalJson(host, port, '/_chaingate/self', { timeoutMs, maxBytes: 65536 });
+}
+
+/**
+ * GET a JSON object from the local proxy. Never throws: { ok: true, json } or { ok: false, why, status? }. `fetchSelf` is
+ * this with a 64 KiB cap; `chaingate report` (0.1.4 group 2c) reads `/_chaingate/report` with a larger one.
+ */
+export function fetchLocalJson(host, port, path, { timeoutMs = 1500, maxBytes = 65536 } = {}) {
+  const limit = maxBytes >= 1048576 ? `${maxBytes / 1048576} MiB` : `${maxBytes / 1024} KiB`;
   return new Promise((resolve) => {
     let done = false;
     const finish = (r) => { if (!done) { done = true; clearTimeout(timer); resolve(r); } };
-    const req = http.get({ host, port, path: '/_chaingate/self', agent: false, timeout: timeoutMs }, (res) => {
+    const req = http.get({ host, port, path, agent: false, timeout: timeoutMs }, (res) => {
       let size = 0; const chunks = [];
       res.on('data', (c) => {
         size += c.length;
-        if (size > 65536) { req.destroy(); finish({ ok: false, why: 'answered with more than 64 KiB' }); return; }
+        if (size > maxBytes) { req.destroy(); finish({ ok: false, why: `answered with more than ${limit}` }); return; }
         chunks.push(c);
       });
       res.on('end', () => {
         const body = Buffer.concat(chunks).toString('utf8');
         let json = null;
         try { json = JSON.parse(body); } catch { /* not JSON */ }
-        if (res.statusCode !== 200) finish({ ok: false, why: `answered HTTP ${res.statusCode}` });
+        if (res.statusCode !== 200) finish({ ok: false, why: `answered HTTP ${res.statusCode}`, status: res.statusCode });
         else if (!json || typeof json !== 'object' || Array.isArray(json)) finish({ ok: false, why: 'answered, but not with a JSON object' });
         else finish({ ok: true, json });
       });

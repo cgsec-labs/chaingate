@@ -24,8 +24,12 @@ import { createUnstoredBlocks, validateCaps } from './unstored-blocks.js';
 import { createEvaluationTracker, EvaluationBusy } from './evaluation-tracker.js';
 import { createLogBoundary } from './log-boundary.js';
 // 0.1.4 group 2b (D-V1..D-V5): the deciding reason, the row classes, and ChainGate's npm-notice.
-import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts } from '../witness/row-class.js';
+import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts, policyPrefix, servedClass } from '../witness/row-class.js';
 import { buildNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
+// 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
+import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
+import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
+import { POLICY_CONTRACT_VERSION } from '../seed/v3/policy.js';
 import { storageReport } from './storage-health.js';
 import { createDepFetcher } from './dep-fetcher.js';
 
@@ -327,6 +331,32 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
             tail: `(dist-tag ${tag} ${to})` });
           break;
         }
+        // 2c (D-R1, D-R2, D-R6): every dist-tag moved off a withheld version is an install event (on disk when it rests on
+        // a fact); withheld versions no tag pointed at are context only.
+        const reasonOf = (v) => {
+          const d = decisions.get(v);
+          return Array.isArray(d?.held?.rows) ? decidingReason(d.held.rows, 'BLOCK') : decidingReason(d?.results, 'BLOCK');
+        };
+        const policyOf = (v) => {
+          const d = decisions.get(v);
+          return policyPrefix(Array.isArray(d?.held?.rows) ? d.held.rows : d?.results);
+        };
+        const moved = new Set();
+        for (const d of summary.dist_tag_downgrades) {
+          moved.add(d.from);
+          const facts = factOf(d.from);
+          const tag = /^[A-Za-z0-9._-]{1,64}$/.test(String(d.tag)) ? d.tag : 'a dist-tag';
+          const to = d.to == null ? null : String(d.to);
+          state.note?.({ kind: 'tag-moved', package: packageName, tag, from: d.from, to, facts, reason: reasonOf(d.from) },
+            facts.length ? { kind: 'fact-tag-moved', package_name: packageName, version: d.from, classes: { tag, to, facts },
+              reason: reasonOf(d.from), policy_version: policyOf(d.from) } : null);
+        }
+        const withheld = summary.blocked.filter((b) => !moved.has(b.version));
+        if (withheld.length) {
+          state.note?.({ kind: 'withheld', package: packageName,
+            versions: withheld.slice(0, 20).map((b) => ({ version: b.version, facts: factOf(b.version) })),
+            more: Math.max(0, withheld.length - 20) });
+        }
         for (const w of summary.warned) {
           log?.info?.(`[gate] ${packageName}@${w.version}: WARN (${w.reason || 'no detail'})`);
         }
@@ -400,6 +430,7 @@ function enforceWhileFull(db, canonicalName, filename, log, ctx, state) {
     if (ctx.overriddenLive?.(canonicalName, version)) {
       log?.info?.(`[override] ${canonicalName}@${version}: allowing while the unstored-BLOCK record is full`);
       state.tarballDecided = true;
+      state.override = true;                                   // 2c (dated note 6.5): served under an exact override
       return null;
     }
     const known = ctx.unstored?.get(canonicalName, version) ?? null;
@@ -469,6 +500,7 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
     if (ctx.overriddenLive?.(canonicalName, version)) {
       log?.info?.(`[override] ${canonicalName}@${version}: allowing a BLOCK that was not stored`);
       state.tarballDecided = true;
+      state.override = true;
       return null;
     }
     state.blockFacts = factsFromBits(known.reasons);    // dated note 5.3: the held reason bits, never the newest text
@@ -498,6 +530,7 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
   if (override) {
     log?.info?.(`[override] ${canonicalName}@${version}: allowing (reason: ${override.reason})`);
     state.tarballDecided = true;
+    state.override = true;
     return null;
   }
   // U-05 owner decision 10 (C2): the decision that APPLIES under the one applicable-BLOCK rule (witness/decision-rule.js),
@@ -677,6 +710,35 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   const tracker = witness ? createEvaluationTracker(hooks.c1 ?? {}) : null;
   const ctx = { unstored, failuresBlock, lookupErrorsRefuse, overriddenLive, counters, tracker };
 
+  // 0.1.4 group 2c (D-R1, D-R2): what this process served and refused, per install (memory), and the named and fact events
+  // also kept on disk, once per install. Neither can fail a request: a recording error is logged and counted.
+  const startedAt = new Date().toISOString();
+  const installs = createInstallSummary(hooks.installSummary ?? {});
+  const reportCounters = { record_failures: 0, disk_failures: 0, disk_pruned: 0 };
+  if (witnessDb) {
+    try { reportCounters.disk_pruned = witnessDb.pruneNamedFactEvents(); } catch (err) {
+      log?.warn?.(`[report] could not prune the named/fact event record: ${err.message}`);
+    }
+  }
+  const seedSha = () => seedV3?.report?.content_sha256 ?? null;
+  function noteInstall(req, event, disk = null) {
+    let recorded;
+    try {
+      recorded = installs.record({ session: req.headers['npm-session'], client: req.socket?.remoteAddress }, event);
+    } catch (err) {
+      reportCounters.record_failures += 1;
+      log?.warn?.(`[report] could not record a ${event.kind} event: ${err.message}`);
+      return;
+    }
+    if (!disk || !recorded.fresh || !witnessDb) return;
+    try {
+      witnessDb.insertNamedFactEvent({ ...disk, at: recorded.at, install_key: recorded.key, seed_sha256: seedSha() });
+    } catch (err) {
+      reportCounters.disk_failures += 1;
+      log?.warn?.(`[report] could not write a ${disk.kind} event to disk: ${err.message}`);
+    }
+  }
+
   /**
    * C1: evaluate a package exactly as a resolving request would (the same upstream client, metadata and observation),
    * without serving its document. Returns { ok } or { ok: false, why }. Marks only the versions actually evaluated.
@@ -730,6 +792,26 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     // Internal self-attestation endpoint for `chaingate doctor` — lets the CLI
     // confirm the running proxy matches the installed CLI. Bound to the same
     // 127.0.0.1 interface as the rest of the proxy; exposes no secrets.
+    // 0.1.4 group 2c (D-R1, E19, dated note 6.9): the install summary for `chaingate report`. It lists installed package
+    // names, so only a loopback peer gets it.
+    if (url.pathname === '/_chaingate/report') {
+      if (!isLoopbackPeer(req.socket?.remoteAddress)) {
+        writeJson(res, 404, { error: 'not_found', path: url.pathname });
+        return;
+      }
+      const snap = installs.snapshot({ all: url.searchParams.get('all') === '1' });
+      writeJson(res, 200, {
+        service: 'chaingate-proxy',
+        version: PROXY_VERSION,
+        started_at: startedAt,
+        policy: seedV3 ? POLICY_CONTRACT_VERSION : null,
+        seed: seedV3 ? { sha256: seedSha(), history_cutoff: seedV3.meta?.history_cutoff ?? null, trust: config.seedV3Trust } : null,
+        installs: snap.installs,
+        stats: { ...snap.stats, ...reportCounters },
+      }, { 'cache-control': 'no-store' });
+      return;
+    }
+
     if (url.pathname === '/_chaingate/self') {
       writeJson(res, 200, {
         service: 'chaingate-proxy',
@@ -780,6 +862,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
 
     const canonicalName = normalizePackageName(route.name);
     const state = {};            // U-05 Amendment 2 (P5a): set when a BLOCK was computed for this request
+    state.note = (event, disk) => noteInstall(req, event, disk);
 
     try {
       if (route.kind === 'packument') {
@@ -808,6 +891,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         // waste bandwidth on something we're going to refuse.
         const blocked = enforceTarballGate(witnessDb, canonicalName, route.filename, log, ctx, state);
         if (blocked?.refuse) {
+          noteInstall(req, { kind: 'refused', package: canonicalName, version: state.tarballVersion ?? null, facts: [],
+            status: blocked.refuse.status, reason: blocked.refuse.detail, policy: null });
           writeJson(res, blocked.refuse.status, { error: blocked.refuse.error, package: canonicalName,
             detail: blocked.refuse.detail });
           return;
@@ -815,6 +900,11 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         if (blocked) {
           // D-V4: a refusal resting on a fact names it in npm's own output (a 403 is never cached, so npm prints it).
           const facts = Array.isArray(state.blockFacts) ? state.blockFacts : [];
+          const reason = blocked.reason ?? blocked.detail ?? null;
+          const policy = Array.isArray(blocked.gates) ? policyPrefix(blocked.gates) : null;
+          noteInstall(req, { kind: 'refused', package: canonicalName, version: blocked.version, facts, status: 403, reason, policy },
+            facts.length ? { kind: 'fact-refused', package_name: canonicalName, version: blocked.version, classes: { facts },
+              reason, policy_version: policy } : null);
           const notice = facts.length ? buildNotice({ kind: 'BLOCKED', pkg: canonicalName, version: blocked.version, labels: facts }) : null;
           writeJson(res, 403, { error: 'blocked_by_chaingate', ...blocked }, notice ? { 'npm-notice': notice } : {});
           return;
@@ -833,6 +923,25 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           config,
           requestHeaders: req.headers,
         });
+        if (upstream.statusCode === 200 && state.tarballVersion != null) {
+          // 2c (D-R1, D-R5): what was served, classed from the record the gate applied; K for a named warning, now.
+          const cls = state.override ? { class: 'override', coverage: null, named: [], contributing: [] }
+            : (latest ? servedClass(latest.gates_fired) : { class: 'not-checked', coverage: 'failed', named: [], contributing: [] });
+          const reason = latest && !state.override ? decidingReason(latest.gates_fired, latest.disposition)
+            : (state.override ? 'served under an exact-version override (chaingate allow)' : 'served without a stored decision');
+          const policy = latest && !state.override ? policyPrefix(latest.gates_fired) : null;
+          let k = null;
+          if (cls.class === 'named' && witnessDb) {
+            try { k = lastVersionWithoutSignal(witnessDb, canonicalName, state.tarballVersion); } catch (err) {
+              log?.warn?.(`[report] ${canonicalName}@${state.tarballVersion}: last version without the signal not computed: ${err.message}`);
+            }
+          }
+          noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion, ...cls, reason, policy,
+            notice: Boolean(notice), k },
+          cls.class === 'named' ? { kind: 'named-served', package_name: canonicalName, version: state.tarballVersion,
+            classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage,
+              history_cutoff: seedV3?.meta?.history_cutoff ?? null }, reason, policy_version: policy, k_version: k } : null);
+        }
         await streamUpstream(res, upstream, upstream.statusCode,
           notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null);
       }
