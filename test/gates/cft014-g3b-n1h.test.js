@@ -24,11 +24,11 @@ test('G3b-1 (D-N1) judged fields: deps, optional, non-optional peers; first fiel
 test('G3b-2 (D-N1) added: absent from every ELIGIBLE earlier version (stubs and npm-published placeholders ignored)', () => {
   const versions = {
     '1.0.0': { dependencies: { a: '1' } },
-    '1.0.1-security': { dependencies: { x: '1' } },                                       // a stub: not eligible
+    '0.0.1-security': { dependencies: { x: '1' } },                                       // a stub: not eligible
     '1.0.2': { dependencies: { y: '1' }, _npmUser: { name: 'npm', email: 'npm@npmjs.com' } }, // npm placeholder
     '1.1.0': { dependencies: { a: '1', x: '1', y: '1', z: 'github:o/r' } },
   };
-  const time = { '1.0.0': at(0), '1.0.1-security': at(1), '1.0.2': at(2), '1.1.0': at(3) };
+  const time = { '1.0.0': at(0), '0.0.1-security': at(1), '1.0.2': at(2), '1.1.0': at(3) };
   assert.deepEqual(N.addedDeps(versions, time, '1.1.0').map((d) => d.name).sort(), ['x', 'y', 'z']);
   assert.deepEqual(N.addedDeps(versions, time, '1.0.0'), null, 'no eligible earlier version: not judged');
 });

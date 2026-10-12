@@ -28,6 +28,9 @@ import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts, 
 import { buildNotice, pinNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
 // 0.1.4 group 2d (D-U3, D-U5, D-U6): the user's pins (a live serving overlay) and acceptances.
 import { createPinSet, withheldBy } from '../witness/pins.js';
+// 0.1.4 group 3b (D-N3, D-N4): N1h judged at tarball time, bounded; the dependency cache's stats on /self
+import { judgeAtTarball } from './dependency-judge.js';
+import { dependencyCacheStats } from '../gates/dependency-cache.js';
 // 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
@@ -898,6 +901,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         unstored_blocks: unstored.describe(),
         // 0.1.4 group 2d (E26): whether this process enforces the user's pins, and what it holds
         pins: pinSet ? pinSet.stats() : { enforced: false, count: 0, generation: 0, last_error: 'no witness database' },
+        dependency_cache: dependencyCacheStats(),                 // 0.1.4 group 3b (E34)
         evaluation: tracker ? tracker.stats() : null,
         // U-05 gap-closure r2, Addendum 1 §B: the process's decision-storage state, from its own signals.
         storage: storageReport({ health: witness?.storageHealth?.() ?? null, count: unstored.count,
@@ -981,6 +985,17 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           writeJson(res, 403, { error: 'withheld_by_pin', package: canonicalName, version: state.tarballVersion, pinned_to: pin.k_version,
             detail }, notice ? { 'npm-notice': notice } : {});
           return;
+        }
+        // 0.1.4 group 3b (D-N3): N1h's pending dependencies are fetched and judged now, before the notice is decided.
+        if (state.applicable?.latest && !state.override && state.tarballVersion != null && witnessDb) {
+          try {
+            const wrote = await judgeAtTarball({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion,
+              latest: state.applicable.latest, fetchPackument, config, authorization: req.headers.authorization,
+              budgetMs: hooks.dependencyBudgetMs, log });
+            if (wrote) state.applicable = witnessDb.getApplicableDecision(canonicalName, state.tarballVersion, { overrideLive: false });
+          } catch (err) {
+            log?.warn?.(`[n1h] ${canonicalName}@${state.tarballVersion}: not judged at download (${err.message})`);
+          }
         }
         // D-V3: a named WARN is said at the moment its tarball is fetched: a reserved log line and npm's own output.
         let named = [];

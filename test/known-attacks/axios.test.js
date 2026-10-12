@@ -30,6 +30,7 @@ import { join } from 'node:path';
 import { request as undiciRequest } from 'undici';
 
 import { createProxyServer } from '../../proxy/server.js';
+import { resetDependencyCache } from '../../gates/dependency-cache.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -298,6 +299,7 @@ test('axios-shaped VARIANT with an install hook in 1.14.1 (a fixture device; the
 });
 
 test('axios REAL shape (no hook in 1.14.1; the hook is in the injected dependency): ALLOW at observation, N1h WARN at the tarball (3b)', async () => {
+  resetDependencyCache();          // the cache is per process: the variant test above cached plain-crypto-js as a 404
   const { path: dbPath, cleanup } = tmpDbPath();
   const body = buildPackument({ hook: false });
   // the injected dependency as the public reporting describes it: 4.2.1 declares the postinstall dropper (fixture text only)

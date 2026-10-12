@@ -251,8 +251,20 @@ export function createWitness({ db, runGates, config, logger }) {
             // this still aggregates to ALLOW, exactly as before.
             result = failureDecision(err, `runner threw: ${err.message}`, identity);
           }
-          const disposition = result?.disposition ?? 'ALLOW';
+          let disposition = result?.disposition ?? 'ALLOW';
           const gateResults = Array.isArray(result?.results) ? result.results : [];
+          // 0.1.4 group 3b (D-N5): the record keeps N1h's last JUDGEMENT. A pending row (the dependency cache is cold) never
+          // replaces a judged one for the same added set: the judgement changes only when a new one is made.
+          const n1h = gateResults.findIndex((g) => g && g.gate === 'dependency-hooks');
+          if (n1h >= 0 && Array.isArray(gateResults[n1h].pending)) {
+            const prev = (() => { try { return db.getLatestDecision(packageName, incoming.version); } catch { return null; } })();
+            const judged = prev?.gates_fired?.find?.((g) => g && g.gate === 'dependency-hooks' && !Array.isArray(g.pending));
+            const sameSet = (a, b) => JSON.stringify((a ?? []).map((d) => d.name)) === JSON.stringify((b ?? []).map((d) => d.name));
+            if (judged && sameSet(judged.added, gateResults[n1h].added)) {
+              gateResults[n1h] = judged;
+              if (judged.result === 'WARN' && disposition !== 'BLOCK') disposition = 'WARN';
+            }
+          }
           // A failure decision made here IS stored below; it stays marked as a failure decision (Amendment 3).
           computed = { disposition, results: gateResults, ...(result?.evaluated === false ? { evaluated: false } : {}) };
           stage = 'write';

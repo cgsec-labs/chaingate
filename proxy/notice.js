@@ -21,6 +21,7 @@ const LABELS = Object.freeze({
   'seed-v3:pin': 'a recorded advisory names this version',
   'content-hash': 'its content differs from the recorded baseline',
   'install-introduced': 'an install script appears that earlier releases did not have',          // 0.1.4 group 3a (E30)
+  'dependency-hooks': 'it adds a dependency that runs install scripts',                           // 0.1.4 group 3b (E35)
 });
 
 const printable = (s) => String(s).replace(/[^\x20-\x7e]/g, '');

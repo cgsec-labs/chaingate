@@ -54,7 +54,9 @@ import scopeBoundary from './scope-boundary.js';
 import installIntroduced from './install-introduced.js';
 import sizeJump from './size-jump.js';
 import publishToolChange from './publish-tool-change.js';
-import { withRole, validRows } from './row-class.js';
+// 0.1.4 group 3b (E32): N1h -- dependency-hooks (named)
+import dependencyHooks from './dependency-hooks.js';
+import { withRole, validRows, validDeps } from './row-class.js';
 
 // NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
 const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
@@ -92,7 +94,9 @@ export { MIN_HISTORY_DEPTH };
 // local baseline: only the packument served in this same request (`rawVersions`, `rawTimes`), the population the counted
 // rule was validated on with no depth requirement (validate_a1.py, A1 0 / 2,982). Under the guard, T1.1 would SKIP on a
 // package's first sight -- exactly the case it exists for.
-const HISTORY_INDEPENDENT_GATES = new Set(['content-hash', 'seed-v3', 'install-introduced', 'size-jump', 'publish-tool-change']);
+// dependency-hooks (3b) likewise reads only the served packument (and the dependency's own served packument).
+const HISTORY_INDEPENDENT_GATES = new Set(['content-hash', 'seed-v3', 'install-introduced', 'size-jump', 'publish-tool-change',
+  'dependency-hooks']);
 
 export const DEFAULT_GATE_MODULES = Object.freeze([
   contentHash,
@@ -104,6 +108,7 @@ export const DEFAULT_GATE_MODULES = Object.freeze([
   installIntroduced,
   sizeJump,
   publishToolChange,
+  dependencyHooks,
 ]);
 
 // FAIL-OPEN, AND WHERE IT STOPS.
@@ -149,11 +154,15 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
     };
   }
   const rows = validRows(raw.rows);   // D-N4: kept only when valid; a malformed `rows` never fails the gate
+  const added = validDeps(raw.added);     // 0.1.4 group 3b (D-N2): N1h's structured lists, kept only when valid
+  const pending = validDeps(raw.pending);
   return {
     gate: typeof raw.gate === 'string' && raw.gate ? raw.gate : moduleName,
     result: raw.result,
     detail: typeof raw.detail === 'string' ? raw.detail : '',
     ...(rows ? { rows } : {}),
+    ...(added ? { added } : {}),
+    ...(pending ? { pending } : {}),
   };
 }
 

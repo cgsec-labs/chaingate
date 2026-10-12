@@ -124,7 +124,7 @@ test('G3a-4 (D-T1) cost: 5,000 versions evaluated in under 2 s (memoised per pac
 
 test('G3a-5 (D-T2) an install-introduced WARN is a named row: classify, notice label, report block with a packument baseline', () => {
   const row = { gate: 'install-introduced', result: 'WARN', detail: 'postinstall present; no earlier version (settled 24 h, 2) had an install hook' };
-  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced']);
+  assert.ok(POL.NAMED_RUNNER_GATES.includes('install-introduced'));        // 3b adds dependency-hooks (D-N6)
   assert.deepEqual(classify([row]).named, ['install-introduced']);
   assert.equal(servedClass([row]).class, 'named');
   assert.equal(buildNotice({ kind: 'WARNING', pkg: 'h', version: '1.2.0', labels: ['install-introduced'] }),
@@ -194,7 +194,7 @@ test('G3a-8 (D-T3) V6 and K: a release checked only by the install-hook rule is 
 test('G3a-9 (D-T6) the 1.2 role tables', () => {
   assert.deepEqual([...CONTRIBUTING_GATES].sort(), ['dep-structure', 'provenance-continuity', 'publish-tool-change', 'publisher-identity',
     'release-age', 'scope-boundary', 'size-jump']);
-  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced']);
+  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks']);   // 3b (D-N6)
 });
 
 test('G3a-11 (D-T7) the Tier 1 gates run on a package\'s first sight: no local-history depth requirement', async () => {

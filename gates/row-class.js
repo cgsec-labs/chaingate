@@ -37,4 +37,19 @@ export function validRows(rows) {
   return out;
 }
 
-export default { ROLE_POLICY, CONTRIBUTING_GATES, withRole, validRows, MAX_ROWS };
+/**
+ * 0.1.4 group 3b (D-N2): a validated copy of N1h's `added` / `pending` list -- at most 10 { name, target, spec } with string
+ * members of bounded length -- or null when absent or malformed (never throws).
+ */
+export function validDeps(list) {
+  if (!Array.isArray(list) || list.length > 10) return null;
+  const ok = (s, n) => typeof s === 'string' && s.length > 0 && s.length <= n;
+  const out = [];
+  for (const d of list) {
+    if (!d || typeof d !== 'object' || !ok(d.name, 214) || !ok(d.target, 214) || !ok(d.spec, 256)) return null;
+    out.push({ name: d.name, target: d.target, spec: d.spec });
+  }
+  return out;
+}
+
+export default { ROLE_POLICY, CONTRIBUTING_GATES, withRole, validRows, validDeps, MAX_ROWS };
