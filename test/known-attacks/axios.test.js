@@ -6,6 +6,10 @@
 // dep-structure WARN, publisher-identity WARN, provenance-continuity WARN,
 // scope-boundary WARN (V2-demoted from BLOCK). Overall disposition: WARN.
 //
+// 0.1.4 group 3 (G3 dated note 2 item 6): the REAL axios@1.14.1 declared no install script -- the postinstall was in the
+// injected dependency plain-crypto-js@4.2.1, which is N1h's shape (unit 3b). The hook in this fixture's 1.14.1 is a modelling
+// device (it feeds scope-boundary's signal); the test using it is named as a variant, and the real shape has its own test.
+//
 // 0.1.4 (cft-policy-1.2, group 2a E8; r3 §18.7/§18.15): these four pilot gates are CONTRIBUTING rows. Each still fires
 // and is recorded, as NOTE, and none of them is a warning on its own, so the disposition is ALLOW. The signals stay in the
 // record (detail, `why`); a named row (seed strict tier, install-introduced, N1h) is what makes a 1.2 WARN.
@@ -93,7 +97,7 @@ const CLEAN_VERSIONS = [
   '1.11.0', '1.12.0', '1.13.0', '1.14.0',
 ];
 
-function buildPackument() {
+function buildPackument({ hook = true } = {}) {
   const versions = {};
   const time = {
     created: '2019-10-01T00:00:00.000Z',
@@ -133,9 +137,7 @@ function buildPackument() {
       ...CLEAN_DEPS,
       'plain-crypto-js': '^1.0.0', // phantom dependency
     },
-    scripts: {
-      install: 'node install.js', // triggers has_install_scripts
-    },
+    ...(hook ? { scripts: { install: 'node install.js' } } : {}),   // the variant's hook (triggers has_install_scripts)
     _npmUser: { ...ATTACK_USER }, // publisher change
     _npmVersion: '10.5.0',
     dist: {
@@ -163,7 +165,7 @@ const packumentBody = buildPackument();
 // Tests
 // ---------------------------------------------------------------------------
 
-test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async (t) => {
+test('axios-shaped VARIANT with an install hook in 1.14.1 (a fixture device; the real release had none): T1.1 WARN, the 4 pilot signals NOTE', async (t) => {
   const { path: dbPath, cleanup } = tmpDbPath();
 
   const upstream = await startFakeUpstream((req, res) => {
@@ -292,5 +294,25 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
     await close(proxy.server);
     await close(upstream.server);
     cleanup();
+  }
+});
+
+test('axios REAL shape (no hook in 1.14.1; the hook is in the injected dependency): under 3a still ALLOW with the pilot signals as NOTE -- N1h (3b) is its row', async () => {
+  const { path: dbPath, cleanup } = tmpDbPath();
+  const body = buildPackument({ hook: false });
+  const upstream = await startFakeUpstream((req, res) => {
+    if (req.url === '/axios') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(body); return; }
+    res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}');
+  });
+  const proxy = await startProxy(upstream.url, dbPath, { _nowMs: FIXED_NOW });
+  try {
+    for (let i = 0; i < 2; i += 1) { const r = await undiciRequest(`${proxy.url}/axios`); await r.body.text(); }
+    const d = proxy.server.witnessDb.getLatestDecision('axios', '1.14.1');
+    const g = Object.fromEntries(d.gates_fired.map((x) => [x.gate, x]));
+    assert.equal(d.disposition, 'ALLOW', 'the gap group 2a stated: pilot-only signals do not warn in 1.2');
+    assert.equal(g['install-introduced'].result, 'ALLOW', 'no hook in the release itself: T1.1 is quiet (correctly)');
+    for (const n of ['dep-structure', 'publisher-identity', 'provenance-continuity']) assert.equal(g[n].result, 'NOTE', n);
+  } finally {
+    await close(proxy.server); await close(upstream.server); cleanup();
   }
 });
