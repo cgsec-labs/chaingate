@@ -89,7 +89,8 @@ async function main() {
       'update-seed': 'chaingate update-seed [--force] [--scope user|project]',
       why: 'chaingate why <package>@<version> --packument <file> [--json] [--scope user|project]\n'
         + '  chaingate why --from <check.json> [--json]\n'
-        + '  chaingate why <package>@<version> --cached [--json]   (legacy row, UNBOUND, exit 4)',
+        + '  chaingate why <package>@<version> --cached [--json]   (legacy row, UNBOUND, exit 4)\n'
+        + '  chaingate why <package>@<version>                     (no mode: the same as --cached)',
       history: 'chaingate history <package> [--limit N] [--json] [--scope user|project]',
       doctor: 'chaingate doctor [--json] [--scope user|project]',
       check: 'chaingate check <package>@<version> --packument <file> [--json] [--scope user|project]\n  Exit codes (follow the effective action): 0=ALLOW, 2=WARN, 3=BLOCK, 4=tool error',

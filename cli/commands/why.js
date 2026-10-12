@@ -22,7 +22,8 @@ export const UNBOUND_LABEL = 'CACHED — UNBOUND: produced without recorded seed
 export const USAGE = 'Usage:\n'
   + '  chaingate why <package>@<version> --packument <file> [--json]   evaluate, then explain\n'
   + '  chaingate why --from <check.json> [--json]                      explain a saved check output\n'
-  + '  chaingate why <package>@<version> --cached [--json]             legacy stored row (UNBOUND, exit 4)';
+  + '  chaingate why <package>@<version> --cached [--json]             legacy stored row (UNBOUND, exit 4)\n'
+  + '  chaingate why <package>@<version>                               the same as --cached (the form npm notices print)';
 
 function parseArgs(args) {
   const opts = { scope: 'user', json: false, target: null, packument: null, from: null, cached: false, errors: [] };
@@ -39,7 +40,11 @@ function parseArgs(args) {
     else opts.errors.push(`unexpected argument ${a}`);
   }
   const modes = [opts.packument !== null, opts.from !== null, opts.cached].filter(Boolean).length;
-  if (modes !== 1) opts.errors.push('choose exactly one of --packument, --from, --cached');
+  // 0.1.4 (G4 D-D3): `why <pkg>@<ver>` with no mode -- the form ChainGate's npm notice prints -- shows the recorded
+  // decision, exactly as --cached (UNBOUND, exit 4), so the pointer in the notice works.
+  if (modes === 0 && opts.target) { opts.cached = true; opts.defaulted = true; } else if (modes !== 1) {
+    opts.errors.push('choose exactly one of --packument, --from, --cached');
+  }
   if (opts.from === null && !parseTarget(opts.target)) opts.errors.push('a <package>@<version> is required');
   if (opts.from !== null && opts.target) opts.errors.push('--from takes no <package>@<version>');
   return opts;
@@ -102,6 +107,8 @@ function showCached(parsed, opts) {
         }
       }
       console.log(`  For a current evaluation: chaingate check ${parsed.name}@${parsed.version} --packument <file>`);
+      // 0.1.4 (G4 D-D3): the conclusion for the proxy's named warnings -- what moved, the baseline, what to do
+      console.log('  For what the proxy served and why, with what you can do: chaingate report');
     }
   } finally { db.close(); }
   // Exit 4 whether or not a row exists: a cached row is never a check result.

@@ -112,25 +112,39 @@ those checks can make a warning:
   the version's recorded baseline (content-hash).
 - **Named rows WARN.** Each one is a specific, counted reason:
   - the seed's strict tier (a release-history break of 3+ of 5 groups, or 2+ package-wide signals);
-  - **install-introduced**: an install script appears that no version published at least 24 h earlier had (all earlier
-    versions on a package's first day);
-  - **N1h**: the release adds a dependency whose resolved version runs install scripts;
+  - **install-introduced**: the release declares an install script (`preinstall`, `install` or `postinstall`, or a
+    node-gyp build) when no version published at least 24 h earlier declared any (on a package's first day: no earlier
+    version at all). A package's first version is not judged. A changed or additional install script on a package that
+    already had one is not this rule;
+  - **N1h**: the release adds a registry dependency (a name no earlier release depended on) whose resolved version runs
+    install scripts. Git, URL and file dependencies are not judged. It follows the counted rule: a range resolves to the
+    highest matching version (npm may install the `latest` tag instead when it matches), a name in both `dependencies`
+    and `optionalDependencies` is judged on its `dependencies` entry, and re-pointing an existing name is not "added";
   - **MC**: the tarball's `package.json` declares install scripts that differ from its registry entry.
 - **Contributing rows are detail.** These are publisher change, new dependency, provenance dropped, release age, scope
-  boundary, size jump of 2x or more, npm-version downgrade, and the seed contract's loose rule. They are shown beside a
-  named row and in `chaingate why`, and they never make a warning on their own.
+  boundary, size jump of 2x or more, npm-version downgrade, and the seed contract's loose rule. They are listed in
+  `chaingate why <pkg>@<ver>` (the recorded decision) and in `chaingate report --json`, and they never make a warning on
+  their own.
 
 Some named rows are checked when npm downloads the tarball:
-- **N1h** fetches the added dependency's metadata before answering: at most 10 dependencies, at most 5 s, cached for 10
-  minutes. One that does not answer in time is "not evaluable", never clean.
-- **MC** reads the tarball while it streams to npm, so that first download cannot carry npm's notice. Later downloads of
-  that version do, and `chaingate report` lists it at once.
+- **N1h** fetches the added dependencies' metadata before answering, within 5 s, cached for 10 minutes. A release that
+  adds more than 10 is not judged, and a dependency that does not answer in time is "not evaluable". Neither is ever
+  clean.
+- **MC** reads the tarball while it streams to npm, so the download that reveals a mismatch carries no notice, and npm
+  caches it. `chaingate report` lists the mismatch at once. A later download that reaches ChainGate carries the notice,
+  but npm installs a tarball it already holds from its own cache without asking ChainGate, so this machine may never
+  print it.
+
+A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaingate why <pkg>@<ver>`). npm does not print
+it, and the report counts a release as not checked only when no named rule checked it.
 
 `chaingate check` (the CI command) evaluates the seed only in 0.1.4. Install-introduced, N1h and MC are reported by the
 proxy, not by `check`.
 
-**What you see.** For a named warning or a refusal, ChainGate sends npm a notice on the tarball response, and npm prints
-it:
+**What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), or a
+version your pin withholds, ChainGate sends npm a notice on the tarball response, and npm prints it. Other refusals (an
+evaluation that failed or is busy, a full record) carry only the HTTP error. `chaingate why <pkg>@<ver>`, the command the
+notice names, shows the proxy's recorded decision for that version (labelled UNBOUND, exit code 4):
 
 ```console
 npm notice chaingate: WARNING q@1.5.0: release-history break vs the seed (2+ package-wide signals). Details: chaingate why q@1.5.0
@@ -152,9 +166,10 @@ report shows it instead.
 - how many packages no named rule checked, and why.
 
 `--all` shows every install the running proxy holds; `--json` gives the record. Without a running proxy it reads
-ChainGate's disk record of the last 24 h (`--since 7d` to change), which keeps named warnings and refusals only.
+ChainGate's disk record of the last 24 h (`--since 7d` to change), which keeps only named warnings and the refusals and
+dist-tag moves that rest on a fact (a pin refusal, for example, is not on disk).
 - Exit codes: 0 = nothing named, refused or moved; 2 = named warnings; 3 = a refusal or a moved dist-tag; 4 = a tool
-  error, or an incomplete record.
+  error, or an incomplete record with nothing else to report.
 - The report covers only what reached ChainGate: npm's own cache is invisible to it.
 
 **Your actions:**
@@ -171,8 +186,8 @@ ChainGate's disk record of the last 24 h (`--since 7d` to change), which keeps n
 - `chaingate allow <pkg>@<ver> --reason "..."` keeps its meaning: an exact-version override for a false-positive BLOCK.
   A pin wins over an override on a version it withholds, and both commands say so.
 
-These actions, and each `chaingate why`, are recorded locally with the version's classes at that moment, so you can later
-see which warnings anyone acted on. Nothing leaves the machine.
+These actions, and each `chaingate why`, are recorded locally with the version's classes at that moment, for a later
+reading of which warnings anyone acted on; no 0.1.4 command displays it. Nothing leaves the machine.
 
 **Local endpoints.** `/_chaingate/self` and `/_chaingate/report` answer only local, non-browser requests: a loopback
 client and a loopback `Host`, no `Origin` header, and `Sec-Fetch-Site` absent or `none`. This keeps a web page from
@@ -394,6 +409,10 @@ manifest the adapter rejects), and the result names the advisory.
 - `chaingate why --from <check.json>` explains a saved `check --json` result without evaluating again.
 - `chaingate why <pkg>@<ver> --cached` shows an old stored decision, labelled `CACHED — UNBOUND`
   because it records no seed, rule or policy identity, and exits with code 4.
+
+- `chaingate why <pkg>@<ver>` with no mode (the form ChainGate's npm notices print) is the same as `--cached`: the
+  proxy's recorded decision, including the install-introduced, N1h and MC rows that `--packument` (seed only, like
+  `check`) does not evaluate.
 
 Anything that could not be evaluated is listed with the reason. Missing evidence is never reported
 as a clean result. `why` also records, locally, that it was asked about that version (best-effort; it never changes
