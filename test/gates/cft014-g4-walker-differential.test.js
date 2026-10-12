@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
+import workerThreads from 'node:worker_threads';
 import { createTarWalker } from '../../proxy/tar-walk.js';
 
 const NPMS = {
@@ -88,12 +89,18 @@ const CASES = {
   empty_path: [entry('package/package.json', A), [hdr('', 1024, '0'), hiddenB()]],
   after_one_zero_block: [entry('package/package.json', A), Buffer.alloc(512, 0), entry('package/package.json', B)],
   link_named_package_json: [entry('package/package.json', A), entry('package/package.json', '', '2', { linkname: 'other.json' })],
+  // found by the differential fuzz (dated note 6): a pending L or pax path replaces the name, prefix included
+  L_path_drops_prefix: [entry('package/package.json', A), meta('L', Buffer.from('package/package.json\0')), entry('package/x', B, '0', { prefix: 'package' })],
+  pax_path_drops_prefix: [entry('package/package.json', A), pax([['path', 'package/package.json']]), entry('package/x', B, '0', { prefix: 'package/sub' })],
+  prefix_without_pending_path: [entry('package/package.json', A), entry('x', B, '0', { prefix: 'package/sub' })],
+  contiguous_trailing_slash_is_written: [entry('package/package.json', A), entry('package/package.json/', B, '7')],
 };
 
-async function extracted(tarFile, tgz) {
+async function extracted(tarFile, tgz, track = []) {
   const tar = await import(pathToFileURL(tarFile).href);
   const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g4diff-'));
   const file = path.join(dest, '..', `${path.basename(dest)}.tgz`);
+  track.push(dest, file);                                    // removed by the caller even when node-tar never settles
   try {
     fs.writeFileSync(file, tgz);
     await tar.x({ file, cwd: dest, strip: 1, noChmod: true, noMtime: true, onwarn: () => {},
@@ -136,3 +143,53 @@ test('G4-22 (W2) a construct the walk calls "not checked" for npm 10 vs 11 is on
   for (const t of Object.values(tars)) got.push(await extracted(t.file, tgz));
   assert.notEqual(got[0], got[1], `both readers wrote ${got[0]}`);
 });
+
+test('G4-26 (dated note 6) 300 seeded random archives: whenever the walk gives a result, it is the package.json npm 10 and npm 11 write', skip, async () => {
+  const { generate } = await import('./fixtures/cft014-tar-fuzz.mjs');
+  const pools = Object.values(tars).map((t) => isolated(t.file));
+  const tally = { ok: 0, agree: 0, not_checked: 0, npm_error: 0 };
+  try {
+    for (const [n, tgz] of generate(20261012, 300).entries()) {
+      const w = await walked(tgz);
+      const [a, b] = [await pools[0].extract(tgz), await pools[1].extract(tgz)];
+      if (!w.ok) { tally.not_checked += 1; continue; }
+      tally.ok += 1;
+      if (a.error && b.error) { tally.npm_error += 1; continue; }
+      const theirs = (x) => x.error ?? x.pj;
+      assert.equal(theirs(a), theirs(b), `archive ${n}: the walk gave a result, but npm 10 and npm 11 write different files`);
+      const mine = w.packageJson ? w.packageJson.toString('utf8') : null;
+      assert.equal(mine, a.pj, `archive ${n}: npm wrote ${a.pj}, the walk read ${mine}`);
+      tally.agree += 1;
+    }
+  } finally { for (const p of pools) await p.close(); }
+  assert.ok(tally.agree > 150, JSON.stringify(tally));
+});
+
+/** One node-tar in a worker thread, restarted after a crash (an error thrown from a callback: npm's install fails there). */
+function isolated(tarFile) {
+  const { Worker } = workerThreads;
+  const workerUrl = new URL('./fixtures/cft014-tar-extract-worker.mjs', import.meta.url);
+  let worker = null; let pending = null; let seq = 0;
+  const start = () => {
+    worker = new Worker(workerUrl, { workerData: { tarUrl: pathToFileURL(tarFile).href } });
+    worker.on('message', (m) => { if (pending && m.id === pending.id) { const p = pending; pending = null; p.resolve(m); } });
+    worker.on('error', (err) => { if (pending) { const p = pending; pending = null; p.resolve({ error: `CRASH ${String(err.code ?? err.message).slice(0, 50)}` }); } worker = null; });
+  };
+  return {
+    async extract(tgz) {
+      if (!worker) start();
+      const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g4fz-'));
+      const file = `${dest}.tgz`;
+      fs.writeFileSync(file, tgz);
+      try {
+        return await new Promise((resolve) => {
+          pending = { id: (seq += 1), resolve };
+          const timer = setTimeout(() => { if (pending) { pending = null; worker?.terminate(); worker = null; resolve({ error: 'TIMEOUT' }); } }, 10_000);
+          worker.postMessage({ id: seq, file, dest });
+          const done = pending.resolve; pending.resolve = (m) => { clearTimeout(timer); done(m); };
+        });
+      } finally { fs.rmSync(dest, { recursive: true, force: true }); fs.rmSync(file, { force: true }); }
+    },
+    async close() { if (worker) await worker.terminate(); worker = null; },
+  };
+}

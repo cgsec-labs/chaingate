@@ -7,8 +7,8 @@
 //   Framing and names as node-tar: a header is valid only with the unsigned checksum; a header node-tar rejects (bad checksum,
 //   empty path, a link without a link name or a non-link with one, an invalid base-256 number) is skipped by ONE block and
 //   the next block is read as a header; a directory (also a `0` entry ending in `/`) has size 0; names as node-tar's
-//   decString; the ustar prefix only for the magic `ustar\0` + `00` (155 or 130 bytes by byte 475), also onto a pax or L
-//   path; pax records parsed line by line; x/X, L/N and K fill ONE pending set (the last wins); g never sets a path; a
+//   decString; the ustar prefix only for the magic `ustar\0` + `00` (155 or 130 bytes by byte 475) -- and a pending pax or
+//   L/N path replaces the whole name, prefix included, as read-entry.js does; pax records parsed line by line; x/X, L/N and K fill ONE pending set (the last wins); g never sets a path; a
 //   size-0 meta header does nothing; a meta header over 1 MiB is ignored; the archive ends at two null blocks.
 //   Where npm 10's and npm 11's readers differ, the walk is "not checked" (never a final result): a pending pax or global
 //   size or path meeting a header that is not a normal file-system type; a pax size that is not all digits; a pax path that
@@ -79,7 +79,6 @@ function stripAbsolute(p) {                                // strip-absolute-pat
 /** The path, relative to the package folder, that npm writes a file entry to (one view), or null when it writes none. */
 function writtenRel(name, windows) {
   const p = windows ? name.replace(/\\/g, '/') : name;
-  if (p.endsWith('/')) return null;                        // a file at a directory path cannot be written
   const parts = p.split('/');
   parts.splice(0, 1);
   if (parts.length > 1024) return null;                    // node-tar: path excessively deep
@@ -205,6 +204,9 @@ export function createTarWalker(opts = {}) {
     if (size !== undefined && size < 0) throw new BadHeader(`not checked: an invalid size (negative): ${DIVERGE}`);
     size = size ?? 0;
     if (size > o.maxUncompressed) throw new BadHeader(`an entry over the uncompressed cap (${o.maxUncompressed} bytes)`);
+    // read-entry.js: the entry's path is the pending extended path when there is one (the prefix joined above only makes the
+    // header valid), else the header's own (prefixed) path
+    const entryPath = ex?.path !== undefined ? ex.path : path;
     if (META.has(type)) {
       if (size > 1024 * 1024) { collect = null; return size; }                 // node-tar ignores it
       if (size > o.maxMeta) throw new BadHeader(`tar: a metadata header over ${o.maxMeta} bytes`);
@@ -214,10 +216,10 @@ export function createTarWalker(opts = {}) {
     ex = null;                                               // a pending extended header applies to this entry only
     collect = null;
     if (type === '0' || type === '7') {                      // pacote installs File / OldFile / ContiguousFile
-      const tg = installTargets(path);
+      const tg = installTargets(entryPath);
       if (tg.exact.length || tg.approx.length) {
         if (size > o.maxPackageJson) throw new BadHeader(`package.json over ${o.maxPackageJson} bytes`);
-        collect = { kind: 'pj', chunks: [], exact: tg.exact, approx: tg.approx, name: path };
+        collect = { kind: 'pj', chunks: [], exact: tg.exact, approx: tg.approx, name: entryPath };
       }
     }
     return size;
