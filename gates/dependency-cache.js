@@ -5,6 +5,7 @@
 import { pyTruthy } from '../seed/v3/packument.js';
 
 export const TTL_MS = 10 * 60_000;
+export const FAIL_TTL_MS = 60_000;      // G3 dated note 3.4: a failure is retried after a minute, not ten
 export const MAX_ENTRIES = 500;
 const HOOKS = ['preinstall', 'install', 'postinstall'];
 
@@ -37,7 +38,7 @@ export function setDependencyDoc(name, doc, why = null) {
 /** { summary } | { why } | undefined (never fetched, or expired). */
 export function getDependency(name) {
   const e = cache.get(name);
-  if (!e || clock() - e.at > TTL_MS) { if (e) cache.delete(name); stats.misses += 1; return undefined; }
+  if (!e || clock() - e.at > (e.summary ? TTL_MS : FAIL_TTL_MS)) { if (e) cache.delete(name); stats.misses += 1; return undefined; }
   cache.delete(name); cache.set(name, e);                     // least recently used last
   stats.hits += 1;
   return e.summary ? { summary: e.summary } : { why: e.why };

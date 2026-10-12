@@ -258,7 +258,9 @@ export function createWitness({ db, runGates, config, logger }) {
           const n1h = gateResults.findIndex((g) => g && g.gate === 'dependency-hooks');
           if (n1h >= 0 && Array.isArray(gateResults[n1h].pending)) {
             const prev = (() => { try { return db.getLatestDecision(packageName, incoming.version); } catch { return null; } })();
-            const judged = prev?.gates_fired?.find?.((g) => g && g.gate === 'dependency-hooks' && !Array.isArray(g.pending));
+            // only a DETERMINATE judgement is kept (G3 dated note 3.4): a not-evaluable SKIP is retried, not carried
+            const judged = prev?.gates_fired?.find?.((g) => g && g.gate === 'dependency-hooks' && !Array.isArray(g.pending)
+              && (g.result === 'WARN' || g.result === 'ALLOW'));
             const sameSet = (a, b) => JSON.stringify((a ?? []).map((d) => d.name)) === JSON.stringify((b ?? []).map((d) => d.name));
             if (judged && sameSet(judged.added, gateResults[n1h].added)) {
               gateResults[n1h] = judged;

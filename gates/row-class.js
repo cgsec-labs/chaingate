@@ -52,4 +52,10 @@ export function validDeps(list) {
   return out;
 }
 
-export default { ROLE_POLICY, CONTRIBUTING_GATES, withRole, validRows, validDeps, MAX_ROWS };
+/** 0.1.4 group 3b (G3 dated note 3.2): N1h's `unjudgeable` notes -- at most 10 strings of at most 120 characters, or null. */
+export function validNotes(list) {
+  if (!Array.isArray(list) || list.length === 0 || list.length > 10) return null;
+  return list.every((x) => typeof x === 'string' && x.length > 0 && x.length <= 120) ? [...list] : null;
+}
+
+export default { ROLE_POLICY, CONTRIBUTING_GATES, withRole, validRows, validDeps, validNotes, MAX_ROWS };

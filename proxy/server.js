@@ -989,10 +989,11 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         // 0.1.4 group 3b (D-N3): N1h's pending dependencies are fetched and judged now, before the notice is decided.
         if (state.applicable?.latest && !state.override && state.tarballVersion != null && witnessDb) {
           try {
-            const wrote = await judgeAtTarball({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion,
+            const outcome = await judgeAtTarball({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion,
               latest: state.applicable.latest, fetchPackument, config, authorization: req.headers.authorization,
               budgetMs: hooks.dependencyBudgetMs, log });
-            if (wrote) state.applicable = witnessDb.getApplicableDecision(canonicalName, state.tarballVersion, { overrideLive: false });
+            // written, or a concurrent writer won (G3 dated note 3.6): either way the response follows the record as it is now
+            if (outcome) state.applicable = witnessDb.getApplicableDecision(canonicalName, state.tarballVersion, { overrideLive: false });
           } catch (err) {
             log?.warn?.(`[n1h] ${canonicalName}@${state.tarballVersion}: not judged at download (${err.message})`);
           }

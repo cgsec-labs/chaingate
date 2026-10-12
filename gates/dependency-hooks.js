@@ -46,22 +46,43 @@ export function isEligible(man, version) {
   return !(String(u.email || '').toLowerCase() === 'npm@npmjs.com' || u.name === 'npm');
 }
 
+// G3 dated note 3.1: one index per packument (memoised per versions/time object) -- each version's time and judged fields,
+// the earliest time each name appears among ELIGIBLE versions, and the two earliest eligible times -- so a version costs
+// O(its own dependencies), not O(every version).
+const indexes = new WeakMap();
+function indexFor(versions, times) {
+  let byTimes = indexes.get(versions);
+  if (byTimes?.has(times)) return byTimes.get(times);
+  const time = new Map(); const fields = new Map(); const firstSeen = new Map(); const eligible = [];
+  for (const [v, m] of Object.entries(versions)) {
+    const f = judgedFields(m);
+    fields.set(v, f);
+    const t = typeof times[v] === 'string' ? Date.parse(times[v]) : NaN;
+    if (Number.isNaN(t)) continue;
+    time.set(v, t);
+    if (!isEligible(m, v)) continue;
+    eligible.push([t, v]);
+    for (const n of Object.keys(f)) if (!firstSeen.has(n) || t < firstSeen.get(n)) firstSeen.set(n, t);
+  }
+  let a = null; let b = null;                              // the two earliest eligible [time, version]
+  for (const e of eligible) { if (!a || e[0] < a[0]) { b = a; a = e; } else if (!b || e[0] < b[0]) b = e; }
+  const idx = { time, fields, firstSeen, earliest: [a, b] };
+  if (!byTimes) { byTimes = new WeakMap(); indexes.set(versions, byTimes); }
+  byTimes.set(times, idx);
+  return idx;
+}
+
 /** The added dependencies of `version` ([{ name, spec, field }]), or null when it has no time or no eligible earlier version. */
 export function addedDeps(versions, times, version) {
   if (!isObj(versions) || !Object.hasOwn(versions, version) || !isObj(times)) return null;
-  const tR = typeof times[version] === 'string' ? Date.parse(times[version]) : NaN;
-  if (Number.isNaN(tR)) return null;
-  const seen = new Set();
-  let earlier = 0;
-  for (const [v, m] of Object.entries(versions)) {
-    if (v === version || !isEligible(m, v)) continue;
-    const t = typeof times[v] === 'string' ? Date.parse(times[v]) : NaN;
-    if (Number.isNaN(t) || !(t < tR)) continue;
-    earlier += 1;
-    for (const n of Object.keys(judgedFields(m))) seen.add(n);
-  }
-  if (!earlier) return null;
-  return Object.entries(judgedFields(versions[version])).filter(([n]) => !seen.has(n))
+  const idx = indexFor(versions, times);
+  const tR = idx.time.get(version);
+  if (tR === undefined) return null;
+  const [a, b] = idx.earliest;
+  const firstOther = a && a[1] !== version ? a[0] : (b ? b[0] : Infinity);
+  if (!(firstOther < tR)) return null;                     // no eligible earlier version
+  // added iff no eligible version declared the name before t_R (the counted strict <; R's own entry is at t_R)
+  return Object.entries(idx.fields.get(version)).filter(([n]) => !(idx.firstSeen.get(n) < tR))
     .map(([name, { spec, field }]) => ({ name, spec, field }));
 }
 
@@ -104,8 +125,8 @@ const label = (f) => [...f.hooks, ...(f.gypfile ? ['gypfile'] : [])].join(', ');
  * Judge a list of registry added dependencies ({ name, target, spec }) from the cache (`lookup`). Returns the row.
  * `at`: the judgement's clock, named in the detail (a binding, not a claim about now).
  */
-export function judge(added, { lookup = getDependency, at = new Date().toISOString() } = {}) {
-  const fired = []; const ne = []; const pending = []; const clean = [];
+export function judge(added, { lookup = getDependency, at = new Date().toISOString(), unjudgeable = [] } = {}) {
+  const fired = []; const ne = [...unjudgeable]; const pending = []; const clean = [];
   for (const d of added) {
     const c = lookup(d.target);
     if (c === undefined) { pending.push(d); continue; }
@@ -116,7 +137,7 @@ export function judge(added, { lookup = getDependency, at = new Date().toISOStri
     if (fires(f)) fired.push(`${d.target}@${r.resolved} (${label(f)})`);
     else clean.push(`${d.target}@${r.resolved}`);
   }
-  const base = { gate: GATE, added };
+  const base = { gate: GATE, added, ...(unjudgeable.length ? { unjudgeable } : {}) };
   if (fired.length) return { ...base, result: 'WARN', detail: `adds ${fired.join('; ')}: an added dependency runs install scripts (judged ${at})` };
   if (pending.length) {
     return { ...base, result: 'SKIP', pending,
@@ -132,15 +153,22 @@ export default {
   evaluate(input) {
     const added = addedDeps(input?.rawVersions, input?.rawTimes, input?.version);
     if (added === null) return { gate: GATE, result: 'SKIP', detail: 'not evaluable: no publication time, or no eligible earlier version' };
-    const registry = [];
+    const registry = []; const unjudgeable = [];
     for (const d of added) {
       const t = specTarget(d.name, d.spec);
-      if (t.kind === 'registry') registry.push({ name: d.name, target: t.target, spec: t.spec });
+      if (t.kind !== 'registry') continue;
+      // G3 dated note 3.2: a name/spec too long to carry is NOT EVALUABLE (never dropped, never clean)
+      const tooLong = d.name.length > 214 || t.target.length > 214 ? 'name' : (t.spec.length > 256 ? 'spec' : null);
+      if (tooLong) {
+        const shown = d.name.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 60);
+        unjudgeable.push(`${shown}${d.name.length > 60 ? '…' : ''} (${tooLong} too long to judge)`);
+      }
+      else registry.push({ name: d.name, target: t.target, spec: t.spec });
     }
     registry.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     if (registry.length > MAX_ADDED) {
       return { gate: GATE, result: 'SKIP', detail: `more than ${MAX_ADDED} added dependencies; not judged (${registry.length})` };
     }
-    return judge(registry);
+    return judge(registry, { unjudgeable: unjudgeable.slice(0, MAX_ADDED) });
   },
 };

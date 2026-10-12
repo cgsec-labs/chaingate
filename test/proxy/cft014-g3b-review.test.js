@@ -86,13 +86,14 @@ test('G3b-13 (note 3.2) an over-long spec or name is not evaluable, the lists st
 });
 
 test('G3b-14 (note 3.3) tarball time fetches every added target missing from the cache, not only the stored pending ones', async () => {
-  await withProxy({ c: carrier('c', { a1: '^1', a2: '^1' }), a1: hooked('a1'), a2: clean('a2') }, async ({ base, hits, proxy }) => {
-    setDependencyDoc('a1', hooked('a1'));                   // a1 judged at observation from the cache; a2 pending
+  await withProxy({ c: carrier('c', { a1: '^1', a2: '^1' }), a1: clean('a1'), a2: hooked('a2') }, async ({ base, hits, proxy }) => {
+    setDependencyDoc('a1', clean('a1'));                    // a1 judged clean at observation from the cache; a2 pending
     await get(`${base}/c`);
     assert.deepEqual(n1h(proxy, 'c', '1.1.0').pending.map((d) => d.name), ['a2']);
     resetDependencyCache();                                 // a1's entry expires before the download
     const t = await get(`${base}/c/-/c-1.1.0.tgz`);
     assert.equal(hits.a1, 1, 'the expired added target is fetched too');
+    assert.equal(hits.a2, 1);
     assert.match(t.headers['npm-notice'] ?? '', /it adds a dependency that runs install scripts/);
     assert.equal(n1h(proxy, 'c', '1.1.0').result, 'WARN');
   });

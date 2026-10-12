@@ -44,23 +44,30 @@ const aggregate = (results) => (results.some((r) => r?.result === 'BLOCK') ? 'BL
   : (results.some((r) => r?.result === 'WARN') ? 'WARN' : 'ALLOW'));
 
 /**
- * Judge the served version's pending N1h row at tarball time. Returns true when a new decision row was written.
- * `latest`: the applicable stored row (not a BLOCK).
+ * Judge the served version's pending or not-evaluable N1h row at tarball time. Returns 'wrote' (a new decision row),
+ * 'raced' (a concurrent writer wrote first; re-read the record), or false (nothing to judge, or the same judgement).
+ * `latest`: the applicable stored row (the newest non-override row; not a BLOCK).
  */
 export async function judgeAtTarball({ db, pkg, version, latest, fetchPackument, config, authorization, budgetMs, log }) {
   const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
   const i = rows.findIndex((g) => g && g.gate === 'dependency-hooks');
-  if (i < 0 || !Array.isArray(rows[i].pending) || !Array.isArray(rows[i].added)) return false;
-  const { timedOut } = await fetchPending(rows[i].pending, { fetchPackument, config, authorization, budgetMs });
+  // judged now: a pending row, or a not-evaluable SKIP (retried; G3 dated note 3.4); a determinate judgement stands
+  if (i < 0 || !Array.isArray(rows[i].added) || !(Array.isArray(rows[i].pending) || rows[i].result === 'SKIP')) return false;
+  // EVERY added target missing from the cache is fetched, not only the stored pending ones (G3 dated note 3.3)
+  const { timedOut } = await fetchPending(rows[i].added, { fetchPackument, config, authorization, budgetMs });
   const lookup = (t) => (timedOut.includes(t) ? { why: `no answer within ${Math.round((budgetMs ?? BUDGET_MS) / 1000)} s` } : getDependency(t));
-  const row = judge(rows[i].added, { lookup });
+  const row = judge(rows[i].added, { lookup, unjudgeable: Array.isArray(rows[i].unjudgeable) ? rows[i].unjudgeable : [] });
   if (Array.isArray(row.pending)) return false;               // nothing could be judged (cache evicted mid-way): keep the stored row
+  if (row.result === rows[i].result && row.detail.replace(/ \(judged [^)]*\)$/, '') === String(rows[i].detail).replace(/ \(judged [^)]*\)$/, '')) {
+    return false;                                              // the same judgement: no new row
+  }
   const results = rows.map((g, k) => (k === i ? row : g));
-  const fresh = db.getLatestDecision(pkg, version);
-  if (fresh && fresh.id !== latest.id) return false;           // a concurrent writer got there first
+  // the guard compares like with like: `latest` is the newest NON-override row (G3 dated note 3.5)
+  const fresh = db.getLatestNonOverrideDecision(pkg, version);
+  if (fresh && fresh.id !== latest.id) return 'raced';         // a concurrent writer got there first: the caller re-reads
   db.insertGateDecision(pkg, version, aggregate(results), results);
   log?.info?.(`[n1h] ${pkg}@${version}: ${row.result} (${row.detail})`);
-  return true;
+  return 'wrote';
 }
 
 export default { judgeAtTarball, fetchPending, BUDGET_MS };

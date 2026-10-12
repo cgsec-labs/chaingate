@@ -56,7 +56,7 @@ import sizeJump from './size-jump.js';
 import publishToolChange from './publish-tool-change.js';
 // 0.1.4 group 3b (E32): N1h -- dependency-hooks (named)
 import dependencyHooks from './dependency-hooks.js';
-import { withRole, validRows, validDeps } from './row-class.js';
+import { withRole, validRows, validDeps, validNotes } from './row-class.js';
 
 // NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
 const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
@@ -156,6 +156,7 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
   const rows = validRows(raw.rows);   // D-N4: kept only when valid; a malformed `rows` never fails the gate
   const added = validDeps(raw.added);     // 0.1.4 group 3b (D-N2): N1h's structured lists, kept only when valid
   const pending = validDeps(raw.pending);
+  const unjudgeable = validNotes(raw.unjudgeable);
   return {
     gate: typeof raw.gate === 'string' && raw.gate ? raw.gate : moduleName,
     result: raw.result,
@@ -163,6 +164,7 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
     ...(rows ? { rows } : {}),
     ...(added ? { added } : {}),
     ...(pending ? { pending } : {}),
+    ...(unjudgeable ? { unjudgeable } : {}),
   };
 }
 
