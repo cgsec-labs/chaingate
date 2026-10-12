@@ -380,9 +380,10 @@ export class WitnessDB {
            install_key, k_version)
          VALUES (@at, @kind, @package_name, @version, @classes, @reason, @policy_version, @seed_sha256, @install_key, @k_version)`,
       ),
+      // the NEWEST rows of the window (dated note 7.7); the caller gets them oldest first
       since: this.db.prepare(
         `SELECT id, at, kind, package_name, version, classes, reason, policy_version, seed_sha256, install_key, k_version
-         FROM named_fact_events WHERE at >= ? ORDER BY at ASC, id ASC LIMIT ?`,
+         FROM named_fact_events WHERE at >= ? ORDER BY at DESC, id DESC LIMIT ?`,
       ),
       pruneOlder: this.db.prepare('DELETE FROM named_fact_events WHERE at < ?'),
       pruneBeyond: this.db.prepare(
@@ -401,11 +402,14 @@ export class WitnessDB {
       seed_sha256: e.seed_sha256 ?? null, install_key: e.install_key ?? null, k_version: e.k_version ?? null }).lastInsertRowid;
   }
 
-  /** Rows at or after `sinceIso` (ISO 8601; default: all), oldest first, at most `limit`. A missing table reads as empty. */
+  /**
+   * The newest `limit` rows at or after `sinceIso` (ISO 8601; default: all), returned oldest first. A missing table reads
+   * as empty.
+   */
   listNamedFactEvents({ sinceIso = '', limit = 10_000 } = {}) {
     const st = this._namedFactStmts();
     if (!st) return [];
-    return st.since.all(sinceIso, limit).map((r) => {
+    return st.since.all(sinceIso, limit).reverse().map((r) => {
       let classes;
       try { classes = JSON.parse(r.classes); } catch { classes = {}; }
       return { ...r, classes };

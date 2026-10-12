@@ -341,15 +341,26 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
           const d = decisions.get(v);
           return policyPrefix(Array.isArray(d?.held?.rows) ? d.held.rows : d?.results);
         };
-        const moved = new Set();
-        for (const d of summary.dist_tag_downgrades) {
-          moved.add(d.from);
-          const facts = factOf(d.from);
-          const tag = /^[A-Za-z0-9._-]{1,64}$/.test(String(d.tag)) ? d.tag : 'a dist-tag';
-          const to = d.to == null ? null : String(d.to);
-          state.note?.({ kind: 'tag-moved', package: packageName, tag, from: d.from, to, facts, reason: reasonOf(d.from) },
-            facts.length ? { kind: 'fact-tag-moved', package_name: packageName, version: d.from, classes: { tag, to, facts },
-              reason: reasonOf(d.from), policy_version: policyOf(d.from) } : null);
+        // dated note 7.3: the packument controls how many tags there are, so at most 20 tag events per response (`latest`
+        // first; the rest counted on the last one), and one disk row per withheld version carrying its capped tag list.
+        const TAG_EVENTS = 20;
+        const moved = new Set(summary.dist_tag_downgrades.map((d) => d.from));
+        const downgrades = [...summary.dist_tag_downgrades].sort((a, b) => (b.tag === 'latest') - (a.tag === 'latest'));
+        const tagOf = (d) => (/^[A-Za-z0-9._-]{1,64}$/.test(String(d.tag)) ? d.tag : 'a dist-tag');
+        const toOf = (d) => (d.to == null ? null : String(d.to));
+        downgrades.slice(0, TAG_EVENTS).forEach((d, i, shown) => {
+          const more = i === shown.length - 1 ? downgrades.length - shown.length : 0;
+          state.note?.({ kind: 'tag-moved', package: packageName, tag: tagOf(d), from: d.from, to: toOf(d), facts: factOf(d.from),
+            reason: reasonOf(d.from), ...(more ? { more } : {}) });
+        });
+        for (const from of moved) {
+          const facts = factOf(from);
+          if (!facts.length) continue;
+          const mine = downgrades.filter((d) => d.from === from);
+          state.note?.(null, { kind: 'fact-tag-moved', package_name: packageName, version: from,
+            classes: { tags: mine.slice(0, TAG_EVENTS).map((d) => ({ tag: tagOf(d), to: toOf(d) })), facts,
+              ...(mine.length > TAG_EVENTS ? { more: mine.length - TAG_EVENTS } : {}) },
+            reason: reasonOf(from), policy_version: policyOf(from) });
         }
         const withheld = summary.blocked.filter((b) => !moved.has(b.version));
         if (withheld.length) {
@@ -434,7 +445,10 @@ function enforceWhileFull(db, canonicalName, filename, log, ctx, state) {
       return null;
     }
     const known = ctx.unstored?.get(canonicalName, version) ?? null;
-    if (known) return rememberedBlock(canonicalName, version, known);
+    if (known) {
+      state.blockFacts = factsFromBits(known.reasons);    // 2c review (dated note 7.10, E23): as on the normal path
+      return rememberedBlock(canonicalName, version, known);
+    }
     // Owner decision 10 (C2): the one applicable-BLOCK rule (override handled above).
     const applicable = db.getApplicableDecision(canonicalName, version, { overrideLive: false });
     if (applicable.block) {
@@ -563,6 +577,18 @@ function defaultLogger() {
     warn: (msg) => { console.error(msg); },
     error: (msg) => { console.error(msg); },
   };
+}
+
+// 0.1.4 group 2c review (dated note 7.4, E22): the internal endpoints answer only a local, non-browser request -- a loopback
+// peer, a Host naming a loopback literal (so a rebinding hostname fails), no Origin, and Sec-Fetch-Site absent or `none`.
+const LOCAL_HOST_RE = /^(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|\[::1\])(?::\d{1,5})?$/i;
+export function localOnly(req) {
+  if (!isLoopbackPeer(req.socket?.remoteAddress)) return false;
+  const host = req.headers.host;
+  if (typeof host !== 'string' || !LOCAL_HOST_RE.test(host)) return false;
+  if (req.headers.origin !== undefined) return false;
+  const site = req.headers['sec-fetch-site'];
+  return site === undefined || site === 'none';
 }
 
 export function createProxyServer(configOverrides = {}, hooks = {}) {
@@ -721,16 +747,19 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     }
   }
   const seedSha = () => seedV3?.report?.content_sha256 ?? null;
+  // `event` goes to the summary; `disk` (or null) is written once per install and disk event (dated note 7.1): its claim is
+  // keyed by its own kind and package@version, so no other event can use it up. `event` null: a disk row only.
   function noteInstall(req, event, disk = null) {
+    const who = { session: req.headers['npm-session'], client: req.socket?.remoteAddress };
     let recorded;
     try {
-      recorded = installs.record({ session: req.headers['npm-session'], client: req.socket?.remoteAddress }, event);
+      recorded = event == null ? installs.touch(who) : installs.record(who, event);
     } catch (err) {
       reportCounters.record_failures += 1;
-      log?.warn?.(`[report] could not record a ${event.kind} event: ${err.message}`);
+      log?.warn?.(`[report] could not record a ${event?.kind ?? disk?.kind} event: ${err.message}`);
       return;
     }
-    if (!disk || !recorded.fresh || !witnessDb) return;
+    if (!disk || !witnessDb || !installs.claimDisk(recorded.key, `${disk.kind}|${disk.package_name}@${disk.version}`)) return;
     try {
       witnessDb.insertNamedFactEvent({ ...disk, at: recorded.at, install_key: recorded.key, seed_sha256: seedSha() });
     } catch (err) {
@@ -794,16 +823,20 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     // 127.0.0.1 interface as the rest of the proxy; exposes no secrets.
     // 0.1.4 group 2c (D-R1, E19, dated note 6.9): the install summary for `chaingate report`. It lists installed package
     // names, so only a loopback peer gets it.
+    if ((url.pathname === '/_chaingate/report' || url.pathname === '/_chaingate/self') && !localOnly(req)) {
+      // dated note 7.4 (E22): a loopback peer is not enough -- a browser page whose name resolves to 127.0.0.1 is one
+      // (DNS rebinding). Both endpoints also need a loopback Host and no browser-origin headers.
+      writeJson(res, 404, { error: 'not_found', path: url.pathname });
+      return;
+    }
     if (url.pathname === '/_chaingate/report') {
-      if (!isLoopbackPeer(req.socket?.remoteAddress)) {
-        writeJson(res, 404, { error: 'not_found', path: url.pathname });
-        return;
-      }
-      const snap = installs.snapshot({ all: url.searchParams.get('all') === '1' });
+      const all = url.searchParams.get('all') === '1';
+      const snap = installs.snapshot({ all });
       writeJson(res, 200, {
         service: 'chaingate-proxy',
         version: PROXY_VERSION,
         started_at: startedAt,
+        view: all ? 'all' : 'latest',
         policy: seedV3 ? POLICY_CONTRACT_VERSION : null,
         seed: seedV3 ? { sha256: seedSha(), history_cutoff: seedV3.meta?.history_cutoff ?? null, trust: config.seedV3Trust } : null,
         installs: snap.installs,
@@ -923,20 +956,26 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           config,
           requestHeaders: req.headers,
         });
-        if (upstream.statusCode === 200 && state.tarballVersion != null) {
-          // 2c (D-R1, D-R5): what was served, classed from the record the gate applied; K for a named warning, now.
+        if (upstream.statusCode === 200) {
+          // 2c (D-R1, D-R5): what was served, classed from the record the gate applied; K for a named warning, now. Served
+          // WITHOUT this process's evaluation (a failed C1 under a serving failure policy, or no derivable version): not
+          // checked, never the older stored row (dated note 7.2, 7.9).
+          const unevaluated = state.c1 && !state.c1.ok ? `served without an evaluation (${state.c1.why})`
+            : (state.tarballVersion == null ? 'served without an evaluation (the version cannot be derived from the tarball name)' : null);
+          const failed = { class: 'not-checked', coverage: 'failed', named: [], contributing: [] };
           const cls = state.override ? { class: 'override', coverage: null, named: [], contributing: [] }
-            : (latest ? servedClass(latest.gates_fired) : { class: 'not-checked', coverage: 'failed', named: [], contributing: [] });
-          const reason = latest && !state.override ? decidingReason(latest.gates_fired, latest.disposition)
-            : (state.override ? 'served under an exact-version override (chaingate allow)' : 'served without a stored decision');
-          const policy = latest && !state.override ? policyPrefix(latest.gates_fired) : null;
+            : (unevaluated ? failed : (latest ? servedClass(latest.gates_fired) : failed));
+          const fromRecord = latest && !state.override && !unevaluated;
+          const reason = fromRecord ? decidingReason(latest.gates_fired, latest.disposition)
+            : (state.override ? 'served under an exact-version override (chaingate allow)' : (unevaluated ?? 'served without a stored decision'));
+          const policy = fromRecord ? policyPrefix(latest.gates_fired) : null;
           let k = null;
-          if (cls.class === 'named' && witnessDb) {
+          if (cls.class === 'named' && witnessDb && state.tarballVersion != null) {
             try { k = lastVersionWithoutSignal(witnessDb, canonicalName, state.tarballVersion); } catch (err) {
               log?.warn?.(`[report] ${canonicalName}@${state.tarballVersion}: last version without the signal not computed: ${err.message}`);
             }
           }
-          noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion, ...cls, reason, policy,
+          noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion ?? null, ...cls, reason, policy,
             notice: Boolean(notice), k },
           cls.class === 'named' ? { kind: 'named-served', package_name: canonicalName, version: state.tarballVersion,
             classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage,

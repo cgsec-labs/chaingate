@@ -2,19 +2,22 @@
 //
 // With a running proxy: its latest install that fetched a tarball (`--all`: every install it holds), from
 // `/_chaingate/report`. Without one: the disk record (named warnings served, refusals and tag moves resting on a fact) of
-// the last 24 h (`--since` to change), saying that the per-install summary is held only by a running proxy.
-// The proxy is reached at CHAINGATE_PORT when set (the variable the proxy itself reads), else the default port.
+// the last 24 h (`--since` to change), saying that the per-install summary is held only by a running proxy. A ChainGate
+// proxy that answers without a summary (an older version, a timeout, an oversized answer) is named as such, and the disk
+// view is then incomplete (dated note 7.6). The proxy is reached at CHAINGATE_PORT when set (the variable the proxy itself
+// reads), else the default port.
 //
 // Exit: 0 nothing named, refused or tag-moved, and the record complete; 2 named warnings; 3 a refusal or a tag moved off a
 // withheld version; 4 a tool error, or an incomplete record with nothing else to report.
 import { existsSync } from 'node:fs';
 import { resolvePaths } from '../paths.js';
-import { fetchLocalJson } from '../proxy-control.js';
+import { fetchLocalJson, fetchSelf } from '../proxy-control.js';
 import { openWitnessDB } from '../../witness/db.js';
-import { renderReport } from '../report-render.js';
+import { renderReport, safeJson, DISK_READ_LIMIT } from '../report-render.js';
 import { DEFAULT_PORT, DEFAULT_HOST, EXIT } from '../constants.js';
 
-const REPORT_MAX_BYTES = 32 * 1048576;
+const REPORT_MAX_BYTES = 128 * 1048576;
+const REPORT_TIMEOUT_MS = 15_000;
 const UNITS = { m: 60_000, h: 3_600_000, d: 86_400_000 };
 
 function parseArgs(args) {
@@ -40,9 +43,11 @@ function portFromEnv(env) {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT;
 }
 
-function emit(opts, source, payload, rendered) {
-  if (opts.json) console.log(JSON.stringify({ source, ...payload, exit: rendered.exit }, null, 2));
-  else console.log(rendered.text);
+/** Write and wait until stdout has taken it: on a pipe stdout may be asynchronous, and the CLI exits right after (7.8). */
+const write = (text) => new Promise((resolve) => { process.stdout.write(`${text}\n`, () => resolve()); });
+
+async function emit(opts, source, payload, rendered) {
+  await write(opts.json ? safeJson({ source, ...payload, exit: rendered.exit }) : rendered.text);
   return rendered.exit;
 }
 
@@ -56,24 +61,38 @@ export default async function report(args) {
   const port = portFromEnv(process.env);
 
   const r = await fetchLocalJson(host, port, `/_chaingate/report${opts.all ? '?all=1' : ''}`,
-    { timeoutMs: 5000, maxBytes: REPORT_MAX_BYTES });
+    { timeoutMs: REPORT_TIMEOUT_MS, maxBytes: REPORT_MAX_BYTES });
   if (r.ok && r.json.service === 'chaingate-proxy') {
     return emit(opts, 'proxy', r.json, renderReport(r.json, { source: 'proxy' }));
   }
-  const why = r.ok ? 'something answered, but not a ChainGate proxy'
-    : (r.status === 404 ? 'the proxy there keeps no install summary (an older version, or not a ChainGate proxy)' : r.why);
+  const why = r.ok ? 'it answered, but not as a ChainGate proxy'
+    : (r.status === 404 ? 'it has no install summary endpoint' : r.why);
+  // Something answered (or timed out): is it a ChainGate proxy without a summary?
+  let proxy = null;
+  if (r.ok || r.status !== undefined || !/nothing is listening/.test(r.why ?? '')) {
+    const self = await fetchSelf(host, port, 1500);
+    if (self.ok && self.json.service === 'chaingate-proxy') proxy = { version: self.json.version ?? null };
+  }
 
   const paths = resolvePaths(opts.scope);
   const dbPath = process.env.CHAINGATE_WITNESS_DB || paths.witnessDb;
   if (!existsSync(dbPath)) {
-    const payload = { error: `no proxy answered on ${host}:${port} (${why}), and no witness database was found at ${dbPath}` };
+    const payload = { error: `${proxy ? `the ChainGate proxy on ${host}:${port} gave no install summary` : `no proxy answered on ${host}:${port}`} `
+      + `(${why}), and no witness database was found at ${dbPath}` };
     return emit(opts, 'none', payload, renderReport(payload));
   }
   let events;
-  const db = openWitnessDB(dbPath, { readonly: true });
   try {
-    events = db.listNamedFactEvents({ sinceIso: new Date(Date.now() - opts.sinceMs).toISOString() });
-  } finally { db.close(); }
-  const payload = { host, port, why, since: opts.since, events };
+    const db = openWitnessDB(dbPath, { readonly: true });
+    try {
+      events = db.listNamedFactEvents({ sinceIso: new Date(Date.now() - opts.sinceMs).toISOString(), limit: DISK_READ_LIMIT + 1 });
+    } finally { db.close(); }
+  } catch (err) {
+    const payload = { error: `the witness database at ${dbPath} could not be read (${err.message})` };
+    return emit(opts, 'none', payload, renderReport(payload));
+  }
+  const truncated = events.length > DISK_READ_LIMIT;
+  if (truncated) events = events.slice(events.length - DISK_READ_LIMIT);     // newest rows, oldest first: drop the oldest
+  const payload = { host, port, why, since: opts.since, events, truncated, ...(proxy ? { proxy } : {}) };
   return emit(opts, 'disk', payload, renderReport(payload, { source: 'disk' }));
 }
