@@ -1,7 +1,7 @@
 // T1.2 size jump -- a CONTRIBUTING row in cft-policy-1.2 (r3 §18.6: contributing at >= 2x; group 3 tables D-T4). The
 // candidate's dist.unpackedSize against its predecessor (gates/predecessor.js). The runner's role table records a WARN from
 // this gate as NOTE: shown beside a named row and as detail, never a warning on its own.
-import { predecessorOf } from './predecessor.js';
+import { predecessorOf, MAX_WALK } from './predecessor.js';
 
 export const RATIO = 2;
 const GATE = 'size-jump';
@@ -16,6 +16,7 @@ export default {
     const size = sizeOf(versions?.[input?.version]);
     if (size === null) return result('SKIP', 'not evaluable: no dist.unpackedSize for this version');
     const pred = predecessorOf(versions, input?.rawTimes, input?.version, (m) => sizeOf(m) !== null);
+    if (pred?.beyond) return result('SKIP', `not evaluable: no predecessor within the last ${MAX_WALK} lower releases`);
     if (!pred) return result('SKIP', 'not evaluable: no earlier release of this major with a size');
     const ratio = size / sizeOf(pred.manifest);
     const text = `unpackedSize ${size} vs ${sizeOf(pred.manifest)} of ${pred.version} (${ratio.toFixed(1)}×)`;

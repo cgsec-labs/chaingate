@@ -36,8 +36,11 @@ const MAX_INSTALLS_HELD = 20;
 function namedBlock(e, { cutoff, bound = null }) {
   const id = identity(e.package, e.version);
   const namedRows = Array.isArray(e.named) ? e.named : [];
-  const baseline = namedRows.some((g) => String(g).startsWith('seed-v3:'))
-    ? `seed (history to ${cutoff ? clean(cutoff, 40) : 'an unrecorded cutoff'})` : (namedRows.length ? 'packument' : 'none');
+  // G3 dated note 2.5: a seed row and a packument (Tier 1 runner) row on one version name both baselines
+  const seedRow = namedRows.some((g) => String(g).startsWith('seed-v3:'));
+  const packumentRow = namedRows.some((g) => !String(g).startsWith('seed-v3:'));
+  const seedText = `seed (history to ${cutoff ? clean(cutoff, 40) : 'an unrecorded cutoff'})`;
+  const baseline = seedRow && packumentRow ? `${seedText} + packument` : (seedRow ? seedText : (packumentRow ? 'packument' : 'none'));
   const out = [
     `${shownId(e.package, e.version)}  NAMED WARNING: ${labels(namedRows, 'see chaingate why')}`,
     `  what moved: ${clean(e.reason)}`,

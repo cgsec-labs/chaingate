@@ -9,7 +9,8 @@
 //   L1          = the candidate has a hook, and not ever
 //   L1i         = the candidate's gypfile is truthy, it has no install/preinstall hook, and not ever (the counted form:
 //                 ever counts hooks only)
-// A version whose time does not parse orders nothing (it is in no set), as in the counted code.
+// A version whose time does not parse is in no set (the counted code raises on one; the registry writes ISO times). The
+// detail names the set used and its size (G3 dated note 2.4).
 import { pyTruthy } from '../seed/v3/packument.js';
 
 export const SETTLED_MS = 24 * 3_600_000;
@@ -50,23 +51,35 @@ function indexFor(versions, times) {
     all.push([t, v]);
     if (h.length) hooked.push([t, v]);
   }
-  const idx = { time, hooks, all: twoEarliest(all), hooked: twoEarliest(hooked) };
+  const sorted = all.map((e) => e[0]).sort((a, b) => a - b);
+  const idx = { time, hooks, all: twoEarliest(all), hooked: twoEarliest(hooked), sorted };
   if (!byTimes) { byTimes = new WeakMap(); indexes.set(versions, byTimes); }
   if (times && typeof times === 'object') byTimes.set(times, idx);
   return idx;
 }
 
+/** How many times in a sorted array are <= x (strict: < x). */
+function countUpTo(sorted, x, strict) {
+  let lo = 0; let hi = sorted.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (strict ? sorted[mid] < x : sorted[mid] <= x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
 export function evaluateL1(versions, times, version) {
   if (!versions || typeof versions !== 'object' || !Object.hasOwn(versions, version)) return { skip: 'the version is not in the served metadata' };
+  if (!times || typeof times !== 'object') return { skip: 'no publication time for this version' };    // note 2.2
   const idx = indexFor(versions, times);
   const c = idx.time.get(version);
   if (c === undefined) return { skip: 'no publication time for this version' };
   const firstOther = earliestOther(idx.all, version);
   const firstHooked = earliestOther(idx.hooked, version);
-  let used; let ever;
-  if (firstOther <= c - SETTLED_MS) { used = 'settled 24 h'; ever = firstHooked <= c - SETTLED_MS; } else if (firstOther < c) {
-    used = 'cold start: plain'; ever = firstHooked < c;
+  let used; let ever; let n;
+  if (firstOther <= c - SETTLED_MS) {
+    used = 'settled 24 h'; ever = firstHooked <= c - SETTLED_MS; n = countUpTo(idx.sorted, c - SETTLED_MS, false);
+  } else if (firstOther < c) {
+    used = 'cold start: plain'; ever = firstHooked < c; n = countUpTo(idx.sorted, c, true);
   } else return { skip: 'no earlier version' };
+  used = `${used}: ${n} version${n === 1 ? '' : 's'}`;
   const cur = idx.hooks.get(version);
   const m = versions[version];
   const gyp = Boolean(m && typeof m === 'object' && pyTruthy(m.gypfile)) && !cur.includes('install') && !cur.includes('preinstall');

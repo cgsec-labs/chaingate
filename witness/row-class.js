@@ -101,7 +101,11 @@ export function pendingFacts(rows, pending) {
  */
 export function classSignature(disposition, results) {
   const c = classify(results);
-  return JSON.stringify([disposition ?? null, c.named, c.contributing, c.facts, policyPrefix(results)]);
+  // G3 dated note 2.3 (D-N7 amended): the determinate named runner gates too, so a record written before Tier 1 (with no
+  // install-introduced row) is replaced once by a current one, even when the new evaluation's only change is a T1.1 ALLOW.
+  const determinate = [...new Set((Array.isArray(results) ? results : [])
+    .filter((x) => x && NAMED_RUNNER.has(x.gate) && (x.result === 'ALLOW' || x.result === 'WARN')).map((x) => x.gate))].sort();
+  return JSON.stringify([disposition ?? null, c.named, c.contributing, c.facts, policyPrefix(results), determinate]);
 }
 
 /**
