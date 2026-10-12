@@ -106,6 +106,9 @@ test('G3b-15 (note 3.4) a not-evaluable judgement is retried: failures are cache
     resetDependencyCache({ now: () => now });
     await get(`${base}/c`);
     await get(`${base}/c/-/c-1.1.0.tgz`);
+    // the download's MC row is written just after its response ends; let it land before the next judgement reads the record
+    // (otherwise that judgement can lose the race, as on macOS CI run 38277629363, and is retried only at a later download)
+    await new Promise((r) => setTimeout(r, 150));
     assert.equal(n1h(proxy, 'c', '1.1.0').result, 'SKIP');
     assert.match(n1h(proxy, 'c', '1.1.0').detail, /flaky \(upstream 500\)/);
     fail = false;
