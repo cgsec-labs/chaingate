@@ -101,6 +101,7 @@ test('G3b-9 (D-N5) the record keeps the judgement: a later observation with a co
   await withProxy(async ({ base, proxy }) => {
     await get(`${base}/carrier`);
     await get(`${base}/carrier/-/carrier-1.1.0.tgz`);
+    await new Promise((r) => setTimeout(r, 200));            // 3c: the MC outcome is written after the response ends
     const db = proxy.witnessDb;
     const rows = () => db.getDecisionHistory('carrier', '1.1.0').length;
     const n = rows();

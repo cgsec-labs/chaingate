@@ -110,11 +110,19 @@ function renderInstall(inst, cutoff) {
   const idOf = (e) => `${e.package}@${e.version ?? ''}`;
   const counts = { named: 0, refusals: 0, tags: 0, dropped: (Number(inst.dropped) || 0) + (inst.evicted_earlier ? 1 : 0) };
 
-  // named warnings, one block per version (the first serve); an accepted one is one line and no warning (2d, D-U9)
-  const namedSeen = new Set();
+  // named warnings, one block per version: every named event of the version merged (G3 dated note 5.4 -- a late MC event is
+  // never shadowed by an earlier one); the earliest serve's time and K; an accepted one is one line (2d, D-U9)
+  const namedByVersion = new Map();
   for (const e of events) {
-    if (e.kind !== 'served' || e.class !== 'named' || namedSeen.has(idOf(e))) continue;
-    namedSeen.add(idOf(e));
+    if (e.kind !== 'served' || e.class !== 'named') continue;
+    const m = namedByVersion.get(idOf(e));
+    if (!m) { namedByVersion.set(idOf(e), { ...e, named: [...(e.named ?? [])] }); continue; }
+    m.named = [...new Set([...m.named, ...(e.named ?? [])])].sort();
+    if (m.k == null && e.k != null) m.k = e.k;
+    if (e.late && !m.late) m.reason = `${m.reason} | ${e.reason}`;
+    m.accepted = Boolean(m.accepted && e.accepted);
+  }
+  for (const e of namedByVersion.values()) {
     if (e.accepted) { out.push(acceptedLine(e)); continue; }
     out.push(...namedBlock(e, { cutoff }), '');
     counts.named += 1;
@@ -183,6 +191,7 @@ function renderInstall(inst, cutoff) {
   for (const e of events) {
     if (e.kind !== 'served' || servedSeen.has(idOf(e))) continue;
     servedSeen.add(idOf(e));
+    if (namedByVersion.has(idOf(e))) continue;                // a named version is never "not checked" (note 5.4)
     if (e.class === 'override') overrides.push(shownId(e.package, e.version));
     else if (e.class === 'not-checked') byCoverage.set(e.coverage, (byCoverage.get(e.coverage) ?? 0) + 1);
   }

@@ -793,9 +793,12 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
       log?.warn?.(`[report] could not record a ${event?.kind ?? disk?.kind} event: ${err.message}`);
       return;
     }
-    if (!disk || !witnessDb || !installs.claimDisk(recorded.key, `${disk.kind}|${disk.package_name}@${disk.version}`)) return;
+    if (!disk || !witnessDb) return;
+    const claim = `${disk.kind}|${disk.package_name}@${disk.version}${disk.diskKey ? `|${disk.diskKey}` : ''}`;   // note 5.4
+    if (!installs.claimDisk(recorded.key, claim)) return;
     try {
-      witnessDb.insertNamedFactEvent({ ...disk, at: recorded.at, install_key: recorded.key, seed_sha256: seedSha() });
+      const { diskKey: _k, ...row } = disk;
+      witnessDb.insertNamedFactEvent({ ...row, at: recorded.at, install_key: recorded.key, seed_sha256: seedSha() });
     } catch (err) {
       reportCounters.disk_failures += 1;
       log?.warn?.(`[report] could not write a ${disk.kind} event to disk: ${err.message}`);
@@ -1082,11 +1085,13 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${MC_GATE} (${row.detail})`,
                   `${canonicalName}@${state.tarballVersion}|${MC_GATE}`);
                 const cls = servedClass(now.gates_fired);
+                let k = null;                                          // G3 dated note 5.4: K for the late event too
+                try { k = lastVersionWithoutSignal(witnessDb, canonicalName, state.tarballVersion); } catch { k = null; }
                 noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion, ...cls, reason,
-                  policy: policyPrefix(now.gates_fired), notice: false, k: null, late: true },
-                { kind: 'named-served', package_name: canonicalName, version: state.tarballVersion,
+                  policy: policyPrefix(now.gates_fired), notice: false, k, late: true },
+                { kind: 'named-served', package_name: canonicalName, version: `${state.tarballVersion}`, diskKey: 'late',
                   classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage, late: true }, reason,
-                  policy_version: policyPrefix(now.gates_fired), k_version: null });
+                  policy_version: policyPrefix(now.gates_fired), k_version: k });
               }
             } catch (err) {
               log?.warn?.(`[mc] ${canonicalName}@${state.tarballVersion}: not recorded (${err.message})`);

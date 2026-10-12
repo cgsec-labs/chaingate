@@ -18,8 +18,13 @@ export function hookDict(man) {
   return out;
 }
 
-const canonical = (x) => (Array.isArray(x) ? `[${x.map(canonical).join(',')}]`
-  : isObj(x) ? `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${canonical(x[k])}`).join(',')}}` : JSON.stringify(x));
+export const MAX_DEPTH = 64;
+class TooDeep extends Error {}
+const canonical = (x, d = 0) => {
+  if (d > MAX_DEPTH) throw new TooDeep('a hook value nested too deeply');
+  return Array.isArray(x) ? `[${x.map((y) => canonical(y, d + 1)).join(',')}]`
+    : isObj(x) ? `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${canonical(x[k], d + 1)}`).join(',')}}` : JSON.stringify(x);
+};
 export const manifestMismatch = (th, mh) => canonical(th) !== canonical(mh);
 
 // ---- the registry manifests' hooks, per package, as last observed by this process (D-M3) ----
@@ -47,10 +52,17 @@ export function mcRow(walk, mh) {
   if (!walk.ok) return { gate: GATE, result: 'SKIP', detail: `not checked: ${walk.reason}` };
   let pj = {};
   if (walk.packageJson) {
-    try { pj = JSON.parse(walk.packageJson.toString('utf8')); } catch { return { gate: GATE, result: 'SKIP', detail: 'not checked: the tarball package.json does not parse' }; }
+    // a UTF-8 BOM is dropped first, as Python's json.loads(bytes) and npm both do (G3 dated note 5.2)
+    const text = walk.packageJson.toString('utf8').replace(/^\uFEFF/, '');
+    try { pj = JSON.parse(text); } catch { return { gate: GATE, result: 'SKIP', detail: 'not checked: the tarball package.json does not parse' }; }
   }
   const th = hookDict(pj);
-  if (!manifestMismatch(th, mh)) return { gate: GATE, result: 'ALLOW', detail: 'tarball package.json install hooks match the registry entry' };
+  let differ;
+  try { differ = manifestMismatch(th, mh); } catch (err) {
+    if (err instanceof TooDeep) return { gate: GATE, result: 'SKIP', detail: `not checked: ${err.message}` };
+    throw err;
+  }
+  if (!differ) return { gate: GATE, result: 'ALLOW', detail: 'tarball package.json install hooks match the registry entry' };
   const keys = (d) => Object.keys(d).sort().join(', ') || 'no install hook';
   const same = keys(th) === keys(mh);
   return { gate: GATE, result: 'WARN',

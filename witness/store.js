@@ -260,7 +260,8 @@ export function createWitness({ db, runGates, config, logger }) {
           // 0.1.4 group 3c (D-M5): a determinate MC outcome (tarballs are immutable per version) is carried into every
           // re-evaluation; the runner never produces it. A not-checked row is not carried: it is retried at the next download.
           const mcPrev = prev?.gates_fired?.find?.((g) => g && g.gate === 'install-manifest-mismatch' && (g.result === 'WARN' || g.result === 'ALLOW'));
-          if (mcPrev && !gateResults.some((g) => g && g.gate === 'install-manifest-mismatch')) {
+          // never into an override short-circuit (G3 dated note 5.5): the stored override row keeps its ALLOW
+          if (mcPrev && !isOverrideRow(gateResults) && !gateResults.some((g) => g && g.gate === 'install-manifest-mismatch')) {
             gateResults.push(mcPrev);
             if (mcPrev.result === 'WARN' && disposition !== 'BLOCK') disposition = 'WARN';
           }
