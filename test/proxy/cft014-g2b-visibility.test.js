@@ -24,9 +24,11 @@ const get = (url) => new Promise((resolve, reject) => {
 const strict = () => manifestFor('q', '1.5.0', { scripts: { postinstall: 'node x.js' },
   dist: { unpackedSize: 10_000, attestations: { url: 'https://x' } } });                    // surface: named
 const contributing = () => manifestFor('q', '1.4.0', { scripts: { postinstall: 'node x.js' } }); // any only: NOTE
+// G3 dated note 1.2: q@1.0.0 has a postinstall, so T1.1 stays quiet on q@1.4.0/1.5.0; the seed rows are this file's subject
+const earlyHook = (d) => { d.versions['1.0.0'].scripts = { postinstall: 'node legacy.js' }; return d; };
 const DOCS = () => ({
   p: docFor('p', [['1.3.0', after(1)], ['1.4.0', after(2)]]),                                  // p@1.3.0 is pinned
-  q: docFor('q', [['1.4.0', after(1), contributing()], ['1.5.0', after(2), strict()]]),
+  q: earlyHook(docFor('q', [['1.4.0', after(1), contributing()], ['1.5.0', after(2), strict()]])),
 });
 
 async function withProxy({ notices = {} } = {}, fn) {

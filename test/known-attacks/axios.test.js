@@ -191,10 +191,13 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
       assert.equal(resp.statusCode, 200);
       await resp.body.text(); // drain
 
-      // 1.14.1 is ALLOW on first observation (no history for comparison)
+      // 0.1.4 group 3a (T1.1, D-T7): install-introduced reads the served packument, not local history, so the hook 1.14.1
+      // introduces is a named WARN on the package's FIRST sight. The pattern gates still wait for local history.
       const decision = proxy.server.witnessDb.getLatestDecision('axios', '1.14.1');
       assert.ok(decision, 'decision should exist for 1.14.1');
-      assert.equal(decision.disposition, 'ALLOW', 'first-seen with empty history → ALLOW');
+      assert.equal(decision.disposition, 'WARN', 'first-seen: install-introduced (named) WARNs');
+      const t11 = decision.gates_fired.find((g) => g.gate === 'install-introduced');
+      assert.equal(t11?.result, 'WARN', JSON.stringify(decision.gates_fired));
     });
 
     // Re-populate dep cache in case the background dep-fetcher overwrote it
@@ -221,8 +224,9 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
 
     await t.test('gate_decisions for 1.14.1: the 4 pilot signals are recorded as NOTE (cft-policy-1.2 E8)', async () => {
       const decision = proxy.server.witnessDb.getLatestDecision('axios', '1.14.1');
-      assert.equal(decision.disposition, 'ALLOW',
-        'cft-policy-1.2 E8: four contributing signals and no named row: ALLOW, the signals kept as NOTE');
+      // cft-policy-1.2: the four pilot signals are contributing (NOTE, group 2a E8); the WARN is T1.1's named row (group 3a)
+      assert.equal(decision.disposition, 'WARN',
+        'install-introduced is the named WARN; the four contributing signals are kept as NOTE beside it');
 
       const gateMap = {};
       for (const g of decision.gates_fired) {
@@ -251,6 +255,10 @@ test('axios attack: 4 WARN signals observed, no BLOCK (V1 post-demotion)', async
       // release-age: ALLOW (96h > 72h threshold)
       assert.ok(gateMap['release-age'], 'release-age gate should be present');
       assert.equal(gateMap['release-age'].result, 'ALLOW');
+
+      // install-introduced (T1.1, named): the hook 1.14.1 adds, absent from every settled earlier version
+      assert.equal(gateMap['install-introduced']?.result, 'WARN');
+      assert.match(gateMap['install-introduced'].detail, /no earlier version \(settled 24 h/);
 
       // scope-boundary: WARN (V2-demoted from BLOCK; detail still names the fresh dep)
       assert.ok(gateMap['scope-boundary'], 'scope-boundary gate should be present');

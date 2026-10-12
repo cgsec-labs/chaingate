@@ -33,6 +33,7 @@ const DOCS = () => {
     ['1.4.5', iso(TIP_S + 2 * STEP_S - 3600)],                                               // decoy: 1 h before 1.5.0, not settled
     ['1.5.0', after(2), strict()]]);
   q['dist-tags'] = { latest: '1.5.0' };
+  q.versions['1.0.0'].scripts = { postinstall: 'node legacy.js' };   // G3 dated note 1.2: T1.1 stays quiet; the seed rows are the subject
   return { p, q, u: docFor('u', [['1.3.0', after(1)]]) };                                     // u: not covered by the seed
 };
 
@@ -111,7 +112,8 @@ test('G2c-2 (D-R1, E19) /_chaingate/report lists exactly what was served and ref
     assert.deepEqual([tag.tag, tag.from, tag.to, tag.facts], ['latest', '1.3.0', '1.2.0', ['seed-v3:pin']]);
     assert.equal(ev('served', 'q', '1.4.0').class, 'contributing');
     assert.deepEqual([ev('served', 'p', '1.2.0').class, ev('served', 'p', '1.2.0').coverage], ['clean', 'checked']);
-    assert.deepEqual([ev('served', 'u', '1.2.0').class, ev('served', 'u', '1.2.0').coverage], ['not-checked', 'not-covered']);
+    // G3 D-T3 (E29): the seed does not cover u, but T1.1 (a named rule) checked it, so it is clean, not "not checked"
+    assert.deepEqual([ev('served', 'u', '1.2.0').class, ev('served', 'u', '1.2.0').coverage], ['clean', 'not-covered']);
     assert.equal(inst.events.filter((e) => e.kind === 'served').length, 4, 'exactly the four served tarballs');
     assert.equal(inst.events.filter((e) => e.kind === 'refused').length, 1);
     for (const e of inst.events) assert.ok(!Number.isNaN(Date.parse(e.at)), 'every event is timed');

@@ -196,6 +196,10 @@ function renderInstall(inst, cutoff) {
       ? 'Every package served in this install, other than those served under your overrides, was checked by a named rule.'
       : 'Every package served in this install was checked by a named rule.');
   }
+  // 0.1.4 group 3a (D-T3, E29): checked by a named rule, but not by the seed's
+  const hookOnly = [...new Set(events.filter((e) => e.kind === 'served' && (e.class === 'clean' || e.class === 'contributing')
+    && e.coverage !== 'checked').map(idOf))].length;
+  if (hookOnly) out.push(`${hookOnly} package(s) were checked only by the install-hook rule (the seed had no usable history for them).`);
   if (overrides.length) {
     out.push(`${overrides.length} version(s) were served under your exact-version overrides (chaingate allow): `
       + `${overrides.slice(0, 20).join(', ')}${overrides.length > 20 ? ', …' : ''}`);

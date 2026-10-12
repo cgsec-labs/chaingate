@@ -12,7 +12,7 @@
 // At most `maxCandidates` decisions are read; none qualifying -> null (no pin is offered).
 import semver from 'semver';
 import { isOverrideRow } from './db.js';
-import { classify, coverageClass } from './row-class.js';
+import { classify, namedRuleChecked } from './row-class.js';
 
 export const SETTLED_MS = 24 * 3_600_000;
 const SEEN_SLACK_MS = 60_000;
@@ -58,7 +58,7 @@ export function lastVersionWithoutSignal(db, packageName, version, { settledMs =
     const rows = latest.gates_fired;
     if (isOverrideRow(rows)) continue;
     const c = classify(rows);
-    if (c.named.length || c.facts.length || coverageClass(rows) !== 'checked') continue;
+    if (c.named.length || c.facts.length || !namedRuleChecked(rows)) continue;          // D-T3: any named rule determinate
     return h.version;
   }
   return null;

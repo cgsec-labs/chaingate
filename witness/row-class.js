@@ -13,6 +13,7 @@ import POL from '../seed/v3/policy.js';
 import { REASON, blockReasons } from './decision-rule.js';
 
 const NAMED = new Set(POL.NAMED_ROWS);
+const NAMED_RUNNER = new Set(POL.NAMED_RUNNER_GATES);
 const LEGACY_PREFIXES = Object.freeze(['cft-policy-1.0: ', 'cft-policy-1.1: ']);
 const FACT_REASONS = new Set([REASON.CONTENT_HASH, REASON.PIN]);
 
@@ -32,6 +33,7 @@ export function classify(results) {
   for (const x of list) {
     if (!x || typeof x !== 'object') continue;
     if (x.result === POL.NOTE) out.contributing.push(x.gate);
+    if (x.result === 'WARN' && NAMED_RUNNER.has(x.gate)) out.named.push(x.gate);     // 0.1.4 group 3a (D-T2)
     if (x.gate !== 'seed-v3') continue;
     if (!Array.isArray(x.rows)) {
       if (typeof x.detail === 'string' && LEGACY_PREFIXES.some((p) => x.detail.startsWith(p))) out.legacy = true;
@@ -136,11 +138,21 @@ export function coverageClass(results) {
 export function servedClass(results) {
   const c = classify(results);
   const coverage = coverageClass(results);
-  const cls = c.named.length ? 'named' : (coverage !== 'checked' ? 'not-checked' : (c.contributing.length ? 'contributing' : 'clean'));
+  const cls = c.named.length ? 'named' : (!namedRuleChecked(results) ? 'not-checked' : (c.contributing.length ? 'contributing' : 'clean'));
   return { class: cls, coverage, named: c.named, contributing: c.contributing };
 }
 
-export default { classify, classSignature, policyPrefix, decidingReason, factsFromBits, pendingFacts, coverageClass, servedClass };
+/**
+ * 0.1.4 group 3a (D-T3): whether SOME named rule was determinate (ALLOW or WARN) -- the seed's strict tier (coverage class
+ * `checked`) or a named runner gate. "Not checked by any named rule" (V6) and K's "evaluated" (D-R5) both read this.
+ */
+export function namedRuleChecked(results) {
+  if (coverageClass(results) === 'checked') return true;
+  return (Array.isArray(results) ? results : []).some((x) => x && NAMED_RUNNER.has(x.gate) && (x.result === 'ALLOW' || x.result === 'WARN'));
+}
+
+export default { classify, classSignature, policyPrefix, decidingReason, factsFromBits, pendingFacts, coverageClass, servedClass,
+  namedRuleChecked };
 
 /** Rank of one row for the deciding reason (D-V1): fact 0, named 1, coverage 2, other 3, synthetic chaingate 4. */
 function rank(x) {

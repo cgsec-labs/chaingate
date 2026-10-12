@@ -51,7 +51,9 @@ function world(dir, proxyUrlRef) {
   return {
     files,
     docs: () => built ?? (built = {
-      q: doc('q', [...seeded, ['1.5.0', after(2), { unpackedSize: 10_000 }, { postinstall: 'node -e ""' }]], '1.5.0'),
+      // G3 dated note 1.2: q@1.0.0 has a postinstall, so T1.1 stays quiet on q@1.5.0; the seed row is this file's subject
+      q: doc('q', [[...seeded[0], undefined, { postinstall: 'node -e ""' }], ...seeded.slice(1),
+        ['1.5.0', after(2), { unpackedSize: 10_000 }, { postinstall: 'node -e ""' }]], '1.5.0'),
       p: doc('p', [...seeded, ['1.3.0', after(1)]], '1.3.0'),
     }),
   };

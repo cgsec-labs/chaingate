@@ -72,6 +72,9 @@ const DISPOSITIONS = Object.freeze([ALLOW, WARN, BLOCK]);
 // A new identity changes these deliberately; test/seed-v3/cft014-g2a-contributing.test.js guards them.
 const NAMED_ROWS = Object.freeze(['seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface']);
 const CONTRIBUTING_ROWS = Object.freeze(['seed-v3:dac-trajectory:any']);
+// 0.1.4 group 3a (D-T2): the D1 runner's NAMED gates -- a top-level runner row of one of these with result WARN is a named
+// warning, exactly like a NAMED_ROWS entry (r3 §18.7 item 2, §18.11). 3b and 3c add their gates here.
+const NAMED_RUNNER_GATES = Object.freeze(['install-introduced']);
 // Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member, D-N4).
 const POLICY_ROW_GATES = Object.freeze(['override', 'seed-v3:known-malicious-pin', 'seed-v3:input', 'seed-v3:channel-a',
   'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage']);
@@ -422,12 +425,14 @@ function lookupPin(seed, packageName, version) {
 }
 
 export {
+  NAMED_RUNNER_GATES,
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
   thresholdResults, decide, pinFor, lookupPin, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
   NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
 };
 export default {
+  NAMED_RUNNER_GATES,
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
   thresholdResults, decide, pinFor, lookupPin, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,

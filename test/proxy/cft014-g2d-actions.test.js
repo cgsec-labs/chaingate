@@ -33,6 +33,7 @@ const DOCS = () => {
   const q = docFor('q', [['1.4.0', after(1)], ['1.4.5', iso(TIP_S + 2 * STEP_S - 3600)], ['1.5.0', after(2), strict()],
     ['1.6.0-beta.1', after(3)], ['2.0.0', after(4)]]);
   q['dist-tags'] = { latest: '1.5.0', next: '1.6.0-beta.1', v2: '2.0.0' };
+  q.versions['1.0.0'].scripts = { postinstall: 'node legacy.js' };   // G3 dated note 1.2: T1.1 stays quiet; the seed rows are the subject
   return { p, q };
 };
 const VALIDATORS = { etag: '"upstream-etag"', 'last-modified': 'Mon, 12 Oct 2026 00:00:00 GMT', 'cache-control': 'public, max-age=300' };

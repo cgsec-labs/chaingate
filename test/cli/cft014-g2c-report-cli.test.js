@@ -42,6 +42,7 @@ const DOCS = () => {
   const q = docFor('q', [['1.4.0', after(1), manifestFor('q', '1.4.0', { scripts: { postinstall: 'node x.js' } })],
     ['1.4.5', iso(TIP_S + 2 * STEP_S - 3600)], ['1.5.0', after(2), strict()]]);
   q['dist-tags'] = { latest: '1.5.0' };
+  q.versions['1.0.0'].scripts = { postinstall: 'node legacy.js' };   // G3 dated note 1.2: T1.1 stays quiet; the seed rows are the subject
   return { p, q };
 };
 

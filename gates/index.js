@@ -50,6 +50,10 @@ import depStructure from './dep-structure.js';
 import provenanceContinuity from './provenance-continuity.js';
 import releaseAge from './release-age.js';
 import scopeBoundary from './scope-boundary.js';
+// 0.1.4 group 3a (E28): Tier 1 -- T1.1 install-introduced (named), T1.2 size-jump and T1.3 publish-tool-change (contributing)
+import installIntroduced from './install-introduced.js';
+import sizeJump from './size-jump.js';
+import publishToolChange from './publish-tool-change.js';
 import { withRole, validRows } from './row-class.js';
 
 // NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
@@ -83,7 +87,12 @@ const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
 // TODO: migrate callers to import directly from ../constants.js
 // (test/gates/runner.test.js is the remaining importer as of V2 sub-step 2f).
 export { MIN_HISTORY_DEPTH };
-const HISTORY_INDEPENDENT_GATES = new Set(['content-hash', 'seed-v3']);
+//
+// Tier 1 justification (0.1.4 group 3, dated note 1, D-T7). install-introduced, size-jump and publish-tool-change read NO
+// local baseline: only the packument served in this same request (`rawVersions`, `rawTimes`), the population the counted
+// rule was validated on with no depth requirement (validate_a1.py, A1 0 / 2,982). Under the guard, T1.1 would SKIP on a
+// package's first sight -- exactly the case it exists for.
+const HISTORY_INDEPENDENT_GATES = new Set(['content-hash', 'seed-v3', 'install-introduced', 'size-jump', 'publish-tool-change']);
 
 export const DEFAULT_GATE_MODULES = Object.freeze([
   contentHash,
@@ -92,6 +101,9 @@ export const DEFAULT_GATE_MODULES = Object.freeze([
   provenanceContinuity,
   releaseAge,
   scopeBoundary,
+  installIntroduced,
+  sizeJump,
+  publishToolChange,
 ]);
 
 // FAIL-OPEN, AND WHERE IT STOPS.

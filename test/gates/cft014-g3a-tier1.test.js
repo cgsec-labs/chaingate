@@ -196,3 +196,16 @@ test('G3a-9 (D-T6) the 1.2 role tables', () => {
     'release-age', 'scope-boundary', 'size-jump']);
   assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced']);
 });
+
+test('G3a-11 (D-T7) the Tier 1 gates run on a package\'s first sight: no local-history depth requirement', async () => {
+  const { createGateRunner, DEFAULT_GATE_MODULES } = await import('../../gates/index.js');
+  const runGates = createGateRunner({ modules: DEFAULT_GATE_MODULES });
+  const doc = pk([['1.0.0', 0], ['1.1.0', 48], ['1.2.0', 96, { ...HOOK, dist: { unpackedSize: 5000 } }]]);
+  doc.versions['1.1.0'].dist = { unpackedSize: 1000 };
+  const out = runGates({ ecosystem: 'npm', packageName: 'x', version: '1.2.0', incoming: { version: '1.2.0' }, rawVersions: doc.versions,
+    rawTimes: doc.time, publishedAt: doc.time['1.2.0'], history: [], baseline: null });
+  const row = (g) => out.results.find((r) => r.gate === g);
+  assert.equal(row('install-introduced').result, 'WARN', JSON.stringify(out.results));
+  assert.equal(row('size-jump').result, 'NOTE');
+  assert.equal(row('release-age').result, 'SKIP', 'the pattern gates keep their depth guard');
+});
