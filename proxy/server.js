@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
+import { Transform } from 'node:stream';
 
 import { loadConfig } from './config.js';
 import {
@@ -31,6 +32,9 @@ import { createPinSet, withheldBy } from '../witness/pins.js';
 // 0.1.4 group 3b (D-N3, D-N4): N1h judged at tarball time, bounded; the dependency cache's stats on /self
 import { judgeAtTarball } from './dependency-judge.js';
 import { dependencyCacheStats } from '../gates/dependency-cache.js';
+// 0.1.4 group 3c (D-M2..D-M4): MC while the tarball streams
+import { createTarWalker } from './tar-walk.js';
+import { rememberManifestHooks, manifestHooksFor, mcRow, recordMc, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
 // 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
@@ -186,7 +190,7 @@ function withNotice(headers, notice, { noStore = true } = {}) {
   return out;
 }
 
-async function streamUpstream(res, upstream, statusCode, extraHeaders = null) {
+async function streamUpstream(res, upstream, statusCode, extraHeaders = null, tap = null) {
   const headers = extraHeaders ? extraHeaders(relayResponseHeaders(upstream.headers)) : relayResponseHeaders(upstream.headers);
   res.writeHead(statusCode, headers);
   if (statusCode === 304 || statusCode === 204) {
@@ -195,7 +199,13 @@ async function streamUpstream(res, upstream, statusCode, extraHeaders = null) {
     return;
   }
   try {
-    await pipeline(upstream.body, res);
+    // 0.1.4 group 3c (D-M2): `tap` sees a copy of every chunk; the chunk itself goes to npm unchanged and undelayed
+    if (tap) {
+      await pipeline(upstream.body, new Transform({ transform(chunk, _enc, cb) {
+        try { tap(chunk); } catch { /* the walk never affects the download */ }
+        cb(null, chunk);
+      } }), res);
+    } else await pipeline(upstream.body, res);
   } catch (err) {
     if (!res.writableEnded) res.destroy(err);
   }
@@ -223,6 +233,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
   let parsed;
   try {
     parsed = JSON.parse(raw.toString('utf8'));
+    if (parsed && typeof parsed === 'object') rememberManifestHooks(packageName, parsed.versions);   // 3c (D-M3)
   } catch (err) {
     log?.warn?.(`[proxy] ${packageName}: non-JSON packument body: ${err.message}`);
   }
@@ -809,6 +820,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     let parsed;
     try {
       parsed = JSON.parse(Buffer.from(await upstream.body.arrayBuffer()).toString('utf8'));
+      if (parsed && typeof parsed === 'object') rememberManifestHooks(canonicalName, parsed.versions);   // 3c (D-M3)
     } catch (err) {
       return { ok: false, why: `the metadata could not be read (${err.message})` };
     }
@@ -1049,8 +1061,38 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
               history_cutoff: seedV3?.meta?.history_cutoff ?? null, ...(accepted ? { accepted: true } : {}) },
             reason, policy_version: policy, k_version: k } : null);
         }
+        // 0.1.4 group 3c (D-M2): walk a copy of the stream unless the record already holds a determinate MC outcome
+        // only onto a record the CURRENT runner wrote (it carries install-introduced), never after a failed C1 (dated note 4)
+        const current = state.applicable?.latest?.gates_fired?.some?.((g) => g && g.gate === 'install-introduced');
+        const walkLatest = upstream.statusCode === 200 && state.tarballVersion != null && !state.override && witnessDb
+          && current && !(state.c1 && !state.c1.ok) ? state.applicable.latest : null;
+        const walker = walkLatest && !mcDeterminate(walkLatest) ? createTarWalker() : null;
         await streamUpstream(res, upstream, upstream.statusCode,
-          notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null);
+          notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null, walker ? (c) => walker.write(c) : null);
+        if (walker) {
+          const walk = await walker.end();
+          // an aborted download is not recorded: it is walked again next time
+          if (res.writableFinished) {
+            try {
+              const row = mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion));
+              const outcome = recordMc({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, row });
+              if (outcome === 'wrote' && row.result === 'WARN') {
+                const now = witnessDb.getLatestDecision(canonicalName, state.tarballVersion);
+                const reason = decidingReason(now.gates_fired, 'WARN');
+                log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${MC_GATE} (${row.detail})`,
+                  `${canonicalName}@${state.tarballVersion}|${MC_GATE}`);
+                const cls = servedClass(now.gates_fired);
+                noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion, ...cls, reason,
+                  policy: policyPrefix(now.gates_fired), notice: false, k: null, late: true },
+                { kind: 'named-served', package_name: canonicalName, version: state.tarballVersion,
+                  classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage, late: true }, reason,
+                  policy_version: policyPrefix(now.gates_fired), k_version: null });
+              }
+            } catch (err) {
+              log?.warn?.(`[mc] ${canonicalName}@${state.tarballVersion}: not recorded (${err.message})`);
+            }
+          }
+        }
       }
     } catch (err) {
       if (err instanceof UpstreamTimeoutError) {

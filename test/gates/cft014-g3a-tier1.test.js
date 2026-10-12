@@ -194,7 +194,7 @@ test('G3a-8 (D-T3) V6 and K: a release checked only by the install-hook rule is 
 test('G3a-9 (D-T6) the 1.2 role tables', () => {
   assert.deepEqual([...CONTRIBUTING_GATES].sort(), ['dep-structure', 'provenance-continuity', 'publish-tool-change', 'publisher-identity',
     'release-age', 'scope-boundary', 'size-jump']);
-  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks']);   // 3b (D-N6)
+  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch']);   // 3b (D-N6)
 });
 
 test('G3a-11 (D-T7) the Tier 1 gates run on a package\'s first sight: no local-history depth requirement', async () => {

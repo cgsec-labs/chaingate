@@ -256,8 +256,15 @@ export function createWitness({ db, runGates, config, logger }) {
           // 0.1.4 group 3b (D-N5): the record keeps N1h's last JUDGEMENT. A pending row (the dependency cache is cold) never
           // replaces a judged one for the same added set: the judgement changes only when a new one is made.
           const n1h = gateResults.findIndex((g) => g && g.gate === 'dependency-hooks');
+          const prev = (() => { try { return db.getLatestDecision(packageName, incoming.version); } catch { return null; } })();
+          // 0.1.4 group 3c (D-M5): a determinate MC outcome (tarballs are immutable per version) is carried into every
+          // re-evaluation; the runner never produces it. A not-checked row is not carried: it is retried at the next download.
+          const mcPrev = prev?.gates_fired?.find?.((g) => g && g.gate === 'install-manifest-mismatch' && (g.result === 'WARN' || g.result === 'ALLOW'));
+          if (mcPrev && !gateResults.some((g) => g && g.gate === 'install-manifest-mismatch')) {
+            gateResults.push(mcPrev);
+            if (mcPrev.result === 'WARN' && disposition !== 'BLOCK') disposition = 'WARN';
+          }
           if (n1h >= 0 && Array.isArray(gateResults[n1h].pending)) {
-            const prev = (() => { try { return db.getLatestDecision(packageName, incoming.version); } catch { return null; } })();
             // only a DETERMINATE judgement is kept (G3 dated note 3.4): a not-evaluable SKIP is retried, not carried
             const judged = prev?.gates_fired?.find?.((g) => g && g.gate === 'dependency-hooks' && !Array.isArray(g.pending)
               && (g.result === 'WARN' || g.result === 'ALLOW'));

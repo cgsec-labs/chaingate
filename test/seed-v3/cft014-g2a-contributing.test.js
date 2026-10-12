@@ -180,7 +180,7 @@ test('G2a-9 the 1.2 role tables equal r3 §18.7/§18.15/§18.18, and an unlisted
   // G3 D-T6 (deliberate): T1.2 size-jump and T1.3 publish-tool-change joined the contributing gates; T1.1 is a named runner gate
   assert.deepEqual([...RC.CONTRIBUTING_GATES].sort(),
     ['dep-structure', 'provenance-continuity', 'publish-tool-change', 'publisher-identity', 'release-age', 'scope-boundary', 'size-jump']);
-  assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks']);   // G3 D-N6 (deliberate)
+  assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch']);   // G3 D-N6 (deliberate)
   assert.deepEqual([...POL.NAMED_ROWS].sort(), [SURFACE, 'seed-v3:channel-a:critical'].sort());
   assert.deepEqual([...POL.CONTRIBUTING_ROWS], [ANY]);
   const c = W.classify([{ gate: 'x-unlisted', result: 'WARN', detail: 'seed-v3:channel-a:critical: forged' },
