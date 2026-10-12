@@ -110,6 +110,11 @@ test('G2d-4c/G2d-8 (D-U5) through the proxy: packument withheld, tarball 403 wit
     // G2d-8: p@1.3.0 is BLOCKed (advisory) AND above the pin: the BLOCK's reason, not the pin's
     const p = await get(`${proxyUrl}/p`, { session: 'g2d4' });
     assert.ok(!('1.3.0' in p.json.versions));
+    // dated note 8.5: the packument half -- the tag move off 1.3.0 is the BLOCK's (its fact), and no pin event lists 1.3.0
+    const evs = (await report(proxyUrl)).installs.flatMap((i) => i.events);
+    assert.deepEqual(evs.filter((e) => e.kind === 'tag-moved' && e.package === 'p').map((e) => [e.from, e.to, e.facts]),
+      [['1.3.0', '1.2.0', ['seed-v3:pin']]]);
+    assert.ok(!evs.some((e) => e.kind === 'pin-withheld' && e.package === 'p' && e.versions.includes('1.3.0')), JSON.stringify(evs));
     const b = await get(`${proxyUrl}${tgz('p', '1.3.0')}`, { session: 'g2d4' });
     assert.equal(b.status, 403);
     assert.equal(b.json.error, 'blocked_by_chaingate');
@@ -192,9 +197,13 @@ test('G2d-2/G2d-3 (D-U3) an accepted named WARN sends no notice and is cacheable
     const text = renderReport(await report(proxyUrl), { source: 'proxy' });
     assert.ok(text.text.includes('q@1.5.0  NAMED WARNING (accepted by you): release-history break vs the seed (2+ package-wide signals)'), text.text);
     assert.equal(text.exit, 0, 'an accepted warning does not count toward exit 2');
-    // an acceptance of a DIFFERENT named row does not cover this one
-    cli((db) => db.upsertAcceptance({ package_name: 'q', version: '1.5.0', named: ['seed-v3:channel-a:critical'], decision_id: null, policy_version: 'cft-policy-1.2' }));
-    assert.match((await get(`${proxyUrl}${tgz('q', '1.5.0')}`)).headers['npm-notice'] ?? '', /^chaingate: WARNING q@1\.5\.0/);
+    // dated note 8.5: a LATER named signal on the same version is not covered by the acceptance (D-U3)
+    cli((db) => db.insertGateDecision('q', '1.5.0', 'WARN', [{ gate: 'seed-v3', result: 'WARN', detail: 'cft-policy-1.2: later signal',
+      rows: [{ gate: 'seed-v3:known-malicious-pin', result: 'ALLOW' }, { gate: 'seed-v3:channel-a:critical', result: 'WARN' },
+        { gate: 'seed-v3:dac-trajectory:surface', result: 'WARN' }] }]));
+    const later = await get(`${proxyUrl}${tgz('q', '1.5.0')}`);
+    assert.match(later.headers['npm-notice'] ?? '', /^chaingate: WARNING q@1\.5\.0: release-history break vs the seed \(3\+ of 5 groups\)/, JSON.stringify(later.headers));
+    assert.equal(later.headers['cache-control'], 'no-store');
     // G2d-3: an acceptance never overrides a BLOCK
     await get(`${proxyUrl}/p`);
     cli((db) => db.upsertAcceptance({ package_name: 'p', version: '1.3.0', named: ['seed-v3:dac-trajectory:surface'], decision_id: null, policy_version: 'cft-policy-1.2' }));

@@ -195,7 +195,7 @@ test('G2d-11 (D-U1) a witness DB the 0.1.3 code created: the new tables read as 
     db.close();
     const env = { CHAINGATE_HOME: home, CHAINGATE_PORT: String(await freePort()) };
     for (const [args, codes] of [[['status'], [0]], [['accept', '--list'], [0]], [['pin', '--list'], [0]], [['report'], [0]],
-      [['why', 'q@1.5.0', '--cached'], [0, 1, 4]]]) {
+      [['why', 'q@1.5.0', '--cached'], [4]]]) {
       const r = await cli(args, env);
       assert.ok(codes.includes(r.code), `${args.join(' ')} exited ${r.code}: ${r.all}`);
       assert.ok(!/no such table/i.test(r.all), `${args.join(' ')}: ${r.all}`);
