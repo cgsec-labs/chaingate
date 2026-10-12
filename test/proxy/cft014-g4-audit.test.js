@@ -22,7 +22,8 @@ function tgz(pj) {
   try {
     fs.mkdirSync(path.join(dir, 'package'));
     fs.writeFileSync(path.join(dir, 'package', 'package.json'), JSON.stringify(pj));
-    execFileSync('tar', ['-czf', path.join(dir, 'o.tgz'), '-C', dir, 'package']);
+    // relative names inside the folder: GNU tar reads `C:\...` in -f as host:path (Windows CI run 38276078619)
+    execFileSync('tar', ['-czf', 'o.tgz', 'package'], { cwd: dir });
     return fs.readFileSync(path.join(dir, 'o.tgz'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
@@ -166,6 +167,8 @@ test('G4-9b (R4) at most MAX_IN_FLIGHT dependency fetches run at once; queued on
   assert.equal(r.timedOut.length, 20, 'nothing answered within the budget');
   assert.equal(peak, MAX_IN_FLIGHT);
   assert.equal(started, MAX_IN_FLIGHT);
+  // the budget's timer can fire in the same millisecond as the deadline (CI run 38276078619): wait until it has clearly passed
+  await new Promise((r2) => setTimeout(r2, 30));
   for (const f of release.splice(0)) f();                          // the running ones finish: the expired queue is dropped
   await new Promise((r2) => setTimeout(r2, 50));
   assert.equal(started, MAX_IN_FLIGHT, 'queued fetches whose budget passed were not started');
@@ -179,7 +182,7 @@ test('G4-9b (R4) at most MAX_IN_FLIGHT dependency fetches run at once; queued on
 test('G4-10 (R7) /_chaingate/self names the witness database the proxy reads (its real path)', async () => {
   await withProxy(async ({ base, dbPath }) => {
     const self = JSON.parse((await get(`${base}/_chaingate/self`)).body.toString());
-    assert.equal(self.witness_db, fs.realpathSync(dbPath));
+    assert.equal(self.witness_db, fs.realpathSync.native(dbPath));   // native: Windows temp paths carry 8.3 names (RUNNER~1)
   });
 });
 

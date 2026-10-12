@@ -24,7 +24,8 @@ function tgz(files, { format = 'gnu', order = null } = {}) {
       fs.writeFileSync(path.join(dir, p), content);
     }
     const out = path.join(dir, 'out.tgz');
-    execFileSync('tar', ['-czf', out, `--format=${format}`, '-C', dir, ...(order ?? Object.keys(files))]);
+    // relative names inside the folder: GNU tar reads `C:\...` in -f as host:path (Windows CI run 38276078619)
+    execFileSync('tar', ['-czf', 'out.tgz', `--format=${format}`, ...(order ?? Object.keys(files))], { cwd: dir });
     return fs.readFileSync(out);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }

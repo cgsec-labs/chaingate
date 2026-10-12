@@ -22,7 +22,8 @@ function tgz(pj, extra = null) {
     fs.mkdirSync(path.join(dir, 'package'));
     fs.writeFileSync(path.join(dir, 'package', 'package.json'), JSON.stringify(pj));
     if (extra) fs.writeFileSync(path.join(dir, 'package', 'big.bin'), extra);
-    execFileSync('tar', ['-czf', path.join(dir, 'o.tgz'), '-C', dir, 'package']);
+    // relative names inside the folder: GNU tar reads `C:\...` in -f as host:path (Windows CI run 38276078619)
+    execFileSync('tar', ['-czf', 'o.tgz', 'package'], { cwd: dir });
     return fs.readFileSync(path.join(dir, 'o.tgz'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
