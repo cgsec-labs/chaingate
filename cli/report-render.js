@@ -9,7 +9,7 @@
 import { identity, labelFor } from '../proxy/notice.js';
 
 // C0, DEL, C1, and the bidi/format controls (U+061C, U+200B-U+200F, U+202A-U+202E, U+2060-U+2069, U+FEFF)
-export const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f؜​-‏‪-‮⁠-⁩﻿]/g;
+export const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
 export const DISK_READ_LIMIT = 10_000;
 const TAG_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const clean = (v, max = 300) => {

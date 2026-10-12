@@ -61,11 +61,11 @@ test('G2c-21 (note 7.13) an unreadable witness DB in disk mode is a tool error: 
 test('G2c-22b (note 7.14) --json escapes DEL, C1 and bidi controls losslessly', async () => {
   await withHome(async (home) => {
     const db = openWitnessDB(path.join(home, 'witness.db')).applySchema();
-    try { db.insertNamedFactEvent(row({ reason: 'a‮b\u009bc\u007fd' })); } finally { db.close(); }
+    try { db.insertNamedFactEvent(row({ reason: 'a\u202eb\u009bc\u007fd' })); } finally { db.close(); }
     const r = await cli(['report', '--json'], { CHAINGATE_HOME: home, CHAINGATE_PORT: String(await freePort()) });
-    assert.ok(!/[\u007f-\u009f‮]/.test(r.out), 'no raw control character on stdout');
+    assert.ok(!/[\u007f-\u009f\u202e]/.test(r.out), 'no raw control character on stdout');
     const j = JSON.parse(r.out);
-    assert.equal(j.events[0].reason, 'a‮b\u009bc\u007fd', 'the data is unchanged');
+    assert.equal(j.events[0].reason, 'a\u202eb\u009bc\u007fd', 'the data is unchanged');
     assert.equal(j.exit, 3);
   });
 });

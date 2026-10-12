@@ -86,12 +86,24 @@ export function evaluateL1(versions, times, version) {
   return { L1: cur.length > 0 && !ever, L1i: gyp && !ever, hooks: cur, used };
 }
 
+// G4 D-C1 (spec B1/B18): each hook named with its command -- publisher text, so sanitised (control and bidi characters
+// stripped) and capped at 80 characters; a non-string value is shown by its JSON type.
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+function commandOf(v) {
+  if (typeof v !== 'string') return Array.isArray(v) ? '[list]' : (v && typeof v === 'object' ? '{object}' : `[${typeof v}]`);
+  const s = v.replace(UNSAFE, '');
+  return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+}
+const named = (manifest, hooks) => hooks.map((k) => `${k} (${commandOf(manifest?.scripts?.[k])})`).join(', ');
+
 export default {
   name: GATE,
   evaluate(input) {
     const r = evaluateL1(input?.rawVersions, input?.rawTimes, input?.version);
     if (r.skip) return result('SKIP', `not evaluable: ${r.skip}`);
-    if (r.L1) return result('WARN', `${r.hooks.join(', ')} present; no earlier version (${r.used}) had an install hook`);
+    if (r.L1) {
+      return result('WARN', `${named(input.rawVersions[input.version], r.hooks)} present; no earlier version (${r.used}) had an install hook`);
+    }
     if (r.L1i) return result('WARN', `gypfile present (an implicit node-gyp install) with no install/preinstall hook; no earlier version (${r.used}) had an install hook`);
     return result('ALLOW', `no install hook introduced (${r.used})`);
   },

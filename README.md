@@ -222,6 +222,7 @@ npm install -g @cgsec/chaingate --allow-scripts=better-sqlite3
 npm pkg set allowScripts.better-sqlite3=true --json && npm install @cgsec/chaingate
 # ... or install first, then approve and build it
 npm install @cgsec/chaingate && npm approve-scripts better-sqlite3 && npm rebuild better-sqlite3
+# (npm 11.19.0 also names it npm install-scripts approve better-sqlite3; checked on 11.19.0, absent from 10.9.7)
 
 # with ignore-scripts=true in your npm configuration: rebuild just that package
 cd "$(npm root -g)/@cgsec/chaingate" && npm rebuild better-sqlite3 --ignore-scripts=false

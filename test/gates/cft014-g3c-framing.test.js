@@ -43,7 +43,7 @@ async function walk(parts) {
   for (let i = 0; i < gz.length; i += 333) w.write(gz.subarray(i, i + 333));
   return w.end();
 }
-const pj = (r) => (r.ok && r.packageJson ? JSON.parse(r.packageJson.toString('utf8').replace(/^﻿/, '')) : null);
+const pj = (r) => (r.ok && r.packageJson ? JSON.parse(r.packageJson.toString('utf8').replace(/^\ufeff/, '')) : null);
 
 test('G3c-7 (note 5.1) a pax size= override frames the archive (no decoy inside another entry\'s data)', async () => {
   // a.bin's ustar size is 0 but pax says 1536: its data holds a fake header that would swallow the real package.json

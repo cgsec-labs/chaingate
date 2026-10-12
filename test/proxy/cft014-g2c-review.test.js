@@ -237,8 +237,8 @@ test('G2c-20 (note 7.11) "every package was checked" names the override exceptio
 
 test('G2c-22 (note 7.14) bidi and C1 controls are stripped from text; the summary caps strings at every depth', () => {
   const r = renderReport(wrap([{ key: 'npm-session:a', grouping: 'npm-session', started_at: START, last_at: START, dropped: 0,
-    dropped_important: 0, events: [{ at: START, ...refused('x', '1.0.0', [], { status: 503, reason: 'a‮b\u009bc‏d﻿e' }) }] }]), { source: 'proxy' });
-  assert.ok(!/[\u007f-\u009f؜​-‏‪-‮⁠-⁩﻿]/.test(r.text), JSON.stringify(r.text));
+    dropped_important: 0, events: [{ at: START, ...refused('x', '1.0.0', [], { status: 503, reason: 'a\u202eb\u009bc\u200fd\ufeffe' }) }] }]), { source: 'proxy' });
+  assert.ok(!/[\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(r.text), JSON.stringify(r.text));
   assert.ok(r.text.includes('abcde'));
   const s = createInstallSummary({ now: () => 0 });
   s.record({ session: 'cap' }, { kind: 'withheld', package: 'p', versions: [{ version: 'v'.repeat(5000), facts: ['seed-v3:pin'] }], more: 0 });

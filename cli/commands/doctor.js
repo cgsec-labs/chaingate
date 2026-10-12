@@ -48,6 +48,11 @@ async function fetchProxySelf(host, port, timeoutMs = 1500) {
 //
 // Ordering: tamper > non-severity-fails > unverifiable > OK. 'skipped'
 // coexists with OK as a no-op for exit determination.
+/** 0.1.4 group 4 (G4 D-C2, spec A11): failed checks only -- a skipped check is never a failure. */
+export function failedCount(checks) {
+  return checks.filter((c) => !c.pass && c.severity !== 'skipped').length;
+}
+
 export function aggregateExit(checks) {
   if (checks.some((c) => c.severity === 'tamper')) return EXIT.INTEGRITY_TAMPER;
   if (checks.some((c) => !c.pass && !c.severity)) return EXIT.ERROR;
@@ -464,8 +469,7 @@ export default async function doctor(args) {
     console.log(fmt.yellow('Unverifiable: integrity checks could not complete.'));
     console.log(fmt.dim('  Expected for pre-publish, dev, or --no-seed installs. See detail above.'));
   } else {
-    const fails = checks.filter((c) => !c.pass).length;
-    console.log(fmt.red(`${fails} check(s) failed.`));
+    console.log(fmt.red(`${failedCount(checks)} check(s) failed.`));
   }
   if (!sqlite.ok) {
     console.log('');

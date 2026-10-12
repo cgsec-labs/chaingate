@@ -24,7 +24,10 @@ const ZWSP = '\u200b';   // ZERO WIDTH SPACE
 const PUA = '\ue000';   // PRIVATE USE AREA
 const ASTRAL = String.fromCodePoint(0x10000);
 
-function tmpdir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'cft04-cx-')); }
+// 0.1.4 group 4 (G4 D-C4, spec A13): every folder made here is removed after the run, on success or failure
+const made = [];
+function tmpdir() { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'cft04-cx-')); made.push(d); return d; }
+test.after(() => { for (const d of made) fs.rmSync(d, { recursive: true, force: true }); });
 
 // --- 1. casefold is not toLowerCase, in BOTH directions -------------------------------------------
 test('final sigma folds to sigma; toLowerCase leaves it alone', () => {
