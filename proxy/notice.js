@@ -11,8 +11,9 @@ import { SEMVER_RE } from '../seed/v3/gate.js';
 export const NOTICE_CACHE_CONTROL = 'no-store';
 export const NOTICE_MAX_BYTES = 400;
 const UPSTREAM_MAX = 300;
-// npm's package-name rules (validate-npm-package-name, new packages): lowercase, URL-safe, optional @scope/, <= 214.
-const NAME_RE = /^(?:@[a-z0-9-*~][a-z0-9-*._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+// npm's package-name characters (validate-npm-package-name): URL-safe, optional @scope/, <= 214. Uppercase is allowed
+// because legacy names keep it (e.g. JSONStream; dated note 5.7).
+const NAME_RE = /^(?:@[a-zA-Z0-9-*~][a-zA-Z0-9-*._~]*\/)?[a-zA-Z0-9-~][a-zA-Z0-9-._~]*$/;
 
 const LABELS = Object.freeze({
   'seed-v3:channel-a:critical': 'release-history break vs the seed (3+ of 5 groups)',

@@ -45,7 +45,7 @@
 import { parseVersionsFromPackument } from './baseline.js';
 import { isOverrideRow } from './db.js';
 import { applicableFromRows, step, isActualEvaluation } from './decision-rule.js';
-import { classSignature } from './row-class.js';
+import { classSignature, pendingFacts } from './row-class.js';
 
 const ECOSYSTEM = 'npm';
 
@@ -120,9 +120,12 @@ export function createWitness({ db, runGates, config, logger }) {
    * own rows after it. (Rule K's wording, for the stored case.)
    */
   /** C2 (owner decision 10): the stored BLOCK still applies because this evaluation did not definitively clear it. */
-  function applicableBlockKept(packageName, version, row, pending, computed) {
+  function applicableBlockKept(packageName, version, row, pending, computed, facts = []) {
     return {
       disposition: 'BLOCK',
+      // 2b review (dated note 5.1): what the kept BLOCK rests on, structured -- its confirmed fact reasons and the stored
+      // BLOCK's rows -- so lines, reasons and notices name the fact rather than this synthetic row.
+      held: { facts, rows: Array.isArray(row?.gates_fired) ? row.gates_fired : null },
       results: [{ gate: 'chaingate', result: 'BLOCK',
         detail: `stored BLOCK still applies: ${packageName}@${version} was BLOCKed (decided ${row.decided_at ?? 'at an unknown time'}) `
           + `and this evaluation did not definitively clear ${pending.join(', ')}` },
@@ -130,9 +133,10 @@ export function createWitness({ db, runGates, config, logger }) {
     };
   }
 
-  function preservedStoredBlock(packageName, version, row, failed) {
+  function preservedStoredBlock(packageName, version, row, failed, facts = []) {
     return {
       disposition: 'BLOCK',
+      held: { facts, rows: Array.isArray(row?.gates_fired) ? row.gates_fired : null },   // dated note 5.1
       results: [{ gate: 'chaingate', result: 'BLOCK',
         detail: `stored BLOCK preserved: the applicable stored decision for ${packageName}@${version} is BLOCK (decided `
           + `${row.decided_at ?? 'at an unknown time'}); a failure decision cannot make it servable` },
@@ -267,14 +271,16 @@ export function createWitness({ db, runGates, config, logger }) {
             if (before.block) {
               skipInsert = true;
               if (!overrideEstablished(packageName, incoming.version)) {
-                returned = preservedStoredBlock(packageName, incoming.version, before.block, computed);
+                returned = preservedStoredBlock(packageName, incoming.version, before.block, computed,
+                  pendingFacts(stored, before.pending));
               }
             }
           } else if (!overrideBased && disposition !== 'BLOCK' && before.block && after.pending.size > 0) {
             // C2: an evaluation that does not DEFINITIVELY clear every pending reason (a SKIP, an error, a missing gate,
             // an input-rule result) leaves the BLOCK applicable. Its row is still written below, once, as evidence.
             if (!overrideEstablished(packageName, incoming.version)) {
-              returned = applicableBlockKept(packageName, incoming.version, before.block, [...after.pending].sort(), computed);
+              returned = applicableBlockKept(packageName, incoming.version, before.block, [...after.pending].sort(), computed,
+                pendingFacts(stored, [...after.pending]));
             }
           }
           evaluated.set(incoming.version, returned);

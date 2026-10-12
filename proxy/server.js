@@ -24,8 +24,7 @@ import { createUnstoredBlocks, validateCaps } from './unstored-blocks.js';
 import { createEvaluationTracker, EvaluationBusy } from './evaluation-tracker.js';
 import { createLogBoundary } from './log-boundary.js';
 // 0.1.4 group 2b (D-V1..D-V5): the deciding reason, the row classes, and ChainGate's npm-notice.
-import { classify as classifyRows, decidingReason } from '../witness/row-class.js';
-import { blockReasons } from '../witness/decision-rule.js';
+import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts } from '../witness/row-class.js';
 import { buildNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
 import { storageReport } from './storage-health.js';
 import { createDepFetcher } from './dep-fetcher.js';
@@ -136,6 +135,7 @@ function refuseFull(res, packageName, detail) {
 function preserveKnownBlock(packageName, version, decision, known) {
   return {
     disposition: 'BLOCK',
+    held: { facts: factsFromBits(known?.reasons), rows: null },   // 0.1.4 2b review (dated note 5.1): the held facts
     results: [{ gate: 'chaingate', result: 'BLOCK',
       detail: `known BLOCK preserved: this proxy process decided BLOCK for ${packageName}@${version} and could not `
         + `store it (${known.detail}); a failure decision cannot make it servable` },
@@ -175,13 +175,6 @@ function withNotice(headers, notice, { noStore = true } = {}) {
   out['npm-notice'] = out['npm-notice'] ? [notice, out['npm-notice']] : notice;
   if (noStore) out['cache-control'] = NOTICE_CACHE_CONTROL;
   return out;
-}
-
-const FACT_REASONS = new Set(['content-hash', 'seed-v3:pin']);
-/** The fact reasons of a remembered (unstored) BLOCK, from what the unstored record keeps (gate names, first detail). */
-function rememberedFacts(known) {
-  const rows = (Array.isArray(known?.gates) ? known.gates : []).map((g) => ({ gate: g, result: 'BLOCK', detail: known.detail ?? '' }));
-  return blockReasons(rows).filter((r) => FACT_REASONS.has(r));
 }
 
 async function streamUpstream(res, upstream, statusCode, extraHeaders = null) {
@@ -310,11 +303,18 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
       if (changed) {
         // D-V2: a BLOCK resting on a fact goes through the reserved fact channel, deduplicated per (package, set of
         // fact-blocked versions, version) for 10 min; any other BLOCK line uses the general budget, as before.
-        const factOf = (v) => classifyRows(decisions.get(v)?.results).facts;
-        const factSet = summary.blocked.map((b) => b.version).filter((v) => factOf(v).length).sort().join(',');
+        // A kept or preserved BLOCK carries what it rests on in `held` (dated note 5.1): its facts, and the stored BLOCK's
+        // rows, which give the reason. Keys are per version (note 5.4): never the package's whole set.
+        const factOf = (v) => {
+          const d = decisions.get(v);
+          return [...new Set([...classifyRows(d?.results).facts, ...(Array.isArray(d?.held?.facts) ? d.held.facts : [])])].sort();
+        };
         for (const b of summary.blocked) {
-          const line = `[gate] ${packageName}@${b.version}: BLOCK (${b.reason || 'no detail'})`;
-          if (factOf(b.version).length) log?.reserved?.('fact', line, `${packageName}|${factSet}|${b.version}`);
+          const held = decisions.get(b.version)?.held;
+          const reason = Array.isArray(held?.rows) ? `${decidingReason(held.rows, 'BLOCK')} | ${b.reason}` : b.reason;
+          const line = `[gate] ${packageName}@${b.version}: BLOCK (${reason || 'no detail'})`;
+          const facts = factOf(b.version);
+          if (facts.length) log?.reserved?.('fact', line, `${packageName}@${b.version}|${facts.join(',')}`);
           else log?.warn?.(line);
         }
         // D-V4b: one notice when a dist-tag was moved off a version withheld for a fact (the user would have got it).
@@ -336,7 +336,9 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
           );
         }
         const body = Buffer.from(JSON.stringify(rewritten), 'utf8');
-        const headers = withNotice(relayResponseHeaders(upstream.headers), tagNotice);
+        // dated note 5.5: the rewritten packument stays CACHEABLE (no-store would leave npm's stale pre-BLOCK copy for
+        // --prefer-offline); npm 10/11 then do not print this notice, and `chaingate report` (2c) carries the case.
+        const headers = withNotice(relayResponseHeaders(upstream.headers), tagNotice, { noStore: false });
         delete headers['content-encoding'];
         delete headers.etag; // etag would be stale against rewritten body
         headers['content-type'] = 'application/json';
@@ -404,7 +406,10 @@ function enforceWhileFull(db, canonicalName, filename, log, ctx, state) {
     if (known) return rememberedBlock(canonicalName, version, known);
     // Owner decision 10 (C2): the one applicable-BLOCK rule (override handled above).
     const applicable = db.getApplicableDecision(canonicalName, version, { overrideLive: false });
-    if (applicable.block) return storedBlock(canonicalName, version, applicable.block);
+    if (applicable.block) {
+      try { state.blockFacts = pendingFacts(db.getDecisionHistory(canonicalName, version), applicable.pending); } catch { state.blockFacts = []; }
+      return storedBlock(canonicalName, version, applicable.block);
+    }
     return refuse(applicable.latest ? `its applicable stored decision is ${applicable.disposition}, which is not permission `
       + 'while the record is full' : 'it has no stored decision');
   } catch (err) {
@@ -466,6 +471,7 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
       state.tarballDecided = true;
       return null;
     }
+    state.blockFacts = factsFromBits(known.reasons);    // dated note 5.3: the held reason bits, never the newest text
     return rememberedBlock(canonicalName, version, known);
   }
   const lookupFailed = (err) => {
@@ -502,7 +508,11 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
   } catch (err) {
     return lookupFailed(err);
   }
-  if (applicable.block) return storedBlock(canonicalName, version, applicable.block);
+  if (applicable.block) {
+    // dated note 5.3: the reasons that still apply, each confirmed by a stored row's structural facts
+    try { state.blockFacts = pendingFacts(db.getDecisionHistory(canonicalName, version), applicable.pending); } catch { state.blockFacts = []; }
+    return storedBlock(canonicalName, version, applicable.block);
+  }
   state.applicable = applicable;          // 0.1.4 group 2b (D-V3): what the served version's record says
   // Owner decision 10 (C1): no applicable BLOCK. Serve only on an evaluation this process made for this exact version.
   if (state.c1?.busy) {
@@ -804,7 +814,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         }
         if (blocked) {
           // D-V4: a refusal resting on a fact names it in npm's own output (a 403 is never cached, so npm prints it).
-          const facts = blocked.persisted === false ? rememberedFacts(blocked) : classifyRows(blocked.gates).facts;
+          const facts = Array.isArray(state.blockFacts) ? state.blockFacts : [];
           const notice = facts.length ? buildNotice({ kind: 'BLOCKED', pkg: canonicalName, version: blocked.version, labels: facts }) : null;
           writeJson(res, 403, { error: 'blocked_by_chaingate', ...blocked }, notice ? { 'npm-notice': notice } : {});
           return;

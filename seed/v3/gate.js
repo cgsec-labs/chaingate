@@ -526,7 +526,9 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
       packageName: known ? pkg : null, version: known ? version : null,
     });
     const pinned = looked.pin ? decision.results.find((x) => x.gate === POL.PIN_GATE) : null;
-    return { gate: SEED_V3_GATE, result: decision.disposition,
+    // 2b review (dated note 5.2): the failure path carries its structured rows too, so a 1.2 failure decision's facts are
+    // read from rows, never from the error text.
+    return { gate: SEED_V3_GATE, result: decision.disposition, rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
       detail: `${decision.policy_version}: the seed-v3 path could not run (${error.message})`
         + (pinned ? ` | ${pinned.gate}: ${pinned.detail}` : '') + (note ? ` | ${note}` : '') };
   }

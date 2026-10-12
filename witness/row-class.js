@@ -28,7 +28,7 @@ export function policyPrefix(results) {
 export function classify(results) {
   const list = Array.isArray(results) ? results : [];
   const out = { facts: [], named: [], contributing: [], coverage: [], legacy: false };
-  out.facts = blockReasons(list).filter((r) => FACT_REASONS.has(r)).sort();
+  out.facts = factsOf(list);
   for (const x of list) {
     if (!x || typeof x !== 'object') continue;
     if (x.result === POL.NOTE) out.contributing.push(x.gate);
@@ -52,6 +52,46 @@ export function classify(results) {
 }
 
 /**
+ * Facts, STRUCTURALLY where the record allows (2b review, dated note 5.2): content-hash BLOCK -> content-hash; a seed-v3
+ * BLOCK that carries `rows` is a pin fact only if a `seed-v3:known-malicious-pin` BLOCK row says so (detail text, which
+ * can echo manifest fields, is never trusted for a 1.2 row); a rowless seed-v3 row (written by an older runtime) falls back
+ * to C2's text classifier.
+ */
+function factsOf(list) {
+  const out = new Set();
+  for (const x of list) {
+    if (!x || typeof x !== 'object' || x.result !== 'BLOCK') continue;
+    if (x.gate === 'content-hash') out.add(REASON.CONTENT_HASH);
+    else if (x.gate === 'seed-v3') {
+      if (Array.isArray(x.rows)) {
+        if (x.rows.some((r) => r && r.gate === POL.PIN_GATE && r.result === 'BLOCK')) out.add(REASON.PIN);
+      } else if (blockReasons([x]).includes(REASON.PIN)) out.add(REASON.PIN);
+    }
+  }
+  return [...out].sort();
+}
+
+/** The facts held in an unstored-BLOCK reason bit set (decision-rule.js BITS: content-hash 1, pin 2; input 4 is no fact). */
+export function factsFromBits(bits) {
+  const out = [];
+  if (Number.isInteger(bits) && (bits & 1)) out.push(REASON.CONTENT_HASH);
+  if (Number.isInteger(bits) && (bits & 2)) out.push(REASON.PIN);
+  return out;
+}
+
+/**
+ * The fact reasons among C2's `pending` that a stored row structurally confirms (dated note 5.3): a pending reason C2
+ * derived from text alone is not claimed as a fact unless some stored row's structural facts include it.
+ */
+export function pendingFacts(rows, pending) {
+  const want = (Array.isArray(pending) ? pending : [...(pending ?? [])]).filter((r) => FACT_REASONS.has(r));
+  if (!want.length) return [];
+  const seen = new Set();
+  for (const row of Array.isArray(rows) ? rows : []) for (const f of factsOf(Array.isArray(row?.gates_fired) ? row.gates_fired : [])) seen.add(f);
+  return want.filter((r) => seen.has(r)).sort();
+}
+
+/**
  * D-N7 (amended before the 2a commit): what a stored row must still say for the record to be current -- the disposition,
  * the named rows, the CONTRIBUTING rows, the fact reasons and the policy identity. Contributing rows are included because
  * under 1.2 they no longer move the disposition: without them a release whose only signals are contributing (axios-style:
@@ -62,16 +102,14 @@ export function classSignature(disposition, results) {
   return JSON.stringify([disposition ?? null, c.named, c.contributing, c.facts, policyPrefix(results)]);
 }
 
-export default { classify, classSignature, policyPrefix, decidingReason };
+export default { classify, classSignature, policyPrefix, decidingReason, factsFromBits, pendingFacts };
 
-const PIN_MARKER = 'seed-v3:known-malicious-pin: recorded advisory';
 /** Rank of one row for the deciding reason (D-V1): fact 0, named 1, coverage 2, other 3, synthetic chaingate 4. */
 function rank(x) {
   if (!x || typeof x !== 'object') return 9;
   if (x.gate === 'chaingate') return 4;
-  if (x.result === 'BLOCK' && (x.gate === 'content-hash'
-    || (x.gate === 'seed-v3' && typeof x.detail === 'string' && x.detail.includes(PIN_MARKER)))) return 0;
   const c = classify([x]);
+  if (c.facts.length) return 0;
   if (c.named.length) return 1;
   if (c.coverage.length) return 2;
   return 3;

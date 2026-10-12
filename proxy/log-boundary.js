@@ -140,14 +140,15 @@ export function createLogBoundary(inner, opts = {}) {
     reserved(kind, message, key = null) {
       const r = reservedFor(kind);
       const t = now();
-      for (const [k, at] of r.seen) if (t - at >= RESERVED.dedupMs) r.seen.delete(k);
+      // keys are inserted in time order and never re-set, so expiry stops at the first fresh key (dated note 5.4)
+      for (const [k, at] of r.seen) { if (t - at < RESERVED.dedupMs) break; r.seen.delete(k); }
       if (key !== null && r.seen.has(key)) { r.stats.deduped += 1; return; }
       let line;
       try { line = clip(message, o.lineBytes, stats); } catch { line = `[log] (unprintable ${kind} line)`; }
       if (t > r.last) { r.tokens = Math.min(RESERVED.burst, r.tokens + ((t - r.last) / 1000) * RESERVED.perSecond); r.last = t; }
       reservedSummary(kind, r);
-      if (key !== null) r.seen.set(key, t);
-      if (r.tokens >= 1) { r.tokens -= 1; r.stats.emitted += 1; write('warn', line); } else {
+      // marked seen only when written (note 5.4): a line dropped for lack of tokens is retried, not deduplicated away
+      if (r.tokens >= 1) { r.tokens -= 1; r.stats.emitted += 1; if (key !== null) r.seen.set(key, t); write('warn', line); } else {
         r.stats.suppressed += 1; r.suppressedSinceSummary += 1;
       }
     },
