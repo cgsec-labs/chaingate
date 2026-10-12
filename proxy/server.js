@@ -25,7 +25,9 @@ import { createEvaluationTracker, EvaluationBusy } from './evaluation-tracker.js
 import { createLogBoundary } from './log-boundary.js';
 // 0.1.4 group 2b (D-V1..D-V5): the deciding reason, the row classes, and ChainGate's npm-notice.
 import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts, policyPrefix, servedClass } from '../witness/row-class.js';
-import { buildNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
+import { buildNotice, pinNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
+// 0.1.4 group 2d (D-U3, D-U5, D-U6): the user's pins (a live serving overlay) and acceptances.
+import { createPinSet, withheldBy } from '../witness/pins.js';
 // 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
@@ -297,12 +299,17 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
     } catch { /* U-05 Amendment 3 (O1): reporting can never replace the returned decisions */ }
   }
 
-  // Rewriter branch: any BLOCK → re-serialize. Otherwise serve raw bytes.
+  // Rewriter branch: any BLOCK, or (2d) any version a user pin withholds → re-serialize. Otherwise serve raw bytes.
   const hasBlock = decisions && hasBlockDisposition(decisions);
-  if (hasBlock) {
-    state.blockComputed = true;
+  const pins = Array.isArray(state.pins) ? state.pins : [];
+  const pinnedOf = (v) => withheldBy(pins, packageName, v);
+  const hasPinned = pins.length > 0 && Object.keys(parsed?.versions ?? {}).some((v) => pinnedOf(v));
+  if (hasBlock || hasPinned) {
+    if (hasBlock) state.blockComputed = true;
     try {
-      const { packument: rewritten, changed, summary } = rewritePackument(parsed, decisions);
+      const { packument: rewritten, changed, summary } = rewritePackument(parsed, decisions ?? new Map(), { pinned: pinnedOf });
+      const pinMoves = summary.dist_tag_downgrades.filter((d) => d.pin);
+      summary.dist_tag_downgrades = summary.dist_tag_downgrades.filter((d) => !d.pin);   // BLOCK moves only, below
       let tagNotice = null;
       if (changed) {
         // D-V2: a BLOCK resting on a fact goes through the reserved fact channel, deduplicated per (package, set of
@@ -362,6 +369,14 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
               ...(mine.length > TAG_EVENTS ? { more: mine.length - TAG_EVENTS } : {}) },
             reason: reasonOf(from), policy_version: policyOf(from) });
         }
+        // 2d (D-U9): what the user's pins withheld here, per pin, as context (no exit code): versions and tag moves, capped
+        const byPin = new Map();
+        for (const x of summary.pinned) byPin.set(x.k_version, [...(byPin.get(x.k_version) ?? []), x.version]);
+        for (const [k, versions] of byPin) {
+          const tags = pinMoves.filter((d) => d.pin.k_version === k);
+          state.note?.({ kind: 'pin-withheld', package: packageName, k, versions: versions.slice(0, TAG_EVENTS),
+            more: Math.max(0, versions.length - TAG_EVENTS), tags: tags.slice(0, TAG_EVENTS).map((d) => ({ tag: tagOf(d), from: d.from, to: toOf(d) })) });
+        }
         const withheld = summary.blocked.filter((b) => !moved.has(b.version));
         if (withheld.length) {
           state.note?.({ kind: 'withheld', package: packageName,
@@ -382,6 +397,9 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
         const headers = withNotice(relayResponseHeaders(upstream.headers), tagNotice, { noStore: false });
         delete headers['content-encoding'];
         delete headers.etag; // etag would be stale against rewritten body
+        // 2d (E25): nor last-modified -- with it npm revalidates its cached REWRITTEN copy (If-Modified-Since → upstream 304)
+        // and keeps a stale view after an unpin or a cleared BLOCK; without validators it fetches again after max-age.
+        delete headers['last-modified'];
         headers['content-type'] = 'application/json';
         headers['content-length'] = String(body.length);
         res.writeHead(200, headers);
@@ -734,7 +752,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   const lookupErrorsRefuse = failuresBlock || !seedV3;
   // C1 (owner decision 10): the exact versions this process evaluated, and the bounded single-flight evaluations.
   const tracker = witness ? createEvaluationTracker(hooks.c1 ?? {}) : null;
-  const ctx = { unstored, failuresBlock, lookupErrorsRefuse, overriddenLive, counters, tracker };
+  // 2d (D-U6): the user's pins, read live (PRAGMA data_version), last good set kept on a read failure
+  const pinSet = witnessDb ? createPinSet(witnessDb, { log }) : null;
+  const ctx = { unstored, failuresBlock, lookupErrorsRefuse, overriddenLive, counters, tracker, pins: pinSet };
 
   // 0.1.4 group 2c (D-R1, D-R2): what this process served and refused, per install (memory), and the named and fact events
   // also kept on disk, once per install. Neither can fail a request: a recording error is logged and counted.
@@ -876,6 +896,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           config_source: config.configSource ?? null,
         } : null,
         unstored_blocks: unstored.describe(),
+        // 0.1.4 group 2d (E26): whether this process enforces the user's pins, and what it holds
+        pins: pinSet ? pinSet.stats() : { enforced: false, count: 0, generation: 0, last_error: 'no witness database' },
         evaluation: tracker ? tracker.stats() : null,
         // U-05 gap-closure r2, Addendum 1 §B: the process's decision-storage state, from its own signals.
         storage: storageReport({ health: witness?.storageHealth?.() ?? null, count: unstored.count,
@@ -899,9 +921,14 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
 
     try {
       if (route.kind === 'packument') {
+        // 2d (D-U5): a pinned package is fetched without conditional headers -- a 304 would leave npm on its cached
+        // document from before the pin.
+        state.pins = pinSet ? pinSet.forPackage(canonicalName) : [];
+        const requestHeaders = state.pins.length ? Object.fromEntries(Object.entries(req.headers)
+          .filter(([h]) => h !== 'if-none-match' && h !== 'if-modified-since')) : req.headers;
         const upstream = await fetchPackument(route.name, {
           config,
-          requestHeaders: req.headers,
+          requestHeaders,
         });
         await observeAndSendPackument(res, upstream, witness, canonicalName, log, state, ctx);
       } else {
@@ -942,15 +969,39 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           writeJson(res, 403, { error: 'blocked_by_chaingate', ...blocked }, notice ? { 'npm-notice': notice } : {});
           return;
         }
+        // 2d (D-U5): after the BLOCK gate (a BLOCK keeps its own reason) and the override (a pin wins over it), a version the
+        // user's pin withholds is refused.
+        const pin = state.tarballVersion != null && pinSet ? withheldBy(pinSet.forPackage(canonicalName), canonicalName, state.tarballVersion) : null;
+        if (pin) {
+          const detail = `${canonicalName}@${state.tarballVersion} is withheld by your pin on ${canonicalName} (${pin.k_version}); `
+            + `undo: chaingate unpin ${canonicalName}`;
+          noteInstall(req, { kind: 'refused', package: canonicalName, version: state.tarballVersion, facts: [], status: 403,
+            reason: detail, policy: null, pinned: { k: pin.k_version } });
+          const notice = pinNotice(canonicalName, state.tarballVersion, pin.k_version);
+          writeJson(res, 403, { error: 'withheld_by_pin', package: canonicalName, version: state.tarballVersion, pinned_to: pin.k_version,
+            detail }, notice ? { 'npm-notice': notice } : {});
+          return;
+        }
         // D-V3: a named WARN is said at the moment its tarball is fetched: a reserved log line and npm's own output.
         let named = [];
         const latest = state.applicable?.latest;
         if (latest && latest.disposition === 'WARN') named = classifyRows(latest.gates_fired).named;
+        // 2d (D-U3): an acceptance covering every named row of the decision applied now quiets the notice (the response is
+        // then cacheable again); a later or different named signal is not accepted.
+        let accepted = false;
+        if (named.length && state.tarballVersion && witnessDb) {
+          try {
+            const acc = witnessDb.getAcceptance(canonicalName, state.tarballVersion);
+            accepted = Boolean(acc) && Array.isArray(acc.named) && named.every((n) => acc.named.includes(n));
+          } catch (err) {
+            log?.warn?.(`[accept] ${canonicalName}@${state.tarballVersion}: acceptance not readable (${err.message}); notice kept`);
+          }
+        }
         if (named.length && state.tarballVersion) {
           log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${named.join(', ')} `
-            + `(${decidingReason(latest.gates_fired, 'WARN')})`, `${canonicalName}@${state.tarballVersion}`);
+            + `(${decidingReason(latest.gates_fired, 'WARN')})${accepted ? ' (accepted)' : ''}`, `${canonicalName}@${state.tarballVersion}`);
         }
-        const notice = named.length
+        const notice = named.length && !accepted
           ? buildNotice({ kind: 'WARNING', pkg: canonicalName, version: state.tarballVersion, labels: named }) : null;
         const upstream = await fetchTarball(route.name, route.filename, {
           config,
@@ -976,10 +1027,11 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             }
           }
           noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion ?? null, ...cls, reason, policy,
-            notice: Boolean(notice), k },
+            notice: Boolean(notice), k, ...(accepted ? { accepted: true } : {}) },
           cls.class === 'named' ? { kind: 'named-served', package_name: canonicalName, version: state.tarballVersion,
             classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage,
-              history_cutoff: seedV3?.meta?.history_cutoff ?? null }, reason, policy_version: policy, k_version: k } : null);
+              history_cutoff: seedV3?.meta?.history_cutoff ?? null, ...(accepted ? { accepted: true } : {}) },
+            reason, policy_version: policy, k_version: k } : null);
         }
         await streamUpstream(res, upstream, upstream.statusCode,
           notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null);

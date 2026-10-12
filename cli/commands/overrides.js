@@ -3,6 +3,7 @@ import { fmt } from '../format.js';
 import { resolvePaths } from '../paths.js';
 import { openWitnessDB } from '../../witness/db.js';
 import { EXIT } from '../constants.js';
+import { decisionSnapshot, adjudicate } from '../adjudicate.js';
 
 function parseArgs(args) {
   const opts = { scope: 'user', json: false, subcommand: null, target: null };
@@ -64,8 +65,14 @@ export default async function overrides(args) {
       console.error('Usage: chaingate overrides revoke <package>@<version>');
       return EXIT.ERROR;
     }
+    db.applySchema();                                          // 2d: the adjudication log exists on every writer
+    const snap = decisionSnapshot(db, parsed.name, parsed.version);
     const deleted = db.deleteOverride(parsed.name, parsed.version);
     if (deleted) {
+      // 0.1.4 group 2d (D-U8): the action is logged; a log failure never undoes the revocation
+      try { adjudicate(db, { action: 'allow-revoke', pkg: parsed.name, version: parsed.version, snapshot: snap }); } catch (err) {
+        console.error(fmt.dim(`  (the action could not be logged: ${err.message})`));
+      }
       console.log(fmt.ok(`Override revoked: ${parsed.name}@${parsed.version}`));
     } else {
       console.log(fmt.dim(`No override found for ${parsed.name}@${parsed.version}`));

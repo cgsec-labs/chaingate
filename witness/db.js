@@ -125,6 +125,44 @@ CREATE TABLE IF NOT EXISTS named_fact_events (
 );
 CREATE INDEX IF NOT EXISTS idx_named_fact_events_at ON named_fact_events(at);
 
+-- 0.1.4 group 2d (D-U1, E24): the user's actions. Live state in acceptances and pins; every action appended to
+-- adjudications, which triggers keep append-only. Lazily prepared statements, as for named_fact_events.
+CREATE TABLE IF NOT EXISTS acceptances (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_name   TEXT NOT NULL,
+    version        TEXT NOT NULL,
+    named          TEXT NOT NULL,
+    decision_id    INTEGER,
+    policy_version TEXT,
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (package_name, version)
+);
+CREATE TABLE IF NOT EXISTS pins (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_name TEXT NOT NULL,
+    class_key    TEXT NOT NULL,
+    k_version    TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (package_name, class_key)
+);
+CREATE TABLE IF NOT EXISTS adjudications (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    action         TEXT NOT NULL CHECK (action IN ('accept','unaccept','pin','unpin','allow','allow-revoke','why')),
+    package_name   TEXT NOT NULL,
+    version        TEXT,
+    k_version      TEXT,
+    classes        TEXT NOT NULL,
+    decision_id    INTEGER,
+    policy_version TEXT,
+    interactive    INTEGER NOT NULL,
+    ci             INTEGER NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS adjudications_append_only_u BEFORE UPDATE ON adjudications
+  BEGIN SELECT RAISE(ABORT, 'adjudications are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudications
+  BEGIN SELECT RAISE(ABORT, 'adjudications are append-only'); END;
+
 CREATE INDEX IF NOT EXISTS idx_versions_pkg      ON versions(package_id);
 CREATE INDEX IF NOT EXISTS idx_versions_pub_at   ON versions(package_id, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vfiles_ver        ON version_files(version_id);
@@ -155,6 +193,13 @@ function encodeJson(v) {
   if (v == null) return null;
   if (typeof v === 'string') return v;
   return JSON.stringify(v);
+}
+
+/** A copy of `row` with one JSON text field parsed (`fallback` when it does not parse). */
+function decodeJsonField(row, field, fallback) {
+  let v;
+  try { v = JSON.parse(row[field]); } catch { v = fallback; }
+  return { ...row, [field]: v };
 }
 
 function decodeRow(row) {
@@ -392,6 +437,115 @@ export class WitnessDB {
       ),
     };
     return this._nfStmts;
+  }
+
+  /**
+   * 0.1.4 group 2d (D-U1): the statements of one lazily used table, prepared on first use; null while the table does not
+   * exist (a database the 0.1.3 code created, opened read-only), which readers treat as empty.
+   */
+  _tableStmts(table, build) {
+    this._lazyStmts ??= new Map();
+    if (this._lazyStmts.has(table)) return this._lazyStmts.get(table);
+    if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) return null;
+    const st = build();
+    this._lazyStmts.set(table, st);
+    return st;
+  }
+
+  _acceptStmts() {
+    return this._tableStmts('acceptances', () => ({
+      get: this.db.prepare('SELECT * FROM acceptances WHERE package_name = ? AND version = ?'),
+      upsert: this.db.prepare(
+        `INSERT INTO acceptances (package_name, version, named, decision_id, policy_version)
+         VALUES (@package_name, @version, @named, @decision_id, @policy_version)
+         ON CONFLICT(package_name, version) DO UPDATE SET named = excluded.named, decision_id = excluded.decision_id,
+           policy_version = excluded.policy_version, created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      ),
+      del: this.db.prepare('DELETE FROM acceptances WHERE package_name = ? AND version = ?'),
+      list: this.db.prepare('SELECT * FROM acceptances ORDER BY package_name, version'),
+    }));
+  }
+
+  _pinStmts() {
+    return this._tableStmts('pins', () => ({
+      list: this.db.prepare('SELECT package_name, class_key, k_version, created_at FROM pins ORDER BY package_name, class_key'),
+      upsert: this.db.prepare(
+        `INSERT INTO pins (package_name, class_key, k_version) VALUES (@package_name, @class_key, @k_version)
+         ON CONFLICT(package_name, class_key) DO UPDATE SET k_version = excluded.k_version,
+           created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+      ),
+      delAll: this.db.prepare('DELETE FROM pins WHERE package_name = ?'),
+      delOne: this.db.prepare('DELETE FROM pins WHERE package_name = ? AND class_key = ?'),
+    }));
+  }
+
+  _adjStmts() {
+    return this._tableStmts('adjudications', () => ({
+      append: this.db.prepare(
+        `INSERT INTO adjudications (action, package_name, version, k_version, classes, decision_id, policy_version, interactive, ci)
+         VALUES (@action, @package_name, @version, @k_version, @classes, @decision_id, @policy_version, @interactive, @ci)`,
+      ),
+      list: this.db.prepare('SELECT * FROM adjudications ORDER BY id'),
+    }));
+  }
+
+  getAcceptance(packageName, version) {
+    const st = this._acceptStmts();
+    const row = st ? st.get.get(packageName, version) : null;
+    return row ? decodeJsonField(row, 'named', []) : null;
+  }
+
+  upsertAcceptance(a) {
+    const st = this._acceptStmts();
+    if (!st) throw new Error('the acceptances table does not exist (applySchema was not run on this handle)');
+    return st.upsert.run({ package_name: a.package_name, version: a.version, named: JSON.stringify(a.named ?? []),
+      decision_id: a.decision_id ?? null, policy_version: a.policy_version ?? null }).changes;
+  }
+
+  deleteAcceptance(packageName, version) {
+    const st = this._acceptStmts();
+    return st ? st.del.run(packageName, version).changes : 0;
+  }
+
+  listAcceptances() {
+    const st = this._acceptStmts();
+    return st ? st.list.all().map((r) => decodeJsonField(r, 'named', [])) : [];
+  }
+
+  listPins() {
+    const st = this._pinStmts();
+    return st ? st.list.all() : [];
+  }
+
+  upsertPin(p) {
+    const st = this._pinStmts();
+    if (!st) throw new Error('the pins table does not exist (applySchema was not run on this handle)');
+    return st.upsert.run({ package_name: p.package_name, class_key: p.class_key, k_version: p.k_version }).changes;
+  }
+
+  /** Delete a package's pins: every class, or the one named. Returns the number deleted. */
+  deletePins(packageName, classKey = null) {
+    const st = this._pinStmts();
+    if (!st) return 0;
+    return (classKey == null ? st.delAll.run(packageName) : st.delOne.run(packageName, classKey)).changes;
+  }
+
+  appendAdjudication(a) {
+    const st = this._adjStmts();
+    if (!st) throw new Error('the adjudications table does not exist (applySchema was not run on this handle)');
+    return st.append.run({ action: a.action, package_name: a.package_name, version: a.version ?? null, k_version: a.k_version ?? null,
+      classes: JSON.stringify(a.classes ?? {}), decision_id: a.decision_id ?? null, policy_version: a.policy_version ?? null,
+      interactive: a.interactive ? 1 : 0, ci: a.ci ? 1 : 0 }).lastInsertRowid;
+  }
+
+  listAdjudications() {
+    const st = this._adjStmts();
+    return st ? st.list.all().map((r) => decodeJsonField(r, 'classes', {})) : [];
+  }
+
+  /** PRAGMA data_version: changes when ANOTHER connection commits (the pin set's change check, D-U6). */
+  dataVersion() {
+    return this.db.pragma('data_version', { simple: true });
   }
 
   insertNamedFactEvent(e) {

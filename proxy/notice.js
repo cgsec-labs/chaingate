@@ -50,10 +50,18 @@ export function buildNotice({ kind, pkg, version, labels = [], tail = '' }) {
   return out;
 }
 
+/** 0.1.4 group 2d (D-U5): the notice of a tarball withheld by the user's own pin; null unless every part validates. */
+export function pinNotice(pkg, version, k) {
+  const id = identity(pkg, version);
+  if (!id || !identity(pkg, k)) return null;
+  const out = printable(`chaingate: WITHHELD ${id}: pinned by you to ${k}. Undo: chaingate unpin ${pkg}`);
+  return Buffer.byteLength(out) <= NOTICE_MAX_BYTES ? out : null;
+}
+
 /** An upstream npm-notice, relabelled and stripped to printable ASCII. */
 export function sanitizeUpstreamNotice(value) {
   const v = Array.isArray(value) ? value.join(' ') : String(value ?? '');
   return `registry: ${printable(v).slice(0, UPSTREAM_MAX)}`;
 }
 
-export default { buildNotice, sanitizeUpstreamNotice, identity, labelFor, NOTICE_CACHE_CONTROL, NOTICE_MAX_BYTES };
+export default { buildNotice, pinNotice, sanitizeUpstreamNotice, identity, labelFor, NOTICE_CACHE_CONTROL, NOTICE_MAX_BYTES };

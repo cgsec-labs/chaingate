@@ -57,6 +57,15 @@ function namedBlock(e, { cutoff, bound = null }) {
   return out;
 }
 
+/** 2d (D-U9): an accepted named warning, one line. */
+const acceptedLine = (e) => `${shownId(e.package, e.version)}  NAMED WARNING (accepted by you): ${labels(e.named, 'see chaingate why')}`;
+
+/** 2d (D-U9): a tarball refused because the user's own pin withholds it. */
+function pinRefusedLine(e, k) {
+  const undo = identity(e.package, k) ? `chaingate unpin ${e.package}` : 'chaingate unpin <package>';
+  return `${shownId(e.package, e.version)}  WITHHELD BY YOUR PIN (download refused): pinned to ${clean(k, 64)} — undo: ${undo}`;
+}
+
 /** D-R6: a refusal. `retried`: a non-fact refusal whose version was served later in the same install (dated note 7.1). */
 function refusedLine(e, { retried = false } = {}) {
   const facts = Array.isArray(e.facts) ? e.facts : [];
@@ -98,11 +107,12 @@ function renderInstall(inst, cutoff) {
   const idOf = (e) => `${e.package}@${e.version ?? ''}`;
   const counts = { named: 0, refusals: 0, tags: 0, dropped: (Number(inst.dropped) || 0) + (inst.evicted_earlier ? 1 : 0) };
 
-  // named warnings, one block per version (the first serve)
+  // named warnings, one block per version (the first serve); an accepted one is one line and no warning (2d, D-U9)
   const namedSeen = new Set();
   for (const e of events) {
     if (e.kind !== 'served' || e.class !== 'named' || namedSeen.has(idOf(e))) continue;
     namedSeen.add(idOf(e));
+    if (e.accepted) { out.push(acceptedLine(e)); continue; }
     out.push(...namedBlock(e, { cutoff }), '');
     counts.named += 1;
   }
@@ -112,10 +122,12 @@ function renderInstall(inst, cutoff) {
     if (e.kind !== 'refused') return;
     const r = refusals.get(idOf(e)) ?? { first: e, facts: new Set(), lastIndex: i };
     for (const f of Array.isArray(e.facts) ? e.facts : []) r.facts.add(f);
+    if (e.pinned && typeof e.pinned.k === 'string') r.pinned = e.pinned.k;
     r.lastIndex = i;
     refusals.set(idOf(e), r);
   });
   for (const [id, r] of refusals) {
+    if (r.pinned) { out.push(pinRefusedLine(r.first, r.pinned)); counts.refusals += 1; continue; }
     const facts = [...r.facts].sort();
     const servedAfter = events.some((e, i) => i > r.lastIndex && e.kind === 'served' && idOf(e) === id);
     const retried = !facts.length && servedAfter;
@@ -136,6 +148,20 @@ function renderInstall(inst, cutoff) {
     counts.tags += 1;
   }
   for (const [k, n] of more) { const [pkg, from] = k.split('\u0000'); out.push(moreTagsLine(pkg, from, n)); }
+  // 2d (D-U9): what the user's pins withheld, as context (no exit code)
+  const pinSeen = new Map();
+  for (const e of events) {
+    if (e.kind !== 'pin-withheld') continue;
+    const key = `${e.package}\u0000${e.k}`;
+    const prev = pinSeen.get(key);
+    const n = (Array.isArray(e.versions) ? e.versions.length : 0) + (Number(e.more) || 0);
+    const tags = Array.isArray(e.tags) ? e.tags : [];
+    pinSeen.set(key, { e, n: Math.max(prev?.n ?? 0, n), tags: prev?.tags?.length ? prev.tags : tags });
+  }
+  for (const { e, n, tags } of pinSeen.values()) {
+    const tagText = tags.slice(0, 20).map((t) => `; dist-tag ${TAG_RE.test(String(t.tag)) ? t.tag : 'a dist-tag'} → ${t.to == null ? 'dropped' : clean(t.to, 64)}`).join('');
+    out.push(`your pin on ${clean(e.package, 214)} (${clean(e.k, 64)}) withheld ${n} version(s)${tagText}`);
+  }
   const withheldSeen = new Set();
   for (const e of events) {
     if (e.kind !== 'withheld' || withheldSeen.has(e.package)) continue;
@@ -145,7 +171,7 @@ function renderInstall(inst, cutoff) {
     const extra = Number(e.more) > 0 ? `, … +${Number(e.more)} more` : '';
     out.push(`context: ${clean(e.package, 214)}: withheld from the metadata npm saw, with no dist-tag pointing at them: ${list}${extra}`);
   }
-  if (refusals.size || counts.tags || withheldSeen.size) out.push('');
+  if (refusals.size || counts.tags || withheldSeen.size || pinSeen.size) out.push('');
 
   // V6 (D-R7), per distinct version; a named version is never "not checked" (its named rule fired)
   const byCoverage = new Map();
@@ -227,7 +253,9 @@ function renderDisk(p) {
     const k = `${r.kind}|${r.package_name}@${r.version}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    if (r.kind === 'named-served') {
+    if (r.kind === 'named-served' && c.accepted) {
+      out.push(`${acceptedLine({ package: r.package_name, version: r.version, named: c.named })} (at ${clean(r.at, 40)})`);
+    } else if (r.kind === 'named-served') {
       out.push(...namedBlock({ package: r.package_name, version: r.version, named: c.named, reason: r.reason, at: r.at, k: r.k_version },
         { cutoff: c.history_cutoff ?? null, bound: boundOf(r) }), '');
       total.named += 1;

@@ -38,25 +38,33 @@
 import semver from 'semver';
 // 0.1.4 group 2b (D-V1, A1): the deciding reason replaces the first non-empty detail.
 import { decidingReason } from '../witness/row-class.js';
+import { caretClass } from '../witness/pins.js';
 
 const BLOCK = 'BLOCK';
 const WARN = 'WARN';
 
-function pickHighestCandidate(versionStrings, { nonPrereleaseOnly }) {
+function pickHighestCandidate(versionStrings, { nonPrereleaseOnly, classKey = null }) {
   let best = null;
   for (const v of versionStrings) {
     if (!semver.valid(v)) continue;
     if (nonPrereleaseOnly && semver.prerelease(v) != null) continue;
+    if (classKey != null && caretClass(v) !== classKey) continue;
     if (best == null || semver.gt(v, best)) best = v;
   }
   return best;
 }
 
-export function rewritePackument(packument, decisions) {
+/**
+ * `pinned(version)` (0.1.4 group 2d, D-U5): the user pin that withholds a version, or null. A pin-withheld version is removed
+ * like a BLOCKed one, but it is no BLOCK (summary.pinned, never summary.blocked); a version that is also BLOCKed is
+ * removed as BLOCKed and keeps its reason. A dist-tag on a pin-withheld version moves within the pin's caret class only.
+ */
+export function rewritePackument(packument, decisions, { pinned = null } = {}) {
   const summary = {
     kept: 0,
     blocked: [],
     warned: [],
+    pinned: [],
     dist_tag_downgrades: [],
   };
 
@@ -77,6 +85,7 @@ export function rewritePackument(packument, decisions) {
 
   const newVersions = {};
   const blockedSet = new Set();
+  const pinnedSet = new Map();                 // version -> the pin withholding it (2d)
   let anyBlock = false;
 
   for (const [v, entry] of Object.entries(originalVersions)) {
@@ -97,6 +106,13 @@ export function rewritePackument(packument, decisions) {
         reason: typeof dec === 'object' ? decidingReason(dec?.results, WARN) : '',
       });
     }
+    const pin = typeof pinned === 'function' ? pinned(v) : null;
+    if (pin) {
+      anyBlock = true;
+      pinnedSet.set(v, pin);
+      summary.pinned.push({ version: v, k_version: pin.k_version, class_key: pin.class_key });
+      continue;
+    }
     newVersions[v] = entry;
     summary.kept += 1;
   }
@@ -108,7 +124,7 @@ export function rewritePackument(packument, decisions) {
   // Build new time{} preserving non-version keys (created, modified, ...).
   const newTime = {};
   for (const [k, v] of Object.entries(originalTime)) {
-    if (blockedSet.has(k)) continue;
+    if (blockedSet.has(k) || pinnedSet.has(k)) continue;
     newTime[k] = v;
   }
 
@@ -120,6 +136,14 @@ export function rewritePackument(packument, decisions) {
     for (const [tag, target] of Object.entries(originalTags)) {
       if (typeof target !== 'string') {
         newTags[tag] = target;
+        continue;
+      }
+      const pin = pinnedSet.get(target);
+      if (pin) {
+        // 2d (D-U5): within the pin's class only, never across majors; K itself remains unless it is BLOCKed
+        const inClass = pickHighestCandidate(remaining, { nonPrereleaseOnly: tag === 'latest', classKey: pin.class_key });
+        if (inClass != null) newTags[tag] = inClass;
+        summary.dist_tag_downgrades.push({ tag, from: target, to: inClass, pin: { k_version: pin.k_version, class_key: pin.class_key } });
         continue;
       }
       if (!blockedSet.has(target)) {

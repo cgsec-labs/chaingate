@@ -14,6 +14,7 @@ import { openWitnessDB } from '../../witness/db.js';
 import { explain } from '../../seed/v3/explain.js';
 import { CHECK_SCHEMA_IDS, EXIT_TOOL_ERROR, recordCompatibility } from '../check-record.js';
 import { runCheck, parseTarget } from './check.js';
+import { decisionSnapshot, adjudicate } from '../adjudicate.js';
 
 export const UNBOUND_LABEL = 'CACHED — UNBOUND: produced without recorded seed/rule/policy identities; '
   + 'not a current evaluation';
@@ -107,6 +108,21 @@ function showCached(parsed, opts) {
   return EXIT_TOOL_ERROR;
 }
 
+/**
+ * 0.1.4 group 2d (D-U8): append a `why` adjudication, best-effort -- a read-write open with a 250 ms busy timeout; it never
+ * creates a table (a read command is no migration) and never changes `why`'s output or exit code.
+ */
+function recordWhy(parsed, scope) {
+  try {
+    const dbPath = process.env.CHAINGATE_WITNESS_DB || resolvePaths(scope).witnessDb;
+    if (!parsed?.name || !parsed?.version || !existsSync(dbPath)) return;
+    const db = openWitnessDB(dbPath, { timeoutMs: 250 });
+    try {
+      adjudicate(db, { action: 'why', pkg: parsed.name, version: parsed.version, snapshot: decisionSnapshot(db, parsed.name, parsed.version) });
+    } finally { db.close(); }
+  } catch { /* best-effort: a read-only, locked or 0.1.3 database records nothing */ }
+}
+
 export default async function why(args) {
   const opts = parseArgs(args);
   if (opts.errors.length) {
@@ -121,7 +137,11 @@ export default async function why(args) {
     return 0;
   }
   const parsed = parseTarget(opts.target);
-  if (opts.cached) return showCached(parsed, opts);
+  if (opts.cached) {
+    const code = showCached(parsed, opts);
+    recordWhy(parsed, opts.scope);
+    return code;
+  }
 
   const { record } = runCheck({ name: parsed.name, version: parsed.version, packument: opts.packument,
     scope: opts.scope });
@@ -130,5 +150,6 @@ export default async function why(args) {
     return EXIT_TOOL_ERROR;
   }
   print(record.explanation, opts.json);
+  recordWhy(parsed, opts.scope);
   return 0;
 }

@@ -21,6 +21,9 @@ const COMMANDS = {
   check: () => import('./commands/check.js'),
   overrides: () => import('./commands/overrides.js'),
   report: () => import('./commands/report.js'),
+  accept: () => import('./commands/accept.js'),
+  pin: () => import('./commands/pin.js'),
+  unpin: () => import('./commands/unpin.js'),
 };
 
 function printUsage() {
@@ -38,6 +41,9 @@ Commands:
   check <p@v>       Evaluate a release from --packument <file> (CI exit codes)
   overrides         List or revoke overrides
   report            What the proxy served and refused in the last install (--all | --since <dur>)
+  accept <p@v>      Accept a named warning for one version (quiets its notice; never overrides a BLOCK)
+  pin <p@v>         Stay on a version: withhold newer ones in its major until unpin
+  unpin <pkg>       Remove a package's pins
 
 Options:
   --help            Show this help message
@@ -88,6 +94,9 @@ async function main() {
       doctor: 'chaingate doctor [--json] [--scope user|project]',
       check: 'chaingate check <package>@<version> --packument <file> [--json] [--scope user|project]\n  Exit codes (follow the effective action): 0=ALLOW, 2=WARN, 3=BLOCK, 4=tool error',
       overrides: 'chaingate overrides [list|revoke <package>@<version>] [--json] [--scope user|project]',
+      accept: 'chaingate accept <package>@<version> | --revoke <package>@<version> | --list [--scope user|project]',
+      pin: 'chaingate pin <package>@<version> | --list [--scope user|project]',
+      unpin: 'chaingate unpin <package> [<major> | 0.<minor>] [--scope user|project]',
       report: 'chaingate report [--all | --since <dur>] [--json] [--scope user|project]\n'
         + '  Exit codes: 0=nothing named, refused or tag-moved, 2=named warnings, 3=a refusal or a moved dist-tag, 4=tool error or incomplete record',
     };

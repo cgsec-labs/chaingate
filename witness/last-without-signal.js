@@ -29,6 +29,13 @@ function caretMates(warned) {
   return () => false;
 }
 
+/** Whether `version` was in the latest packument this proxy observed (dated note 6.1); shared with `chaingate pin`. */
+export function seenInLatest(history, version) {
+  const newest = history.reduce((m, h) => { const t = seenAt(h.last_seen_at); return Number.isNaN(t) ? m : Math.max(m, t); }, -Infinity);
+  const h = history.find((x) => x.version === version);
+  return Boolean(h) && seenAt(h.last_seen_at) >= newest - SEEN_SLACK_MS;
+}
+
 export function lastVersionWithoutSignal(db, packageName, version, { settledMs = SETTLED_MS, maxCandidates = 25 } = {}) {
   const history = db.getHistory(packageName);
   const warned = history.find((h) => h.version === version);
@@ -57,4 +64,4 @@ export function lastVersionWithoutSignal(db, packageName, version, { settledMs =
   return null;
 }
 
-export default { lastVersionWithoutSignal, SETTLED_MS };
+export default { lastVersionWithoutSignal, seenInLatest, SETTLED_MS };
