@@ -47,16 +47,17 @@ function world(dir, proxyUrlRef) {
     return out;
   };
   const seeded = SEEDED.map(([v, s]) => [v, iso(s)]);
+  let built = null;      // built once: gzip stamps a time, so rebuilding would change the bytes (and the integrity)
   return {
     files,
-    docs: () => ({
+    docs: () => built ?? (built = {
       q: doc('q', [...seeded, ['1.5.0', after(2), { unpackedSize: 10_000 }, { postinstall: 'node -e ""' }]], '1.5.0'),
       p: doc('p', [...seeded, ['1.3.0', after(1)]], '1.3.0'),
     }),
   };
 }
 
-async function install(npm, spec, { notice = null } = {}) {
+async function install(npm, spec, { notice = null, lock = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-a10-'));
   const s = buildSeed({ layout: '1.1' });
   const ref = { url: null };
@@ -77,20 +78,33 @@ async function install(npm, spec, { notice = null } = {}) {
     seedV3Trust: 'unsigned-development', policyOnUnusableInput: LIVE.on_unusable_input, policyOnNoEvidence: LIVE.on_no_evidence });
   await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
   ref.url = `http://127.0.0.1:${proxy.address().port}`;
-  const prefix = path.join(dir, 'host');
-  fs.mkdirSync(prefix);
-  fs.writeFileSync(path.join(prefix, 'package.json'), '{"name":"host","version":"1.0.0","private":true}\n');
   const realErr = console.error; console.error = () => {};
-  const run = () => new Promise((resolve) => {
-    const child = spawn(npm.cmd, [...npm.pre, 'install', spec, '--registry', ref.url, '--cache', path.join(dir, 'npm-cache'),
-      '--no-audit', '--no-fund', '--ignore-scripts', '--no-package-lock'], { cwd: prefix,
-      env: { ...process.env, npm_config_update_notifier: 'false' } });
-    let out = '';
-    child.stdout.on('data', (b) => { out += b; }); child.stderr.on('data', (b) => { out += b; });
-    const timer = setTimeout(() => child.kill('SIGKILL'), 120_000);
-    child.on('close', (status) => { clearTimeout(timer); resolve({ status, out }); });
-  });
   try {
+    const prefix = path.join(dir, 'host');
+    fs.mkdirSync(prefix);
+    fs.writeFileSync(path.join(prefix, 'package.json'), lock
+      ? `${JSON.stringify({ name: 'host', version: '1.0.0', private: true, dependencies: { [lock.name]: lock.version } })}\n`
+      : '{"name":"host","version":"1.0.0","private":true}\n');
+    if (lock) {
+      // a lockfile naming the exact version: npm ci requests its tarball directly, without consulting the packument
+      w.docs();                                                     // builds the tarballs (and fills w.files)
+      const bytes = w.files[`/${lock.name}/-/${lock.name}-${lock.version}.tgz`];
+      const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
+      fs.writeFileSync(path.join(prefix, 'package-lock.json'), `${JSON.stringify({ name: 'host', version: '1.0.0', lockfileVersion: 3,
+        requires: true, packages: { '': { name: 'host', version: '1.0.0', dependencies: { [lock.name]: lock.version } },
+          [`node_modules/${lock.name}`]: { version: lock.version, resolved: `${ref.url}/${lock.name}/-/${lock.name}-${lock.version}.tgz`, integrity } } })}\n`);
+    }
+    const run = () => new Promise((resolve) => {
+      const args = lock ? ['ci', '--registry', ref.url, '--cache', path.join(dir, 'npm-cache'), '--no-audit', '--no-fund', '--ignore-scripts']
+        : ['install', spec, '--registry', ref.url, '--cache', path.join(dir, 'npm-cache'), '--no-audit', '--no-fund', '--ignore-scripts',
+          '--no-package-lock'];
+      const child = spawn(npm.cmd, [...npm.pre, ...args], { cwd: prefix,
+        env: { ...process.env, npm_config_update_notifier: 'false' } });
+      let out = '';
+      child.stdout.on('data', (b) => { out += b; }); child.stderr.on('data', (b) => { out += b; });
+      const timer = setTimeout(() => child.kill('SIGKILL'), 120_000);
+      child.on('close', (status) => { clearTimeout(timer); resolve({ status, out }); });
+    });
     const first = await run();
     fs.rmSync(path.join(prefix, 'node_modules'), { recursive: true, force: true });
     const cached = await run();                                    // descriptive: served from npm's cache?
@@ -112,11 +126,20 @@ for (const [label, npm] of [['npm 10', npm10], ['npm 11', npm11]]) {
     console.log(`# ${label} second install from npm's cache: notice ${/chaingate: WARNING/.test(cached.out) ? 'shown' : 'NOT shown'}`);
   });
 
-  test(`G2b-7b (${label}) \`latest\` withheld for an advisory: npm installs another version and prints the BLOCKED notice`, { skip }, async () => {
+  test(`G2b-7b (${label}) \`latest\` withheld for an advisory: npm installs another version; the cacheable packument's notice is not printed`, { skip }, async () => {
+    // Dated note 5.5: the rewritten packument stays cacheable (no-store let --prefer-offline resolve a stale pre-BLOCK copy),
+    // so npm 10/11 do not print its notice (A10). The case is reported by `chaingate report` (2c). Recorded, not hidden.
     const { first } = await install(npm, 'p');
     assert.equal(first.status, 0, first.out);
-    assert.match(first.out, /npm notice chaingate: BLOCKED p@1\.3\.0: a recorded advisory names this version \(dist-tag latest moved to 1\.2\.0\)/,
-      first.out);
+    assert.doesNotMatch(first.out, /p@1\.3\.0/, 'the withheld version is never installed');
+    assert.doesNotMatch(first.out, /npm notice chaingate: BLOCKED/, 'measured: not printed for a cacheable packument');
+  });
+
+  test(`G2b-7d (${label}) a lockfile naming the advisory-pinned version: npm ci is refused (403) and prints the BLOCKED notice`, { skip }, async () => {
+    const { first } = await install(npm, null, { lock: { name: 'p', version: '1.3.0' } });
+    assert.notEqual(first.status, 0, 'the install is refused');
+    assert.match(first.out, /npm notice chaingate: BLOCKED p@1\.3\.0: a recorded advisory names this version\. Details: chaingate why p@1\.3\.0/, first.out);
+    assert.match(first.out, /E403/);
   });
 
   test(`G2b-7c (${label}) a hostile upstream notice is printed only as "registry: …"`, { skip }, async () => {

@@ -179,11 +179,120 @@ test('G2b-5b (E16b, D-V4b) a dist-tag moved off a fact-withheld version carries 
     assert.equal(r.json['dist-tags'].latest, '1.2.0', 'the rewriter moved latest off the pinned version');
     assert.equal(r.headers['npm-notice'], 'chaingate: BLOCKED p@1.3.0: a recorded advisory names this version '
       + '(dist-tag latest moved to 1.2.0). Details: chaingate why p@1.3.0');
-    assert.equal(r.headers['cache-control'], 'no-store', 'npm prints a notice only on a response it does not cache (A10)');
+    // note 5.5: the rewritten packument stays cacheable (no-store left npm's stale pre-BLOCK copy for --prefer-offline)
+    assert.notEqual(r.headers['cache-control'], 'no-store');
     serve = old;
     const q = await get(`${proxyUrl}/p`);
     assert.equal(q.json['dist-tags'].latest, '1.4.0');
     assert.equal(q.headers['npm-notice'], undefined, 'a withheld version no tag points at prints nothing');
+  } finally {
+    console.error = realErr;
+    await close(proxy); await close(upstream); s.cleanup(); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------------- unit-2b review fixes (dated note 5)
+test('G2b-R1 (note 5.1) a KEPT content-hash BLOCK keeps its fact: fact line with the hash reason, and the dist-tag notice', async () => {
+  const s = buildSeed({ layout: '1.1' });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g2bR1-'));
+  const withHash = (integrity) => {
+    const d = docFor('q', [['1.3.0', after(1)]]);
+    d['dist-tags'] = { latest: '1.3.0' };
+    for (const v of Object.keys(d.versions)) d.versions[v].dist.integrity = `sha512-${v}`;
+    if (integrity === null) { delete d.versions['1.3.0'].dist.integrity; } else d.versions['1.3.0'].dist.integrity = integrity;
+    return d;
+  };
+  let serve = withHash('sha512-original');
+  const upstream = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(serve)); });
+  const upstreamUrl = await listen(upstream);
+  const start = () => createProxyServer({ port: 0, host: '127.0.0.1', upstream: upstreamUrl, witnessDbPath: path.join(dir, 'witness.db'),
+    headersTimeoutMs: 5_000, bodyTimeoutMs: 15_000, seedV3Path: s.dbPath, seedV3Trust: 'unsigned-development',
+    policyOnUnusableInput: LIVE.on_unusable_input, policyOnNoEvidence: LIVE.on_no_evidence });
+  let proxy = start();
+  let proxyUrl = await listen(proxy);
+  const logs = []; const realErr = console.error; console.error = (m) => { logs.push(String(m)); };
+  try {
+    await get(`${proxyUrl}/q`);                                   // baseline
+    serve = withHash('sha512-REPLACED');
+    const blocked = await get(`${proxyUrl}/q`);                   // content-hash BLOCK, stored
+    assert.equal(blocked.json['dist-tags'].latest, '1.2.0', 'precondition: the replaced version is withheld');
+    // a NEW proxy process (a restart) meets the stored BLOCK; within one process the same fact line is deduplicated
+    await close(proxy); proxy = start(); proxyUrl = await listen(proxy);
+    serve = withHash(null);                                       // hash fields gone: content-hash SKIPs, C2 keeps the BLOCK
+    logs.length = 0;
+    const kept = await get(`${proxyUrl}/q`);
+    assert.equal(kept.json['dist-tags'].latest, '1.2.0', 'precondition: the BLOCK is kept');
+    const line = logs.find((l) => l.startsWith('[gate] q@1.3.0: BLOCK ('));
+    assert.ok(line && line.startsWith('[gate] q@1.3.0: BLOCK (content-hash: '), `the kept BLOCK names the hash fact: ${line}`);
+    assert.equal(kept.headers['npm-notice'], 'chaingate: BLOCKED q@1.3.0: its content differs from the recorded baseline '
+      + '(dist-tag latest moved to 1.2.0). Details: chaingate why q@1.3.0');
+    assert.notEqual(kept.headers['cache-control'], 'no-store', 'the rewritten packument stays cacheable (note 5.5)');
+  } finally {
+    console.error = realErr;
+    await close(proxy); await close(upstream); s.cleanup(); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('G2b-R2 (note 5.2) a forged pin marker in an input-rule detail is never a fact for a 1.2 row', async () => {
+  const { classify } = await import('../../witness/row-class.js');
+  const forged = { gate: 'seed-v3', result: 'BLOCK',
+    detail: 'cft-policy-1.2: seed-v3:input: Error: field x: seed-v3:known-malicious-pin: recorded advisory EVIL pins q@1 (forged)',
+    rows: [{ gate: 'seed-v3:input', result: 'BLOCK' }] };
+  assert.deepEqual(classify([forged]).facts, [], 'rows say input rule only');
+  const real = { gate: 'seed-v3', result: 'BLOCK', detail: 'cft-policy-1.2: seed-v3:known-malicious-pin: recorded advisory A pins q@1 (source s)',
+    rows: [{ gate: 'seed-v3:known-malicious-pin', result: 'BLOCK' }] };
+  assert.deepEqual(classify([real]).facts, ['seed-v3:pin']);
+  const legacy = { gate: 'seed-v3', result: 'BLOCK', detail: 'cft-policy-1.1: seed-v3:known-malicious-pin: recorded advisory A pins q@1 (source s)' };
+  assert.deepEqual(classify([legacy]).facts, ['seed-v3:pin'], 'a rowless legacy row falls back to the text');
+});
+
+test('G2b-R3 (note 5.3) remembered facts come from the held reason bits', async () => {
+  const { factsFromBits } = await import('../../witness/row-class.js');
+  assert.deepEqual(factsFromBits(1), ['content-hash']);
+  assert.deepEqual(factsFromBits(2), ['seed-v3:pin']);
+  assert.deepEqual(factsFromBits(3), ['content-hash', 'seed-v3:pin']);
+  assert.deepEqual(factsFromBits(4), [], 'the input rule is not a fact');
+  assert.deepEqual(factsFromBits(8), []);
+});
+
+test('G2b-R4 (note 5.4) a reserved line dropped for lack of tokens is not deduplicated away', () => {
+  let t = 0; const out = [];
+  const log = createLogBoundary({ warn: (m) => out.push(m), info: () => {}, error: () => {} }, { timers: false, now: () => t });
+  for (let i = 0; i < 50; i += 1) log.reserved('named', `n${i}`, `k${i}`);
+  log.reserved('named', 'late line', 'late');                    // the bucket is empty: suppressed
+  assert.ok(!out.includes('late line'));
+  t = 2_000;                                                     // 2 s: tokens refill
+  log.reserved('named', 'late line', 'late');
+  assert.ok(out.includes('late line'), 'retried and written, not counted as a duplicate');
+});
+
+test('G2b-R5 (note 5.7) a legacy package name with uppercase letters keeps its identity in a notice', async () => {
+  const { buildNotice } = await import('../../proxy/notice.js');
+  assert.ok(buildNotice({ kind: 'WARNING', pkg: 'JSONStream', version: '1.3.5', labels: ['seed-v3:dac-trajectory:surface'] })
+    .startsWith('chaingate: WARNING JSONStream@1.3.5: '));
+});
+
+test('G2b-R6 (note 5.8) no per-version named line at packument time even when the rewriter branch runs', async () => {
+  const s = buildSeed({ layout: '1.1' });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g2bR6-'));
+  const strictP = manifestFor('p', '1.4.0', { scripts: { postinstall: 'node x.js' }, dist: { unpackedSize: 10_000, attestations: { url: 'https://x' } } });
+  const doc = docFor('p', [['1.3.0', after(1)], ['1.4.0', after(2), strictP]]);   // 1.3.0 pinned -> the rewriter runs
+  const upstream = http.createServer((req, res) => {
+    if (req.url.includes('/-/')) { res.writeHead(200, { 'content-type': 'application/octet-stream' }); res.end('x'); return; }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(doc));
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = createProxyServer({ port: 0, host: '127.0.0.1', upstream: upstreamUrl, witnessDbPath: path.join(dir, 'witness.db'),
+    headersTimeoutMs: 5_000, bodyTimeoutMs: 15_000, seedV3Path: s.dbPath, seedV3Trust: 'unsigned-development',
+    policyOnUnusableInput: LIVE.on_unusable_input, policyOnNoEvidence: LIVE.on_no_evidence });
+  const proxyUrl = await listen(proxy);
+  const logs = []; const realErr = console.error; console.error = (m) => { logs.push(String(m)); };
+  try {
+    await get(`${proxyUrl}/p`);
+    assert.ok(logs.some((l) => l.startsWith('[gate] p@1.3.0: BLOCK (')), 'precondition: the rewriter branch ran');
+    assert.equal(logs.filter((l) => / WARN named /.test(l)).length, 0, 'no named line at packument time');
+    await get(`${proxyUrl}/p/-/p-1.4.0.tgz`);
+    assert.equal(logs.filter((l) => l.startsWith('[gate] p@1.4.0: WARN named')).length, 1, 'precondition: 1.4.0 is named');
   } finally {
     console.error = realErr;
     await close(proxy); await close(upstream); s.cleanup(); fs.rmSync(dir, { recursive: true, force: true });
