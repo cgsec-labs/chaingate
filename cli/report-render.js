@@ -247,6 +247,7 @@ function renderDisk(p) {
       + 'fact; the per-install summary (every package served, and what was not checked) is held only by a running proxy.', ''];
   const seen = new Set();
   const total = { named: 0, refusals: 0, tags: 0, dropped: (p.truncated ? 1 : 0) + (p.incomplete || p.proxy ? 1 : 0) };
+  let accepted = 0;
   const boundOf = (r) => `  recorded: policy ${clean(r.policy_version ?? 'unknown', 40)}, seed ${r.seed_sha256 ? clean(r.seed_sha256, 64).slice(0, 16) : 'none'}`;
   for (const r of rows) {
     const c = r.classes && typeof r.classes === 'object' ? r.classes : {};
@@ -254,7 +255,9 @@ function renderDisk(p) {
     if (seen.has(k)) continue;
     seen.add(k);
     if (r.kind === 'named-served' && c.accepted) {
-      out.push(`${acceptedLine({ package: r.package_name, version: r.version, named: c.named })} (at ${clean(r.at, 40)})`);
+      // dated note 8.2: listed with its binding; counted for the empty sentence, never for the exit code
+      out.push(`${acceptedLine({ package: r.package_name, version: r.version, named: c.named })} (at ${clean(r.at, 40)})`, boundOf(r));
+      accepted += 1;
     } else if (r.kind === 'named-served') {
       out.push(...namedBlock({ package: r.package_name, version: r.version, named: c.named, reason: r.reason, at: r.at, k: r.k_version },
         { cutoff: c.history_cutoff ?? null, bound: boundOf(r) }), '');
@@ -271,7 +274,7 @@ function renderDisk(p) {
       total.tags += 1;
     }
   }
-  if (!total.named && !total.refusals && !total.tags) {
+  if (!total.named && !total.refusals && !total.tags && !accepted) {
     out.push(`No named warning, refusal or tag move was recorded on disk in the last ${clean(p.since ?? '24h', 16)}.`);
   }
   if (p.truncated) out.push(`Only the newest ${DISK_READ_LIMIT} rows of the window are shown; this view is incomplete.`);

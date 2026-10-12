@@ -57,9 +57,17 @@ export default async function accept(args) {
     db.applySchema();
     const snap = decisionSnapshot(db, t.name, t.version);
     if (opts.revoke) {
-      const n = db.deleteAcceptance(t.name, t.version);
-      if (!n) { console.log(`No acceptance recorded for ${id}.`); return EXIT.OK; }
-      adjudicate(db, { action: 'unaccept', pkg: t.name, version: t.version, snapshot: snap });
+      if (!db.getAcceptance(t.name, t.version)) { console.log(`No acceptance recorded for ${id}.`); return EXIT.OK; }
+      // dated note 8.3: the action and its log are one transaction
+      try {
+        db.db.transaction(() => {
+          db.deleteAcceptance(t.name, t.version);
+          adjudicate(db, { action: 'unaccept', pkg: t.name, version: t.version, snapshot: snap });
+        })();
+      } catch (err) {
+        console.error(`${id}: the revocation could not be recorded and logged (${err.message}); nothing was changed.`);
+        return EXIT.ERROR;
+      }
       console.log(fmt.ok(`Acceptance revoked: ${id}. ChainGate sends npm its notice again while the warning stands.`));
       return EXIT.OK;
     }
@@ -76,8 +84,15 @@ export default async function accept(args) {
       console.error(`nothing to accept: ${id} carries no named warning.`);
       return EXIT.ERROR;
     }
-    db.upsertAcceptance({ package_name: t.name, version: t.version, named, decision_id: snap.decision_id, policy_version: snap.policy });
-    adjudicate(db, { action: 'accept', pkg: t.name, version: t.version, snapshot: snap });
+    try {
+      db.db.transaction(() => {
+        db.upsertAcceptance({ package_name: t.name, version: t.version, named, decision_id: snap.decision_id, policy_version: snap.policy });
+        adjudicate(db, { action: 'accept', pkg: t.name, version: t.version, snapshot: snap });
+      })();
+    } catch (err) {
+      console.error(`${id}: the acceptance could not be recorded and logged (${err.message}); nothing was changed.`);
+      return EXIT.ERROR;
+    }
     console.log(fmt.ok(`Accepted: ${id} (${named.join(', ')}).`));
     console.log(fmt.dim('  ChainGate stops sending npm a notice for this version while its record shows only these signals.'));
     console.log(fmt.dim('  This does not override a BLOCK: a later advisory for this version still blocks it.'));

@@ -150,8 +150,12 @@ export function rewritePackument(packument, decisions, { pinned = null } = {}) {
         newTags[tag] = target;
         continue;
       }
+      // 2d review (dated note 8.1): a BLOCKed target a user pin would also withhold moves within the pin's class (trap 7);
+      // it stays a BLOCK move (its fact, its reason).
+      const pinOfTarget = typeof pinned === 'function' ? pinned(target) : null;
       const candidate = pickHighestCandidate(remaining, {
         nonPrereleaseOnly: tag === 'latest',
+        classKey: pinOfTarget?.class_key ?? null,
       });
       if (candidate != null) {
         newTags[tag] = candidate;

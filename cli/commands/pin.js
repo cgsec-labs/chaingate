@@ -38,7 +38,13 @@ export function proxyPort(env = process.env) {
 /** Whether the running proxy enforces pins, in words (D-U4). */
 export async function enforcementLine() {
   const self = await fetchSelf(DEFAULT_HOST, proxyPort(), 1500);
-  if (self.ok && self.json.service === 'chaingate-proxy' && self.json.pins?.enforced === true) {
+  const pins = self.ok && self.json.service === 'chaingate-proxy' ? self.json.pins : null;
+  if (pins?.enforced === true && pins.last_error != null) {
+    // dated note 8.4: enforcing in principle, but its pins read is failing (it holds its last good set)
+    return `recorded; the running proxy cannot read its pins right now (${String(pins.last_error).replace(/[^\x20-\x7e]/g, '').slice(0, 200)}), `
+      + 'so it is not in force yet.';
+  }
+  if (pins?.enforced === true) {
     return 'in force for new metadata requests; npm may keep using metadata it cached (up to its max-age, usually 5 minutes); '
       + '`npm install --prefer-online` refreshes it now.';
   }
@@ -95,8 +101,16 @@ export default async function pin(args) {
     const pinRow = { package_name: t.name, class_key: cls, k_version: t.version };
     const withheld = history.map((h) => h.version).filter((v) => withheldBy([pinRow], t.name, v)).sort(semver.compare);
     const conflicts = db.listOverrides().filter((o) => o.package_name === t.name && withheldBy([pinRow], t.name, o.version));
-    db.upsertPin(pinRow);
-    adjudicate(db, { action: 'pin', pkg: t.name, version: t.version, k: t.version, snapshot: snap });
+    // dated note 8.3: the pin and its log are one transaction
+    try {
+      db.db.transaction(() => {
+        db.upsertPin(pinRow);
+        adjudicate(db, { action: 'pin', pkg: t.name, version: t.version, k: t.version, snapshot: snap });
+      })();
+    } catch (err) {
+      console.error(`${id}: the pin could not be recorded and logged (${err.message}); nothing was changed.`);
+      return EXIT.ERROR;
+    }
     console.log(fmt.ok(`Pinned ${t.name} to ${t.version} within ${classLabel(cls)}.`));
     console.log(`  withholds now: ${withheld.length ? withheld.join(', ') : 'nothing yet (later releases in this range will be)'}`);
     for (const o of conflicts) {

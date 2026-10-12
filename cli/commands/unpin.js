@@ -37,9 +37,17 @@ export default async function unpin(args) {
     db.applySchema();
     const removed = db.listPins().filter((p) => p.package_name === name && (classKey == null || p.class_key === classKey));
     if (!removed.length) { console.log(`No pin for ${name}${classKey ? ` in ${classLabel(classKey)}` : ''}.`); return EXIT.OK; }
-    db.deletePins(name, classKey);
-    for (const p of removed) {
-      adjudicate(db, { action: 'unpin', pkg: name, version: p.k_version, k: p.k_version, snapshot: decisionSnapshot(db, name, p.k_version) });
+    // dated note 8.3: the removal and its log are one transaction
+    try {
+      db.db.transaction(() => {
+        db.deletePins(name, classKey);
+        for (const p of removed) {
+          adjudicate(db, { action: 'unpin', pkg: name, version: p.k_version, k: p.k_version, snapshot: decisionSnapshot(db, name, p.k_version) });
+        }
+      })();
+    } catch (err) {
+      console.error(`${name}: the unpin could not be recorded and logged (${err.message}); nothing was changed.`);
+      return EXIT.ERROR;
     }
     console.log(fmt.ok(`Unpinned ${name}: ${removed.map((p) => `${p.k_version} (${classLabel(p.class_key)})`).join(', ')}.`));
     console.log(fmt.dim('  npm may keep using metadata it cached (up to its max-age, usually 5 minutes); '
