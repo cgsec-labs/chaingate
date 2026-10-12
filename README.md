@@ -44,13 +44,14 @@ complements code analysis rather than replacing it.
 ChainGate keeps a **witness log**, an append-only record of every package version it has seen:
 content hash, dependency tree, publisher identity and provenance status. When a new version appears,
 policy `cft-policy-1.2` compares it with that history and with the seed. The same input always gives
-the same result. Each row of the result has one of three effects:
+the same result. Each row of the result has one of these effects:
 
 | Kind | Rows | Effect |
 |------|------|--------|
 | **Facts** | an advisory in the seed naming this exact version; content that differs from the version's recorded baseline (content hash) | BLOCK |
 | **Named rules** | the seed's strict tier; install-introduced; N1h (an added dependency runs install scripts); MC (the tarball's install scripts differ from its registry entry) | WARN |
 | **Contributing signals** | publisher change, new dependency, provenance dropped, release age, scope boundary, size jump, npm-version downgrade, the seed's loose rule | detail only |
+| **Coverage choice** | the seed cannot use the release's input, or nothing in its finding was evaluated | what you set at `init`: `on_unusable_input` (default BLOCK) and `on_no_evidence` (default WARN) |
 
 One contributing signal is common and usually harmless, and no combination of contributing rows warns:
 they are shown beside a named warning and in `chaingate why`. A takeover that adds no install script
@@ -133,8 +134,10 @@ Some named rows are checked when npm downloads the tarball:
   judged, and a dependency that does not answer in time is "not evaluable".
   Either outcome is never an ALLOW for that rule. An install from a lockfile (`npm ci`) fetches no metadata, so each
   tarball that adds a dependency can wait up to 5 s.
-- **MC** reads the tarball while it streams to npm. It finds the root `package.json` the way npm's extractor does on
-  Linux, macOS and Windows, including other entry names that npm writes to that file. The download that reveals a
+- **MC** reads the tarball while it streams to npm. It reads the archive as npm's extractor (node-tar) does, and
+  compares every entry npm writes as the root `package.json`: on Linux checked against npm 10.9.7's and 11.19.0's own
+  extractor, on macOS and Windows emulated, with names those systems may also map to that file compared on their own.
+  An archive that npm 10 and npm 11 would read differently is "not checked". The download that reveals a
   mismatch carries no notice, and npm
   caches it. `chaingate report` lists the mismatch at once. A later download that reaches ChainGate carries the notice,
   but npm installs a tarball it already holds from its own cache without asking ChainGate, so this machine may never
@@ -186,7 +189,8 @@ dist-tag moves that rest on a fact (a pin refusal, for example, is not on disk).
   - `--revoke` undoes it and `--list` shows them.
 - `chaingate pin <pkg>@<K>` keeps `<pkg>` on K within K's major (for 0.x, within 0.y). Every newer version in that range,
   prereleases included, is withheld until `chaingate unpin <pkg>`.
-  - The running proxy applies it at once. npm may keep using metadata it cached for up to about 5 minutes, and
+  - A running 0.1.4 proxy that reads the same ChainGate directory (the same `--scope` or `CHAINGATE_HOME`) applies it at
+    once, and the command says whether it did. npm may keep using metadata it cached for up to about 5 minutes, and
     `npm install --prefer-online` refreshes it.
   - A withheld version requested from a lockfile is refused with a notice naming your pin.
 - `chaingate allow <pkg>@<ver> --reason "..."` keeps its meaning: an exact-version override for a false-positive BLOCK.
@@ -264,8 +268,8 @@ unsigned v3 seed can be used only with `--unsigned-development`, and the tool th
 
 **Detection engine.** Two layers of patterns. Publisher identity looks at how long each publisher
 has held a package, handovers to a new publisher, and email domains. Provenance tracks attestation
-per major version, flags when it stops, and raises severity when other signals agree. Both work only
-from a package's recorded history.
+per major version and flags when it stops. Under `cft-policy-1.2` both are contributing signals: they are shown
+beside a named warning and never warn on their own. Both work only from a package's recorded history.
 
 **Validation.** A script runs the detection engine on train and test splits of the research corpus
 and writes metrics to `validation/results.json`. Snapshot tests fail if those numbers change.
@@ -280,7 +284,7 @@ packages. Treat them as a pilot measurement, not an estimate for npm as a whole:
 | Package recall | 0.67 (4 of 6 labeled attacks detected) |
 | Attributable label recall | 1.0 (every attack with a version-pinned label is caught) |
 | Provenance-only false-positive rate on clean packages | 0.0 |
-| Canonical attacks caught | axios@1.14.1, event-stream@3.3.6, shai-hulud, ua-parser-js |
+| Canonical attacks (pattern layer, corpus) | axios@1.14.1, event-stream@3.3.6, shai-hulud, ua-parser-js (what 0.1.4 warns on: [Attack Coverage](#attack-coverage-from-the-corpus)) |
 
 ## Quick Start
 
@@ -301,7 +305,8 @@ npx chaingate --help
 **Upgrading.** After installing a new version, restart the proxy (`chaingate stop`, then `chaingate init`). Until then
 the proxy that is running keeps the old version's rules, and `chaingate doctor` reports the version mismatch as
 TAMPER. The first install that touches each package afterwards records a current decision for every version of it
-already in the witness database (rows are only appended).
+that npm's metadata still lists, except a BLOCK that is reached again, which keeps its stored row (rows are only
+appended).
 
 **The SQLite module has a native part.** It is installed by `better-sqlite3`'s own install script,
 which downloads a prebuilt binary. npm 12 blocks dependency install scripts unless you approve them.
@@ -557,32 +562,34 @@ None of this comes from live registry traffic.
 | **Ua-parser-js** | New unverified domain after established baseline (fixture-verified) | not tested under 1.2 |
 | **Tarball replaced after publication** (trivy-shaped fixture) | — | BLOCK (content hash) |
 
-**Limitation.** If an attacker takes over the CI/CD pipeline and publishes through the same
-workflow, as the same publisher, with the same structure, and changes only the code, the metadata
-looks normal and ChainGate will not notice. Code analysis is needed for that case.
+**Limitation.** Under `cft-policy-1.2` a release warns only on a named rule. A takeover that changes the publisher,
+the provenance, the dependencies or the code, but adds no install script, no dependency that runs one and no
+manifest mismatch, gets no warning unless the seed's strict tier marks the release. A takeover through the same CI/CD
+workflow, as the same publisher, that changes only the code looks normal in the metadata. Code analysis is needed for
+those cases.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│              CHAINGATE PROXY            │
-│                                         │
-│  ┌─────────────┐  ┌─────────────────┐   │
-│  │   WITNESS   │  │      GATES      │   │
-│  │             │  │                 │   │
-│  │ Content hash│  │ Hash verify     │   │
-│  │ Pkg profiles│  │ Dep structure   │   │
-│  │ Append-only │  │ Publisher ID    │   │
-│  │             │  │ Provenance      │   │
-│  └──────┬──────┘  │ Release age     │   │
-│         │         │ Scope boundary  │   │
-│         │         └────────┬────────┘   │
-│         ▼                  ▼            │
-│  ┌───────────────────────────────────┐  │
-│  │        DECISION ENGINE            │  │
-│  │     ALLOW / WARN / BLOCK          │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│                CHAINGATE PROXY                │
+│                                               │
+│  ┌──────────────┐   ┌──────────────────────┐  │
+│  │   WITNESS    │   │  SEED (v3)           │  │
+│  │ content hash │   │  advisories, history │  │
+│  │ pkg profiles │   │  strict / loose tier │  │
+│  │ append-only  │   └──────────┬───────────┘  │
+│  └──────┬───────┘              │              │
+│         ▼                      ▼              │
+│  ┌─────────────────────────────────────────┐  │
+│  │      POLICY cft-policy-1.2              │  │
+│  │  FACTS (advisory, content hash) → BLOCK │  │
+│  │  NAMED RULES (strict tier, install-     │  │
+│  │    introduced, N1h, MC)         → WARN  │  │
+│  │  CONTRIBUTING (publisher, deps, prove-  │  │
+│  │    nance, age, scope, size, npm) → note │  │
+│  └─────────────────────────────────────────┘  │
+└───────────────────────────────────────────────┘
 ```
 
 ## Ecosystem Support

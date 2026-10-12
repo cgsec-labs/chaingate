@@ -69,7 +69,9 @@ test('G3c-9 (note 5.1) Solaris X is pax; GNU K does not use up an L name; a glob
     entry('package/x', HOOKED), EOF]);
   assert.deepEqual(pj(k)?.scripts, { postinstall: 'node evil.js' }, k.reason);
   const g = await walk([paxEntry([['path', 'package/package.json']], 'g'), entry('package/a', BENIGN), entry('package/b', HOOKED), EOF]);
-  assert.deepEqual(pj(g)?.scripts, { postinstall: 'node evil.js' }, 'every following entry takes the global path; the last wins');
+  // G4 dated note 5 (W2): npm's reader (node-tar) never applies a global path, so neither does the walk: no root package.json
+  assert.equal(g.ok, true, g.reason);
+  assert.equal(g.packageJson, null);
 });
 
 test('G3c-10 (note 5.1) a negative or invalid size is not checked, at once (no endless loop)', async () => {

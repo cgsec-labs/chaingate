@@ -658,7 +658,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     try {
       witnessDb = openWitnessDB(config.witnessDbPath);
       witnessDb.applySchema();
-      try { witnessDbReal = realpathSync(config.witnessDbPath); } catch { witnessDbReal = config.witnessDbPath; }
+      try { witnessDbReal = realpathSync.native(config.witnessDbPath); } catch { witnessDbReal = config.witnessDbPath; }
     } catch (err) {
       const msg =
         `chaingate-proxy: failed to open witness DB at ${config.witnessDbPath}: ${err.message}\n` +
@@ -980,8 +980,13 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           // Release audit R3 (G4 tables dated note 4): the version was evaluated, but the registry manifest MC compares against
           // is no longer in the hook map. Re-run C1 to refill it -- unless MC is already final for this version. Best effort:
           // a failure here changes neither the stored record nor the serve decision; MC then records "not checked".
+          // G4 dated note 5 (W4): nor for a version that will not be served (an applicable BLOCK, or one the user's pin withholds)
           let final = true;
-          try { final = mcDeterminate(witnessDb.getLatestNonOverrideDecision(canonicalName, version)); } catch { final = true; }
+          try {
+            const app = witnessDb.getApplicableDecision(canonicalName, version, { overrideLive: false });
+            final = Boolean(app.block) || mcDeterminate(app.latest)
+              || Boolean(pinSet && withheldBy(pinSet.forPackage(canonicalName), canonicalName, version));
+          } catch { final = true; }
           if (!final) {
             try { await tracker.run(canonicalName, () => evaluatePackage(route.name, canonicalName, req.headers.authorization)); } catch { /* busy or failed */ }
           }

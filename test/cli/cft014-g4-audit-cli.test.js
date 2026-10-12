@@ -124,3 +124,25 @@ test('G4-14 (R6, R8, R10) README and SECURITY.md: the 1.2 model, labelled platfo
   const security = read('SECURITY.md');
   assert.match(security, /qualification of 0\.1\.3/);
 });
+
+test('G4-23 (W3) the database comparison: case-insensitive on Windows and macOS, exact on Linux', async () => {
+  const { samePath } = await import('../../cli/commands/pin.js');
+  assert.equal(samePath('C:\\Users\\bob\\app\\.chaingate\\witness.db', 'c:\\Users\\bob\\app\\.chaingate\\witness.db', 'win32'), true);
+  assert.equal(samePath('/Users/bob/App/.chaingate/witness.db', '/Users/bob/app/.chaingate/witness.db', 'darwin'), true);
+  assert.equal(samePath('/home/bob/App/.chaingate/witness.db', '/home/bob/app/.chaingate/witness.db', 'linux'), false);
+  assert.equal(samePath('/a/witness.db', '/a/witness.db', 'linux'), true);
+  assert.equal(samePath('C:\\a\\witness.db', 'D:\\a\\witness.db', 'win32'), false);
+});
+
+test('G4-25 (W5) README: the pattern-layer results are labelled; the limits of the actions and the upgrade are exact', () => {
+  const readme = read('README.md');
+  assert.doesNotMatch(readme, /raises severity/);
+  assert.doesNotMatch(readme, /\| Canonical attacks caught \|/);
+  assert.match(readme, /\| Canonical attacks \(pattern layer, corpus\) \|/);
+  assert.match(readme, /\*\*Coverage choice\*\*/);
+  assert.match(readme, /except a BLOCK that is reached again/);
+  assert.match(readme, /reads the same ChainGate directory/);
+  assert.match(readme, /NAMED RULES/);
+  assert.doesNotMatch(readme, /│ Scope boundary  │/);
+  assert.match(readme, /\*\*Limitation\.\*\* Under `cft-policy-1\.2`/);
+});

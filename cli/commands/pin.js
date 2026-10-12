@@ -37,13 +37,17 @@ export function proxyPort(env = process.env) {
 
 // Release audit R7 (G4 tables dated note 4): a proxy that names its witness database applies a write only to that database.
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+/** Two real paths name one file: case-insensitively on Windows and macOS (their default file systems), exactly elsewhere (W3). */
+export function samePath(a, b, platform = process.platform) {
+  return platform === 'win32' || platform === 'darwin' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
 /** The database the running proxy reads, when it names one and it is not `dbPath` (compared as real paths); else null. */
 export function otherDatabase(self, dbPath) {
   const theirs = self?.ok && self.json?.service === 'chaingate-proxy' && typeof self.json.witness_db === 'string' ? self.json.witness_db : null;
   if (!theirs) return null;
   let mine = dbPath;
-  try { mine = realpathSync(dbPath); } catch { /* compared as given */ }
-  return theirs === mine ? null : theirs.replace(UNSAFE, '').slice(0, 300);
+  try { mine = realpathSync.native(dbPath); } catch { /* compared as given */ }
+  return samePath(theirs, mine) ? null : theirs.replace(UNSAFE, '').slice(0, 300);
 }
 export const notAppliedLine = (other) => `not applied by the running proxy (it reads ${other}); run this command with the scope `
   + 'the proxy was started with (--scope), or with CHAINGATE_HOME set to its directory.';

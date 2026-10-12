@@ -63,9 +63,10 @@ function viewHooks(buf) {
 }
 
 /**
- * The MC row for a finished walk (D-M1, D-M4). The POSIX view (the counted read) decides first, with its detail unchanged;
- * then each other file-system view that installs a different entry (release audit R2): a mismatch there is a WARN naming
- * the platforms and the entry.
+ * The MC row for a finished walk (D-M1, D-M4; G4 dated notes 4 and 5). Compared: the Linux view (the counted read; its detail
+ * text unchanged), then each other exact view (macOS, Windows) that installs a different entry, then each approximate
+ * candidate on its own. Any mismatch is a WARN naming where; a WARN wins over "not checked" (an unreadable Linux view, or a
+ * hook value nested too deeply), which wins over ALLOW.
  */
 export function mcRow(walk, mh) {
   if (mh === undefined) return { gate: GATE, result: 'SKIP', detail: 'not checked: no registry manifest at hand' };
@@ -73,17 +74,22 @@ export function mcRow(walk, mh) {
   const groups = Array.isArray(walk.views) && walk.views.length ? walk.views
     : [{ platforms: ['Linux', 'macOS', 'Windows'], packageJson: walk.packageJson ?? null, name: null }];
   const primary = groups.find((g) => g.platforms.includes('Linux')) ?? groups[0];
-  for (const g of [primary, ...groups.filter((x) => x !== primary)]) {
+  const candidates = [primary, ...groups.filter((x) => x !== primary),
+    ...(Array.isArray(walk.approx) ? walk.approx.map((a) => ({ ...a, approx: true })) : [])];
+  let unreadPrimary = false; let tooDeep = null;
+  for (const g of candidates) {
+    const where = g === primary ? ''
+      : ` as ${g.approx ? 'possibly ' : ''}installed on ${g.platforms.join(' and ')} (entry ${shownName(g.name)})`;
     const v = viewHooks(g.packageJson);
-    const where = g === primary ? '' : ` as installed on ${g.platforms.join(' and ')} (entry ${shownName(g.name)})`;
-    if (v.unread) {
-      if (g === primary) return { gate: GATE, result: 'SKIP', detail: 'not checked: the tarball package.json does not parse' };
-      continue;                                      // npm on that platform cannot read it, so it runs none of its hooks
+    if (v.unread) {                                  // npm on that platform cannot read it, so it runs none of its hooks
+      if (g === primary) unreadPrimary = true;
+      continue;
     }
     let differ;
     try { differ = manifestMismatch(v.th, mh); } catch (err) {
-      if (err instanceof TooDeep) return { gate: GATE, result: 'SKIP', detail: `not checked: ${err.message}${where}` };
-      throw err;
+      if (!(err instanceof TooDeep)) throw err;
+      tooDeep ??= `${err.message}${where}`;
+      continue;
     }
     if (!differ) continue;
     const same = keys(v.th) === keys(mh);
@@ -91,6 +97,8 @@ export function mcRow(walk, mh) {
       detail: same ? `tarball package.json${where} declares ${keys(v.th)} with different commands than the registry entry`
         : `tarball package.json${where} declares ${keys(v.th)}; the registry entry declares ${keys(mh)}` };
   }
+  if (unreadPrimary) return { gate: GATE, result: 'SKIP', detail: 'not checked: the tarball package.json does not parse' };
+  if (tooDeep) return { gate: GATE, result: 'SKIP', detail: `not checked: ${tooDeep}` };
   return { gate: GATE, result: 'ALLOW', detail: 'tarball package.json install hooks match the registry entry' };
 }
 

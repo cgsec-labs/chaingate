@@ -182,3 +182,15 @@ test('G4-10 (R7) /_chaingate/self names the witness database the proxy reads (it
     assert.equal(self.witness_db, fs.realpathSync(dbPath));
   });
 });
+
+test('G4-24 (W4) a version that will be refused is not refreshed for MC (no upstream metadata fetch first)', async () => {
+  await withProxy(async ({ base, proxy, hits }) => {
+    await get(`${base}/m`);
+    proxy.witnessDb.insertGateDecision('m', '1.1.0', 'BLOCK', [{ gate: 'content-hash', result: 'BLOCK', detail: 'content differs from the recorded baseline' }]);
+    forgetManifestHooks();
+    const before = hits.m;
+    const t = await get(`${base}/m/-/m-1.1.0.tgz`);
+    assert.equal(t.status, 403);
+    assert.equal(hits.m, before, 'no refresh fetch for a refused version');
+  });
+});

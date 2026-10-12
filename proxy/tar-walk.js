@@ -1,36 +1,73 @@
-// 0.1.4 group 3c (D-M2; G3 dated note 5): a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers only.
-// It keeps the ROOT package.json and skips every other content byte. It never touches the bytes npm receives: the caller
-// feeds it a copy of each chunk.
+// 0.1.4 group 3c (D-M2): a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers. It keeps the root
+// package.json entries and skips every other content byte. It never touches the bytes npm receives: the caller feeds it a
+// copy of each chunk.
 //
-// Which entry is the root package.json follows npm's extractor (release audit R2, G4 tables dated note 4): pacote installs
-// regular files only (links are filtered) with `strip: 1`, and node-tar strips any leading root by win32 rules on every
-// platform and refuses `..`. Three file-system views are kept, each with its own last entry:
-//   POSIX (Linux): the installed path is exactly `package.json`;
-//   macOS (case-insensitive): the same, compared case-insensitively;
-//   Windows: `\` is also a separator, case-insensitive, trailing dots and spaces trimmed, the 8.3 name `PACKAG~n.JSO`.
-// The counted code (tarfile) reads the literal `<dir>/package.json` only; these views can only add detections, since
-// `npm pack` never writes such names.
-//
-// Framing follows the readers it must agree with -- tarfile (the counted code) and node-tar (what npm installs):
-//   pax `x` (and the old Solaris `X`) apply to the next entry, `g` to every following one; both `path` and `size` apply;
-//   records are parsed as BYTES (a record's length counts bytes) and only values are decoded as UTF-8;
-//   GNU `L` names the next entry; GNU `K` (a long link name) is metadata and never uses up an `L` name;
-//   the ustar prefix joins the name; the signed header checksum is accepted as well as the unsigned one;
-//   a size that is negative, not a finite integer, or past the caps is "not checked" (never an endless loop);
-//   the archive ends at TWO zero blocks, as node-tar reads it (tarfile stops at one: a package.json after a single zero
-//   block is installed by npm, so the walk reads it -- stated in dated note 5, a deviation that can only add detections).
-// Past a cap or on any gunzip/tar error the outcome is "not checked", with the reason.
+// It reads the archive the way npm's extractor does (G4 tables dated notes 4 and 5): pacote over node-tar 7.5.11 (npm 10.9.7)
+// and 7.5.19 (npm 11.19.0).
+//   Framing and names as node-tar: a header is valid only with the unsigned checksum; a header node-tar rejects (bad checksum,
+//   empty path, a link without a link name or a non-link with one, an invalid base-256 number) is skipped by ONE block and
+//   the next block is read as a header; a directory (also a `0` entry ending in `/`) has size 0; names as node-tar's
+//   decString; the ustar prefix only for the magic `ustar\0` + `00` (155 or 130 bytes by byte 475), also onto a pax or L
+//   path; pax records parsed line by line; x/X, L/N and K fill ONE pending set (the last wins); g never sets a path; a
+//   size-0 meta header does nothing; a meta header over 1 MiB is ignored; the archive ends at two null blocks.
+//   Where npm 10's and npm 11's readers differ, the walk is "not checked" (never a final result): a pending pax or global
+//   size or path meeting a header that is not a normal file-system type; a pax size that is not all digits; a pax path that
+//   is all digits or holds a NUL; a pax key outside the ones both read alike; a negative size.
+//   Which entry is installed as <pkg>/package.json: pacote's filter (regular files only), `strip: 1`, node-tar's depth
+//   limit, root stripping and `..` refusal -- emulated EXACTLY per view: Linux; macOS (ASCII case-insensitive); Windows
+//   (`\` is a separator too; ASCII case-insensitive). Each view keeps its last such entry. Names a case-insensitive or
+//   Windows file system MAY also map there (Unicode case folds, the 8.3 name, trailing dots or spaces) are separate
+//   candidates that never replace a view's entry: MC compares each of them on its own, so they can only add a detection.
+// Past a cap, on a gunzip error or a truncated archive, the outcome is "not checked", with the reason.
 import zlib from 'node:zlib';
-import { win32 } from 'node:path';
+import { posix, win32 } from 'node:path';
 
 export const DEFAULTS = Object.freeze({ maxCompressed: 64 * 1024 * 1024, maxUncompressed: 256 * 1024 * 1024,
-  maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024 });
-const REGULAR = new Set(['0', '\0', '7']);
+  maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024, maxApprox: 8, maxApproxBytes: 2 * 1024 * 1024 });
 const stats = { created: 0 };
 export const walkerStats = () => ({ ...stats });
 
-/** node-tar's strip-absolute-path: every leading root, by win32 rules (a POSIX root is also a win32 one). */
-function stripAbsolute(p) {
+// ---- node-tar's field decoding (header.js, large-numbers.js) ----
+const CODES = new Set(['0', '', '1', '2', '3', '4', '5', '6', '7', 'g', 'x', 'A', 'D', 'I', 'K', 'L', 'M', 'N', 'S', 'V', 'X']);
+const NORMAL_FS = new Set(['0', '', '1', '2', '3', '4', '5', '6', '7', 'D']);       // 7.5.19 types.normalFsTypes
+const META = new Set(['L', 'K', 'N', 'x', 'X', 'g']);
+const DIVERGE = 'npm 10 and npm 11 read it differently';
+class BadHeader extends Error {}
+const decString = (b, off, size) => b.subarray(off, off + size).toString('utf8').replace(/\0.*/, '');
+function decNumber(b, off, size) {
+  const f = b.subarray(off, off + size);
+  if (f[0] & 0x80) {
+    let v = null;
+    if (f[0] === 0x80) { v = 0; for (let i = 1; i < f.length; i += 1) v = v * 256 + f[i]; } else if (f[0] === 0xff) v = -1;
+    if (v === null || !Number.isSafeInteger(v)) throw new BadHeader('invalid base-256 number');
+    return v;
+  }
+  const n = parseInt(f.toString('utf8').replace(/\0.*$/, '').trim(), 8);
+  return Number.isNaN(n) ? undefined : n;
+}
+// pax.js parseKV, with the values both versions read alike (anything else: not checked)
+const PAX_KEYS = new Set(['path', 'size', 'mtime', 'atime', 'ctime', 'charset', 'comment', 'gname', 'uname', 'uid', 'gid',
+  'mode', 'linkpath', 'dev', 'ino', 'nlink']);
+function paxRecords(buf) {
+  const out = {};
+  for (const line of buf.toString('utf8').replace(/\n$/, '').split('\n')) {
+    const n = parseInt(line, 10);
+    if (n !== Buffer.byteLength(line) + 1) continue;
+    const kv = line.slice(`${n} `.length).split('=');
+    const r = kv.shift();
+    if (!r) continue;
+    const k = r.replace(/^SCHILY\.(dev|ino|nlink)/, '$1');
+    const v = kv.join('=');
+    if (!PAX_KEYS.has(k) && !k.includes('.')) throw new BadHeader(`not checked: pax key "${k.slice(0, 40)}" is not a pax key npm reads the same way`);
+    if (k === 'size' && !/^[0-9]+$/.test(v)) throw new BadHeader(`not checked: a pax size ${DIVERGE}`);
+    if (k === 'path' && (v.includes('\0') || /^[0-9]+$/.test(v))) throw new BadHeader(`not checked: a pax path ${DIVERGE}`);
+    out[k] = k === 'size' ? Number(v) : v;
+  }
+  return out;
+}
+
+// ---- where npm writes an entry (pacote `strip: 1`, node-tar [CHECKPATH] / [STRIPABSOLUTEPATH]) ----
+function stripAbsolute(p) {                                // strip-absolute-path.js: every leading root, by win32 rules
   let parsed = win32.parse(p);
   while (win32.isAbsolute(p) || parsed.root) {
     const root = p.charAt(0) === '/' && p.slice(0, 4) !== '//?/' ? '/' : parsed.root;
@@ -39,72 +76,43 @@ function stripAbsolute(p) {
   }
   return p;
 }
-/** The segments of the path npm writes an entry to inside the package folder, or null when it writes none. */
-function installedSegments(name, windows) {
-  const parts = (windows ? name.replace(/\\/g, '/') : name).split('/');
-  parts.splice(0, 1);                                      // strip: 1
-  const rel = stripAbsolute(parts.join('/'));
-  if (!rel || rel.replace(/\\/g, '/').split('/').includes('..')) return null;
-  return rel.split(windows ? /[\\/]/ : '/').filter((x) => x !== '' && x !== '.');
+/** The path, relative to the package folder, that npm writes a file entry to (one view), or null when it writes none. */
+function writtenRel(name, windows) {
+  const p = windows ? name.replace(/\\/g, '/') : name;
+  if (p.endsWith('/')) return null;                        // a file at a directory path cannot be written
+  const parts = p.split('/');
+  parts.splice(0, 1);
+  if (parts.length > 1024) return null;                    // node-tar: path excessively deep
+  const stripped = stripAbsolute(parts.join('/'));
+  if (!stripped) return null;                              // the package folder itself: refused for a file
+  const segs = stripped.replace(/\\/g, '/').split('/');
+  if (segs.includes('..') || (windows && /^[a-z]:\.\.$/i.test(segs[0] ?? ''))) return null;
+  const base = windows ? 'C:\\pkg' : '/pkg';
+  const abs = (windows ? win32 : posix).resolve(base, stripped);
+  const prefix = `${base}${windows ? '\\' : '/'}`;
+  if (!(windows ? abs.toLowerCase().startsWith(prefix.toLowerCase()) : abs.startsWith(prefix))) return null;
+  return abs.slice(prefix.length);
 }
+const ASCII = /^[\x20-\x7e]*$/;
 const fold = (x) => x.toUpperCase().toLowerCase();         // Unicode case folding, approximately (U+017F -> s)
-/** The views ('posix' | 'macos' | 'windows') in which an entry is the root package.json. */
-export function rootViews(name) {
-  const out = [];
-  const p = installedSegments(name, false);
-  if (p && p.length === 1) {
-    if (p[0] === 'package.json') out.push('posix');
-    if (fold(p[0]) === 'package.json') out.push('macos');
+/** For a regular-file entry name: the exact views it is installed as package.json in, and the approximate platforms. */
+export function installTargets(name) {
+  const exact = []; const approx = new Set();
+  const lx = writtenRel(name, false);
+  if (lx != null && !lx.includes('/')) {
+    if (lx === 'package.json') exact.push('linux');
+    if (ASCII.test(lx) && lx.toLowerCase() === 'package.json') exact.push('macos');
+    else if (fold(lx) === 'package.json') approx.add('macOS');
   }
-  const w = installedSegments(name, true);
-  if (w && w.length === 1) {
-    const t = w[0].replace(/[. ]+$/, '');
-    if (fold(t) === 'package.json' || /^packag~\d+\.jso$/i.test(t)) out.push('windows');
+  const wx = writtenRel(name, true);
+  if (wx != null && !/[\\/]/.test(wx)) {
+    if (ASCII.test(wx) && wx.toLowerCase() === 'package.json') exact.push('windows');
+    else {
+      const t = wx.replace(/[. ]+$/, '');
+      if (fold(t) === 'package.json' || /^packag~\d+\.jso$/i.test(t)) approx.add('Windows');
+    }
   }
-  return out;
-}
-
-const cstr = (b) => { const i = b.indexOf(0); return b.subarray(0, i < 0 ? b.length : i).toString('utf8'); };
-
-/** The header's size field: octal text, or base-256 (the high bit set; the sign bit 0x40 on the first byte = negative). */
-function sizeOf(h) {
-  const f = h.subarray(124, 136);
-  if (f[0] & 0x80) {
-    if (f[0] & 0x40) return -1;                            // negative base-256
-    let n = f[0] & 0x3f;
-    for (let i = 1; i < f.length; i += 1) n = n * 256 + f[i];
-    return n;
-  }
-  const s = cstr(f).trim();
-  if (!s) return 0;
-  return /^[0-7]+$/.test(s) ? parseInt(s, 8) : NaN;
-}
-function checksumOk(h) {
-  const text = cstr(h.subarray(148, 156)).trim();
-  if (!/^[0-7]+$/.test(text)) return false;
-  const want = parseInt(text, 8);
-  let unsigned = 0; let signed = 0;
-  for (let i = 0; i < 512; i += 1) {
-    const b = (i >= 148 && i < 156) ? 32 : h[i];
-    unsigned += b; signed += b > 127 ? b - 256 : b;
-  }
-  return want === unsigned || want === (signed & 0o777777);
-}
-/** pax records, parsed as bytes: Map(key -> value string). Malformed framing ends the parse. */
-function paxRecords(buf) {
-  const out = new Map();
-  let off = 0;
-  while (off < buf.length) {
-    const sp = buf.indexOf(0x20, off);
-    if (sp < 0) break;
-    const len = Number(buf.subarray(off, sp).toString('latin1'));
-    if (!Number.isInteger(len) || len <= 0 || off + len > buf.length || buf[off + len - 1] !== 0x0a) break;
-    const rec = buf.subarray(sp + 1, off + len - 1);
-    const eq = rec.indexOf(0x3d);
-    if (eq > 0) out.set(rec.subarray(0, eq).toString('utf8'), rec.subarray(eq + 1).toString('utf8'));
-    off += len;
-  }
-  return out;
+  return { exact, approx: [...approx] };
 }
 
 export function createTarWalker(opts = {}) {
@@ -113,10 +121,10 @@ export function createTarWalker(opts = {}) {
   let compressed = 0; let uncompressed = 0; let failed = null; let ended = false;
   let pending = Buffer.alloc(0);
   let state = 'header'; let remaining = 0; let pad = 0;
-  let collect = null;                                      // { kind: 'pj' | 'L' | 'K' | 'x' | 'g', chunks }
-  let nextName = null; let paxNext = new Map(); const paxGlobal = new Map();
-  let packageJson = null; let zeroBlocks = 0;
-  const views = { posix: null, macos: null, windows: null };   // view -> { buf, name }: the last root entry in that view
+  let collect = null;                                      // { kind: 'pj' | meta type | null, chunks }
+  let ex = null; let gex = {}; let sawNull = false;
+  const views = { linux: null, macos: null, windows: null };   // view -> { buf, name }: the last entry npm installs there
+  const approx = []; let approxBytes = 0;
   const gunzip = zlib.createGunzip();
   let resolveSettled;
   const settled = new Promise((r) => { resolveSettled = r; });
@@ -133,14 +141,86 @@ export function createTarWalker(opts = {}) {
   function complete() {
     if (!collect) return;
     const body = Buffer.concat(collect.chunks);
-    if (collect.kind === 'pj') {
-      for (const v of collect.views) views[v] = { buf: body, name: collect.name };
-      if (collect.views.includes('posix')) packageJson = body;
+    const c = collect; collect = null;
+    if (c.kind === 'pj') {
+      for (const v of c.exact) views[v] = { buf: body, name: c.name };
+      if (c.approx.length) {
+        approxBytes += body.length;
+        if (approx.length >= o.maxApprox || approxBytes > o.maxApproxBytes) { fail('too many possible package.json entries'); return; }
+        approx.push({ buf: body, name: c.name, platforms: c.approx });
+      }
+    } else if (c.kind === 'x' || c.kind === 'X') ex = { ...(ex ?? {}), ...paxRecords(body) };
+    else if (c.kind === 'g') gex = { ...gex, ...paxRecords(body) };
+    else if (c.kind === 'L' || c.kind === 'N') ex = { ...(ex ?? {}), path: body.toString('utf8').replace(/\0.*/, '') };
+    else if (c.kind === 'K') ex = { ...(ex ?? {}), linkpath: body.toString('utf8').replace(/\0.*/, '') };
+  }
+
+  /** One header block, as node-tar's Header + Parse read it. Returns the body length to consume, or -1 to skip the block. */
+  function header(h) {
+    let sum = 256;
+    for (let i = 0; i < 148; i += 1) sum += h[i];
+    for (let i = 156; i < 512; i += 1) sum += h[i];
+    const t = decString(h, 156, 1);
+    const normal = NORMAL_FS.has(t);
+    const pend = normal ? null : ex;                         // pending fields 7.5.11 applies and 7.5.19 does not
+    const fieldPath = decString(h, 0, 100);
+    let fieldSize; let cksum;
+    try {
+      for (const [off, size] of [[100, 8], [108, 8], [116, 8], [136, 12]]) decNumber(h, off, size);
+      fieldSize = decNumber(h, 124, 12);
+      cksum = decNumber(h, 148, 12);
+    } catch (err) {
+      if (err instanceof BadHeader && (ex || Object.keys(gex).length)) throw new BadHeader(`not checked: a header field ${DIVERGE}`);
+      return -1;                                             // node-tar: the header is invalid; the next block is read
     }
-    else if (collect.kind === 'L') nextName = cstr(body);
-    else if (collect.kind === 'x') paxNext = paxRecords(body);
-    else if (collect.kind === 'g') for (const [k, v] of paxRecords(body)) paxGlobal.set(k, v);
-    collect = null;                                        // 'K' (long link name): read, ignored
+    if (cksum === undefined && sum === 256) {                // a null block
+      if (sawNull) ended = true; else sawNull = true;
+      return 0;
+    }
+    sawNull = false;
+    if (!normal) {
+      const pendSize = pend?.size ?? gex.size;
+      if (pendSize !== undefined && pendSize !== fieldSize) throw new BadHeader(`not checked: a pending pax size ${DIVERGE}`);
+      if (!fieldPath && pend?.path !== undefined) throw new BadHeader(`not checked: a pending pax path ${DIVERGE}`);
+    }
+    let path = (normal ? ex?.path : undefined) ?? fieldPath;
+    let size = (normal ? (ex?.size ?? gex.size) : undefined) ?? fieldSize;
+    let type = CODES.has(t) ? (t || '0') : 'Unsupported';
+    if (type === '0' && path.slice(-1) === '/') type = '5';
+    if (type === '5') size = 0;
+    const linkpath = decString(h, 157, 100);
+    if (h.subarray(257, 265).toString() === 'ustar\u000000') {
+      try { for (const [off, sz] of [[329, 8], [337, 8]]) decNumber(h, off, sz); if (h[475] === 0) { decNumber(h, 476, 12); decNumber(h, 488, 12); } } catch {
+        if (ex || Object.keys(gex).length) throw new BadHeader(`not checked: a header field ${DIVERGE}`);
+        return -1;
+      }
+      const prefix = h[475] !== 0 ? decString(h, 345, 155) : decString(h, 345, 130);
+      if (h[475] !== 0 || prefix) path = `${prefix}/${path}`;
+    }
+    if (sum !== cksum) return -1;                            // checksum failure: skipped
+    if (!path) return -1;                                    // path is required
+    const link = type === '1' || type === '2';
+    if (link && !linkpath) return -1;                        // linkpath required
+    if (!link && type !== 'x' && type !== 'g' && linkpath) return -1;   // linkpath forbidden
+    if (size !== undefined && size < 0) throw new BadHeader(`not checked: an invalid size (negative): ${DIVERGE}`);
+    size = size ?? 0;
+    if (size > o.maxUncompressed) throw new BadHeader(`an entry over the uncompressed cap (${o.maxUncompressed} bytes)`);
+    if (META.has(type)) {
+      if (size > 1024 * 1024) { collect = null; return size; }                 // node-tar ignores it
+      if (size > o.maxMeta) throw new BadHeader(`tar: a metadata header over ${o.maxMeta} bytes`);
+      collect = size > 0 ? { kind: type, chunks: [] } : null;
+      return size;
+    }
+    ex = null;                                               // a pending extended header applies to this entry only
+    collect = null;
+    if (type === '0' || type === '7') {                      // pacote installs File / OldFile / ContiguousFile
+      const tg = installTargets(path);
+      if (tg.exact.length || tg.approx.length) {
+        if (size > o.maxPackageJson) throw new BadHeader(`package.json over ${o.maxPackageJson} bytes`);
+        collect = { kind: 'pj', chunks: [], exact: tg.exact, approx: tg.approx, name: path };
+      }
+    }
+    return size;
   }
 
   function onData(chunk) {
@@ -154,43 +234,27 @@ export function createTarWalker(opts = {}) {
       if (state === 'header') {
         if (buf.length - off < 512) { pending = Buffer.from(buf.subarray(off)); return; }
         const h = buf.subarray(off, off + 512); off += 512;
-        let zero = true; for (let i = 0; i < 512; i += 1) if (h[i] !== 0) { zero = false; break; }
-        if (zero) { zeroBlocks += 1; if (zeroBlocks >= 2) ended = true; continue; }
-        zeroBlocks = 0;
-        if (!checksumOk(h)) { fail('tar: bad header checksum'); return; }
-        const type = String.fromCharCode(h[156]);
-        const meta = type === 'L' || type === 'K' || type === 'x' || type === 'X' || type === 'g';
-        let size = sizeOf(h);
-        if (!meta) {
-          const pax = new Map([...paxGlobal, ...paxNext]);
-          if (pax.has('size')) size = /^\d+$/.test(pax.get('size')) ? Number(pax.get('size')) : NaN;
-          const ustar = h.subarray(257, 262).toString('latin1') === 'ustar';
-          const prefix = ustar ? cstr(h.subarray(345, 500)) : '';
-          const own = cstr(h.subarray(0, 100));
-          const name = pax.get('path') ?? nextName ?? (prefix ? `${prefix}/${own}` : own);
-          nextName = null; paxNext = new Map();
-          if (!Number.isSafeInteger(size) || size < 0) { fail('tar: invalid size'); return; }
-          if (size > o.maxUncompressed) { fail(`an entry over the uncompressed cap (${o.maxUncompressed} bytes)`); return; }
-          const rv = REGULAR.has(type) ? rootViews(name) : [];
-          if (rv.length) {
-            if (size > o.maxPackageJson) { fail(`package.json over ${o.maxPackageJson} bytes`); return; }
-            collect = { kind: 'pj', chunks: [], views: rv, name };
-          } else collect = null;
-        } else {
-          if (!Number.isSafeInteger(size) || size < 0) { fail('tar: invalid size'); return; }
-          if (size > o.maxMeta) { fail(`tar: a metadata header over ${o.maxMeta} bytes`); return; }
-          collect = { kind: type === 'X' ? 'x' : type, chunks: [] };
+        let size;
+        try { size = header(h); } catch (err) {
+          if (!(err instanceof BadHeader)) throw err;
+          fail(err.message.startsWith('not checked: ') ? err.message.slice('not checked: '.length) : err.message); return;
         }
+        if (size <= 0) { if (size === 0) complete(); continue; }
         remaining = size; pad = (512 - (size % 512)) % 512;
         state = 'content';
-        if (remaining === 0) { complete(); state = pad ? 'pad' : 'header'; }
         continue;
       }
       if (state === 'content') {
         const take = Math.min(remaining, buf.length - off);
         if (collect) collect.chunks.push(Buffer.from(buf.subarray(off, off + take)));
         off += take; remaining -= take;
-        if (remaining === 0) { complete(); state = pad ? 'pad' : 'header'; }
+        if (remaining === 0) {
+          try { complete(); } catch (err) {
+            if (!(err instanceof BadHeader)) throw err;
+            fail(err.message.startsWith('not checked: ') ? err.message.slice('not checked: '.length) : err.message); return;
+          }
+          state = pad ? 'pad' : 'header';
+        }
         continue;
       }
       const take = Math.min(pad, buf.length - off);       // state === 'pad'
@@ -201,7 +265,7 @@ export function createTarWalker(opts = {}) {
   gunzip.on('data', onData);
   function grouped() {
     const out = [];
-    for (const [v, label] of [['posix', 'Linux'], ['macos', 'macOS'], ['windows', 'Windows']]) {
+    for (const [v, label] of [['linux', 'Linux'], ['macos', 'macOS'], ['windows', 'Windows']]) {
       const e = views[v];
       const g = out.find((x) => x.packageJson === (e?.buf ?? null));
       if (g) g.platforms.push(label);
@@ -219,17 +283,20 @@ export function createTarWalker(opts = {}) {
       gunzip.write(chunk);
     },
     /**
-     * Finish: { ok: true, packageJson: Buffer | null (the POSIX view), views } or { ok: false, reason }. `views` groups the
-     * three file-system views by the entry each one installs: [{ platforms: ['Linux', 'macOS', 'Windows'], packageJson, name }].
+     * Finish: { ok: true, packageJson: Buffer | null (the Linux view), views, approx } or { ok: false, reason }. `views` groups
+     * the exact views by the entry each installs: [{ platforms: ['Linux', 'macOS', 'Windows'], packageJson, name }];
+     * `approx`: [{ platforms, packageJson, name }], each compared on its own.
      */
     async end() {
       if (!failed && !ended) { gunzip.end(); await settled; }
       if (failed) return { ok: false, reason: failed };
-      if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return { ok: true, packageJson, views: grouped() }; }   // the end is final
+      const done = () => ({ ok: true, packageJson: views.linux?.buf ?? null, views: grouped(),
+        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })) });
+      if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return done(); }   // the end is final
       if (state !== 'header' || pending.length) return { ok: false, reason: 'tar: truncated archive' };
-      return { ok: true, packageJson, views: grouped() };
+      return done();
     },
   };
 }
 
-export default { createTarWalker, walkerStats, rootViews, DEFAULTS };
+export default { createTarWalker, walkerStats, installTargets, DEFAULTS };

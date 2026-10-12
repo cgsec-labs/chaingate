@@ -61,7 +61,7 @@ test('G4-6c (R2) Windows only: a backslash separator, the 8.3 short name, traili
     const r = await walk([entry('package/package.json', BENIGN), entry(alias, HOOKED), EOF]);
     const row = mcRow(r, {});
     assert.equal(row.result, 'WARN', `${alias}: ${row.detail}`);
-    assert.match(row.detail, /as installed on Windows \(entry /, alias);
+    assert.match(row.detail, /installed on Windows \(entry /, alias);                // exact or approximate (dated note 5)
   }
 });
 
