@@ -118,6 +118,11 @@ reports the seed signature as unverifiable, and the integrity gate refuses every
 except the one that completes the installation. For that command it waives only this refusal: the
 other integrity checks, and the verification of the incoming seed, still apply.
 
+The commands added in 0.1.4 that change what is served or what is reported -- `chaingate accept`, `chaingate pin` and
+`chaingate unpin` -- pass the same integrity gate as every other mutating command. `chaingate why` records, best-effort
+and without the gate, only that it was asked about a version (a local action record); that record is never an input to
+any decision, notice or refusal.
+
 Defending the local `witness.db` against an attacker who already has filesystem
 write access is outside what the signatures can protect. At that
 level, the protection is the filesystem permissions on

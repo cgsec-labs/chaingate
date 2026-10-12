@@ -100,18 +100,88 @@ history, the upstream and the machine. Repeat installs on the same running proxy
 were still tracked as evaluated. A new version, or one dropped from the tracking, is evaluated again. A CI job that
 starts a new proxy every run pays the first-install cost every time.
 
-**CLI.** Ten commands: `init`, `status`, `check`, `why`, `history`, `allow`,
-`overrides`, `update-seed`, `doctor`, `stop`.
+**CLI.** Fourteen commands: `init`, `status`, `check`, `why`, `history`, `allow`, `overrides`, `update-seed`,
+`doctor`, `stop`, `report`, `accept`, `pin`, `unpin`.
 
 **Witness store.** Append-only log backed by SQLite: content hashes, dependency
 trees, publisher metadata, provenance status.
 
-**Six gates** in the proxy's request path. Each reports its own result and reason.
+**What decides a warning (policy `cft-policy-1.2`).** Each release gets a record of every check's result. Only some of
+those checks can make a warning:
+- **Facts BLOCK.** These are a recorded advisory naming the exact version (from the seed), and content that differs from
+  the version's recorded baseline (content-hash).
+- **Named rows WARN.** Each one is a specific, counted reason:
+  - the seed's strict tier (a release-history break of 3+ of 5 groups, or 2+ package-wide signals);
+  - **install-introduced**: an install script appears that no version published at least 24 h earlier had (all earlier
+    versions on a package's first day);
+  - **N1h**: the release adds a dependency whose resolved version runs install scripts;
+  - **MC**: the tarball's `package.json` declares install scripts that differ from its registry entry.
+- **Contributing rows are detail.** These are publisher change, new dependency, provenance dropped, release age, scope
+  boundary, size jump of 2x or more, npm-version downgrade, and the seed contract's loose rule. They are shown beside a
+  named row and in `chaingate why`, and they never make a warning on their own.
+
+Some named rows are checked when npm downloads the tarball:
+- **N1h** fetches the added dependency's metadata before answering: at most 10 dependencies, at most 5 s, cached for 10
+  minutes. One that does not answer in time is "not evaluable", never clean.
+- **MC** reads the tarball while it streams to npm, so that first download cannot carry npm's notice. Later downloads of
+  that version do, and `chaingate report` lists it at once.
+
+`chaingate check` (the CI command) evaluates the seed only in 0.1.4. Install-introduced, N1h and MC are reported by the
+proxy, not by `check`.
+
+**What you see.** For a named warning or a refusal, ChainGate sends npm a notice on the tarball response, and npm prints
+it:
+
+```console
+npm notice chaingate: WARNING q@1.5.0: release-history break vs the seed (2+ package-wide signals). Details: chaingate why q@1.5.0
+npm notice chaingate: BLOCKED p@1.3.0: a recorded advisory names this version. Details: chaingate why p@1.3.0
+```
+
+npm prints a notice only on a response it does not cache (measured on npm 10.9.7 and 11.19.0). So a named-WARN tarball is
+sent `no-store`. Two consequences follow:
+- An offline or `--prefer-offline` install cannot take that tarball from npm's cache.
+- `chaingate accept` makes the version cacheable again (below).
+
+A dist-tag that ChainGate moves off a blocked version is not printed by npm, because the metadata stays cacheable. The
+report shows it instead.
+
+**The report.** `chaingate report` says what the proxy served and refused in your last install:
+- each named warning: what moved, the baseline, what already happened, the last version without the signal, and what
+  to do;
+- each refusal, and each dist-tag moved off a blocked version;
+- how many packages no named rule checked, and why.
+
+`--all` shows every install the running proxy holds; `--json` gives the record. Without a running proxy it reads
+ChainGate's disk record of the last 24 h (`--since 7d` to change), which keeps named warnings and refusals only.
+- Exit codes: 0 = nothing named, refused or moved; 2 = named warnings; 3 = a refusal or a moved dist-tag; 4 = a tool
+  error, or an incomplete record.
+- The report covers only what reached ChainGate: npm's own cache is invisible to it.
+
+**Your actions:**
+- `chaingate accept <pkg>@<ver>` accepts a named warning for that exact version.
+  - ChainGate stops sending the notice while the version's record shows only the signals you accepted. A later or
+    different signal warns again.
+  - It never overrides a BLOCK: a later advisory for that version still blocks it.
+  - `--revoke` undoes it and `--list` shows them.
+- `chaingate pin <pkg>@<K>` keeps `<pkg>` on K within K's major (for 0.x, within 0.y). Every newer version in that range,
+  prereleases included, is withheld until `chaingate unpin <pkg>`.
+  - The running proxy applies it at once. npm may keep using metadata it cached for up to about 5 minutes, and
+    `npm install --prefer-online` refreshes it.
+  - A withheld version requested from a lockfile is refused with a notice naming your pin.
+- `chaingate allow <pkg>@<ver> --reason "..."` keeps its meaning: an exact-version override for a false-positive BLOCK.
+  A pin wins over an override on a version it withholds, and both commands say so.
+
+These actions, and each `chaingate why`, are recorded locally with the version's classes at that moment, so you can later
+see which warnings anyone acted on. Nothing leaves the machine.
+
+**Local endpoints.** `/_chaingate/self` and `/_chaingate/report` answer only local, non-browser requests: a loopback
+client and a loopback `Host`, no `Origin` header, and `Sec-Fetch-Site` absent or `none`. This keeps a web page from
+reading your installed package names through DNS rebinding.
 
 **ALLOW / WARN / BLOCK enforcement** with a persisted decision log, per-version
 overrides, and CI-friendly exit codes from `chaingate check` (0 / 2 / 3; 4 = tool error). `chaingate check --json`
-emits a versioned `chaingate.check/2` record (0.1.2 and earlier wrote `chaingate.check/1`, which is still
-read); `examples/ci/` has an offline CI consumer for both.
+emits a versioned `chaingate.check/3` record (0.1.3 wrote `chaingate.check/2` and 0.1.2 and earlier
+`chaingate.check/1`; both are still read); `examples/ci/` has an offline CI consumer for them.
 
 **A failure never turns a BLOCK into permission.** A BLOCK stays in force until the check that issued it
 definitively clears it (for example, the content hash matches its first-seen value again, or the seed no longer
@@ -305,14 +375,15 @@ against the active seed. It always evaluates afresh and never reports a stored d
 ```console
 $ chaingate check express@4.22.3 --packument ./express.json
 express@4.22.3: ALLOW
-  evaluated disposition: ALLOW under cft-policy-1.1
+  evaluated disposition: ALLOW under cft-policy-1.2
   placement: recorded
   ...
 $ echo $?
 0
 ```
 
-Exit codes: 0 ALLOW, 2 WARN, 3 BLOCK, 4 tool error. `--json` gives the `chaingate.check/2` record.
+Exit codes: 0 ALLOW, 2 WARN, 3 BLOCK, 4 tool error. `--json` gives the `chaingate.check/3` record. In 0.1.4 `check`
+evaluates the seed only: install-introduced, N1h and MC are reported by the proxy (above).
 
 A version named in a recorded advisory is blocked even when the release cannot be evaluated (for example a
 manifest the adapter rejects), and the result names the advisory.
@@ -325,7 +396,8 @@ manifest the adapter rejects), and the result names the advisory.
   because it records no seed, rule or policy identity, and exits with code 4.
 
 Anything that could not be evaluated is listed with the reason. Missing evidence is never reported
-as a clean result.
+as a clean result. `why` also records, locally, that it was asked about that version (best-effort; it never changes
+its output or exit code).
 
 **5. Stop and restore:**
 
