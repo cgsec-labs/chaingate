@@ -11,6 +11,11 @@ import { execFileSync } from 'node:child_process';
 import { createTarWalker } from '../../proxy/tar-walk.js';
 import { manifestMismatch, hookDict } from '../../proxy/manifest-check.js';
 
+// G4 dated note 4 (R8): these fixtures need GNU tar (`--format=gnu|ustar|pax`); without it (bsdtar on macOS and Windows) the
+// tar(1)-built tests skip with the reason. The header-by-header walker tests (cft014-g3c-framing, cft014-g4-walker-aliases)
+// need no tar(1) and run everywhere.
+const GNU_TAR = (() => { try { return /GNU tar/.test(execFileSync('tar', ['--version'], { encoding: 'utf8' })); } catch { return false; } })();
+const NEEDS_GNU = GNU_TAR ? {} : { skip: 'GNU tar is not installed (bsdtar has no --format=gnu)' };
 function tgz(files, { format = 'gnu', order = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g3c-'));
   try {
@@ -30,7 +35,7 @@ async function walk(buf, opts = {}, chunk = 777) {
 }
 const LONG = `package/${'d'.repeat(120)}/${'f'.repeat(60)}.js`;
 
-test('G3c-1a (D-M2) the root package.json is found after long-named entries, in gnu, ustar and pax formats', async () => {
+test('G3c-1a (D-M2) the root package.json is found after long-named entries, in gnu, ustar and pax formats', NEEDS_GNU, async () => {
   for (const format of ['gnu', 'ustar', 'pax']) {
     const files = { [format === 'ustar' ? `package/${'d'.repeat(90)}/${'f'.repeat(60)}.js` : LONG]: 'x', 'package/package.json': '{"name":"p","scripts":{"postinstall":"node s.js"}}' };
     const r = await walk(tgz(files, { format }));
@@ -39,7 +44,7 @@ test('G3c-1a (D-M2) the root package.json is found after long-named entries, in 
   }
 });
 
-test('G3c-1b (D-M2) a package.json below the root is not the root one; the last root package.json wins (as read_tar keeps the last)', async () => {
+test('G3c-1b (D-M2) a package.json below the root is not the root one; the last root package.json wins (as read_tar keeps the last)', NEEDS_GNU, async () => {
   const r = await walk(tgz({ 'package/lib/package.json': '{"scripts":{"install":"evil"}}', 'package/package.json': '{"name":"p"}' }));
   assert.deepEqual(JSON.parse(r.packageJson), { name: 'p' });
   const none = await walk(tgz({ 'package/index.js': '1' }));
@@ -47,7 +52,7 @@ test('G3c-1b (D-M2) a package.json below the root is not the root one; the last 
   assert.equal(none.packageJson, null);
 });
 
-test('G3c-1c (D-M2) caps and errors are "not checked" with the reason; content bytes are skipped, never buffered', async () => {
+test('G3c-1c (D-M2) caps and errors are "not checked" with the reason; content bytes are skipped, never buffered', NEEDS_GNU, async () => {
   const big = Buffer.alloc(3 * 1024 * 1024, 0);
   const r = await walk(tgz({ 'package/big.bin': big, 'package/package.json': '{}' }), { maxUncompressed: 1024 * 1024 });
   assert.equal(r.ok, false);

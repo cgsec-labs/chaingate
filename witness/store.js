@@ -256,10 +256,18 @@ export function createWitness({ db, runGates, config, logger }) {
           // 0.1.4 group 3b (D-N5): the record keeps N1h's last JUDGEMENT. A pending row (the dependency cache is cold) never
           // replaces a judged one for the same added set: the judgement changes only when a new one is made.
           const n1h = gateResults.findIndex((g) => g && g.gate === 'dependency-hooks');
-          const prev = (() => { try { return db.getLatestDecision(packageName, incoming.version); } catch { return null; } })();
+          // Release audit R1 (G4 tables dated note 4): the carried rows come from the version's HISTORY, newest first, override
+          // rows skipped -- not from its newest row, which may be an override row or a row 0.1.3 wrote after a rollback.
+          let decisionHistory = null;
+          try { decisionHistory = db.getDecisionHistory(packageName, incoming.version); } catch { decisionHistory = null; }
+          const newestFirst = (decisionHistory ?? []).filter((r) => Array.isArray(r?.gates_fired) && !isOverrideRow(r.gates_fired)).reverse();
           // 0.1.4 group 3c (D-M5): a determinate MC outcome (tarballs are immutable per version) is carried into every
           // re-evaluation; the runner never produces it. A not-checked row is not carried: it is retried at the next download.
-          const mcPrev = prev?.gates_fired?.find?.((g) => g && g.gate === 'install-manifest-mismatch' && (g.result === 'WARN' || g.result === 'ALLOW'));
+          let mcPrev = null;
+          for (const r of newestFirst) {
+            mcPrev = r.gates_fired.find((g) => g && g.gate === 'install-manifest-mismatch' && (g.result === 'WARN' || g.result === 'ALLOW'));
+            if (mcPrev) break;
+          }
           // never into an override short-circuit (G3 dated note 5.5): the stored override row keeps its ALLOW
           if (mcPrev && !isOverrideRow(gateResults) && !gateResults.some((g) => g && g.gate === 'install-manifest-mismatch')) {
             gateResults.push(mcPrev);
@@ -267,8 +275,10 @@ export function createWitness({ db, runGates, config, logger }) {
           }
           if (n1h >= 0 && Array.isArray(gateResults[n1h].pending)) {
             // only a DETERMINATE judgement is kept (G3 dated note 3.4): a not-evaluable SKIP is retried, not carried
-            const judged = prev?.gates_fired?.find?.((g) => g && g.gate === 'dependency-hooks' && !Array.isArray(g.pending)
-              && (g.result === 'WARN' || g.result === 'ALLOW'));
+            // the newest non-override row that HAS an N1h row (rows without the gate, e.g. 0.1.3's, are skipped)
+            const n1hPrev = newestFirst.map((r) => r.gates_fired.find((g) => g && g.gate === 'dependency-hooks')).find(Boolean);
+            const judged = n1hPrev && !Array.isArray(n1hPrev.pending) && (n1hPrev.result === 'WARN' || n1hPrev.result === 'ALLOW')
+              ? n1hPrev : null;
             const sameSet = (a, b) => JSON.stringify((a ?? []).map((d) => d.name)) === JSON.stringify((b ?? []).map((d) => d.name));
             if (judged && sameSet(judged.added, gateResults[n1h].added)) {
               gateResults[n1h] = judged;
@@ -282,7 +292,7 @@ export function createWitness({ db, runGates, config, logger }) {
           // U-05 owner decision 10 (C2): ONE applicable-BLOCK rule (witness/decision-rule.js) over the stored history
           // and this result. A read error here is a storage failure for this version (the catch below).
           const overrideBased = isOverrideRow(gateResults);
-          const stored = db.getDecisionHistory(packageName, incoming.version);
+          const stored = decisionHistory ?? db.getDecisionHistory(packageName, incoming.version);
           const before = applicableFromRows(stored);
           const after = step(new Set(before.pending), gateResults);
           // N1 (W2): a failure-derived non-BLOCK never downgrades the applicable BLOCK. With an exact override

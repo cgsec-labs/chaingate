@@ -8,7 +8,31 @@ import { judge } from '../gates/dependency-hooks.js';
 import { getDependency, setDependencyDoc } from '../gates/dependency-cache.js';
 
 export const BUDGET_MS = 5_000;
-const inflight = new Map();             // target -> promise (one fetch per target at a time)
+// Release audit R4 (G4 tables dated note 4): at most MAX_IN_FLIGHT dependency fetches run in the process; the rest wait in
+// line. A queued fetch whose every waiter's budget has passed is dropped unstarted. A running fetch is not aborted: the
+// upstream timeouts bound it, and its answer still fills the cache.
+export const MAX_IN_FLIGHT = 8;
+const inflight = new Map();             // target -> { promise, deadline } (one fetch per target at a time)
+const queue = [];
+let active = 0;
+function pump() {
+  while (active < MAX_IN_FLIGHT && queue.length) {
+    const job = queue.shift();
+    if (Date.now() > job.entry.deadline) { job.done(); continue; }
+    active += 1;
+    fetchOne(job.target, job.fetchPackument, job.opts).finally(() => { active -= 1; job.done(); pump(); });
+  }
+}
+function schedule(target, fetchPackument, opts, deadline) {
+  const cur = inflight.get(target);
+  if (cur) { cur.deadline = Math.max(cur.deadline, deadline); return cur.promise; }
+  const entry = { deadline };
+  entry.promise = new Promise((done) => { queue.push({ target, fetchPackument, opts, entry, done }); })
+    .finally(() => { if (inflight.get(target) === entry) inflight.delete(target); });
+  inflight.set(target, entry);
+  pump();
+  return entry.promise;
+}
 
 async function fetchOne(target, fetchPackument, opts) {
   try {
@@ -29,10 +53,8 @@ async function fetchOne(target, fetchPackument, opts) {
 export async function fetchPending(pending, { fetchPackument, config, authorization, budgetMs = BUDGET_MS }) {
   const targets = [...new Set(pending.map((d) => d.target))].filter((t) => getDependency(t) === undefined);
   const opts = { config, requestHeaders: authorization ? { authorization } : {} };
-  const work = targets.map((t) => {
-    if (!inflight.has(t)) inflight.set(t, fetchOne(t, fetchPackument, opts).finally(() => inflight.delete(t)));
-    return inflight.get(t);
-  });
+  const deadline = Date.now() + budgetMs;
+  const work = targets.map((t) => schedule(t, fetchPackument, opts, deadline));
   let timer;
   await Promise.race([Promise.all(work), new Promise((r) => { timer = setTimeout(r, budgetMs); })]);
   clearTimeout(timer);
@@ -70,4 +92,4 @@ export async function judgeAtTarball({ db, pkg, version, latest, fetchPackument,
   return 'wrote';
 }
 
-export default { judgeAtTarball, fetchPending, BUDGET_MS };
+export default { judgeAtTarball, fetchPending, BUDGET_MS, MAX_IN_FLIGHT };

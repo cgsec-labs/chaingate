@@ -265,18 +265,39 @@ function renderDisk(p) {
   const total = { named: 0, refusals: 0, tags: 0, dropped: (p.truncated ? 1 : 0) + (p.incomplete || p.proxy ? 1 : 0) };
   let accepted = 0;
   const boundOf = (r) => `  recorded: policy ${clean(r.policy_version ?? 'unknown', 40)}, seed ${r.seed_sha256 ? clean(r.seed_sha256, 64).slice(0, 16) : 'none'}`;
+  // release audit R5 (G4 tables dated note 4): a version's named rows are merged as the proxy view merges them (G3 dated note
+  // 5.4) -- the union of the named rows, accepted only if every row was, a late row's reason appended, the first K and cutoff
+  const namedOf = new Map();
+  for (const r of rows) {
+    if (r.kind !== 'named-served') continue;
+    const c = r.classes && typeof r.classes === 'object' ? r.classes : {};
+    const id = `${r.package_name}@${r.version}`;
+    const m = namedOf.get(id);
+    const named = Array.isArray(c.named) ? c.named : [];
+    if (!m) {
+      namedOf.set(id, { row: r, named: [...named], accepted: Boolean(c.accepted), reason: r.reason, k: r.k_version ?? null,
+        cutoff: c.history_cutoff ?? null, late: Boolean(c.late) });
+      continue;
+    }
+    m.named = [...new Set([...m.named, ...named])].sort();
+    m.accepted = m.accepted && Boolean(c.accepted);
+    if (c.late && !m.late) m.reason = `${m.reason ?? ''} | ${r.reason ?? ''}`;
+    if (m.k == null && r.k_version != null) m.k = r.k_version;
+    if (m.cutoff == null && c.history_cutoff != null) m.cutoff = c.history_cutoff;
+  }
   for (const r of rows) {
     const c = r.classes && typeof r.classes === 'object' ? r.classes : {};
     const k = `${r.kind}|${r.package_name}@${r.version}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    if (r.kind === 'named-served' && c.accepted) {
+    const m = r.kind === 'named-served' ? namedOf.get(`${r.package_name}@${r.version}`) : null;
+    if (m && m.accepted) {
       // dated note 8.2: listed with its binding; counted for the empty sentence, never for the exit code
-      out.push(`${acceptedLine({ package: r.package_name, version: r.version, named: c.named })} (at ${clean(r.at, 40)})`, boundOf(r));
+      out.push(`${acceptedLine({ package: r.package_name, version: r.version, named: m.named })} (at ${clean(r.at, 40)})`, boundOf(r));
       accepted += 1;
-    } else if (r.kind === 'named-served') {
-      out.push(...namedBlock({ package: r.package_name, version: r.version, named: c.named, reason: r.reason, at: r.at, k: r.k_version },
-        { cutoff: c.history_cutoff ?? null, bound: boundOf(r) }), '');
+    } else if (m) {
+      out.push(...namedBlock({ package: r.package_name, version: r.version, named: m.named, reason: m.reason, at: r.at, k: m.k },
+        { cutoff: m.cutoff, bound: boundOf(r) }), '');
       total.named += 1;
     } else if (r.kind === 'fact-refused') {
       out.push(`${refusedLine({ package: r.package_name, version: r.version, facts: c.facts, reason: r.reason })} (at ${clean(r.at, 40)})`);

@@ -1,6 +1,7 @@
 > **Research prototype, not production-ready.**
 > A change in a package's metadata is a reason to look, not proof of malicious intent. What exists
-> today: a local proxy, a CLI, a witness store, six gates, seed verification (legacy seeds are
+> today: a local proxy, a CLI, a witness store, the rules of policy `cft-policy-1.2` (facts that block,
+> named rules that warn, contributing signals shown as detail), seed verification (legacy seeds are
 > signed; the current v3 seed is unsigned and reported as unsigned) and ALLOW / WARN / BLOCK
 > enforcement, with a passing test suite. [What's built today](#whats-built-today) lists what runs;
 > [What's next](#whats-next) lists what does not exist yet.
@@ -29,31 +30,31 @@ different from earlier releases: a new dependency that had only just been publis
 publisher email on a privacy-focused domain, no provenance attestation, and a publish from a CLI
 token instead of GitHub Actions OIDC.
 
-All of that is in the registry metadata that npm downloads anyway. Nothing shows it to the developer
-at install time. ChainGate records what each package looked like before and reports these changes
-when you install. It does not look at the code inside a package, so it complements code analysis
-rather than replacing it.
+The new dependency, plain-crypto-js@4.2.1, also declared a `postinstall` script, so installing
+axios@1.14.1 ran it. All of that is in the registry metadata that npm downloads anyway. Nothing shows
+it to the developer at install time.
+
+ChainGate records what each package looked like before. In 0.1.4 it warns on a short list of named
+rules: for axios@1.14.1, that the release adds a dependency that runs install scripts. The other
+changes are recorded as detail. ChainGate does not look at the code inside a package, so it
+complements code analysis rather than replacing it.
 
 ## The Idea
 
 ChainGate keeps a **witness log**, an append-only record of every package version it has seen:
 content hash, dependency tree, publisher identity and provenance status. When a new version appears,
-a set of **gates** compares it with that history. The same input always gives the same result.
+policy `cft-policy-1.2` compares it with that history and with the seed. The same input always gives
+the same result. Each row of the result has one of three effects:
 
-There are six gates, each looking at a different part of the metadata:
+| Kind | Rows | Effect |
+|------|------|--------|
+| **Facts** | an advisory in the seed naming this exact version; content that differs from the version's recorded baseline (content hash) | BLOCK |
+| **Named rules** | the seed's strict tier; install-introduced; N1h (an added dependency runs install scripts); MC (the tarball's install scripts differ from its registry entry) | WARN |
+| **Contributing signals** | publisher change, new dependency, provenance dropped, release age, scope boundary, size jump, npm-version downgrade, the seed's loose rule | detail only |
 
-| Gate | What it checks |
-|------|----------------|
-| **Content Hash** | Does the tarball hash match what was first observed? (catches republish attacks) |
-| **Dep Structure** | Did a new dependency appear, especially one recently published? |
-| **Publisher Identity** | Did the publisher email or domain change? |
-| **Provenance Continuity** | Did a package that published with provenance stop doing so? (for example, OIDC to a CLI token) |
-| **Release Age** | Is this version less than N hours old? |
-| **Scope Boundary** | A new dependency together with install scripts (hard limit) |
-
-One gate firing on its own is common and usually harmless. The axios release above triggers four
-at once, while a routine release triggers none, or one with an ordinary explanation. The combination
-is what matters.
+One contributing signal is common and usually harmless, and no combination of contributing rows warns:
+they are shown beside a named warning and in `chaingate why`. A takeover that adds no install script
+and no dependency that runs one warns only when the seed's strict tier marks the release.
 
 ## How It Works
 
@@ -61,8 +62,8 @@ is what matters.
 npm (developer or CI)  ->  ChainGate proxy  ->  upstream registry
                                |
                                v
-                   compare with the witness log
-                   run the gates
+                   compare with the witness log and the seed
+                   apply cft-policy-1.2
                    ALLOW / WARN / BLOCK
 ```
 
@@ -127,16 +128,21 @@ those checks can make a warning:
   their own.
 
 Some named rows are checked when npm downloads the tarball:
-- **N1h** fetches the added dependencies' metadata before answering, within 5 s, cached for 10 minutes. A release that
-  adds more than 10 is not judged, and a dependency that does not answer in time is "not evaluable". Neither is ever
-  clean.
-- **MC** reads the tarball while it streams to npm, so the download that reveals a mismatch carries no notice, and npm
+- **N1h** judges the added dependencies from metadata npm already fetched through ChainGate, or fetches it before
+  answering: within 5 s, at most 8 fetches at once, cached for 10 minutes. A release that adds more than 10 is not
+  judged, and a dependency that does not answer in time is "not evaluable".
+  Either outcome is never an ALLOW for that rule. An install from a lockfile (`npm ci`) fetches no metadata, so each
+  tarball that adds a dependency can wait up to 5 s.
+- **MC** reads the tarball while it streams to npm. It finds the root `package.json` the way npm's extractor does on
+  Linux, macOS and Windows, including other entry names that npm writes to that file. The download that reveals a
+  mismatch carries no notice, and npm
   caches it. `chaingate report` lists the mismatch at once. A later download that reaches ChainGate carries the notice,
   but npm installs a tarball it already holds from its own cache without asking ChainGate, so this machine may never
   print it.
 
 A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaingate why <pkg>@<ver>`). npm does not print
-it, and the report counts a release as not checked only when no named rule checked it.
+it. The report counts a release as checked when another named rule (install-introduced or the seed's strict tier) gave
+a result, and as not checked only when no named rule did.
 
 `chaingate check` (the CI command) evaluates the seed only in 0.1.4. Install-introduced, N1h and MC are reported by the
 proxy, not by `check`.
@@ -292,6 +298,11 @@ npm install @cgsec/chaingate           # or inside a project
 npx chaingate --help
 ```
 
+**Upgrading.** After installing a new version, restart the proxy (`chaingate stop`, then `chaingate init`). Until then
+the proxy that is running keeps the old version's rules, and `chaingate doctor` reports the version mismatch as
+TAMPER. The first install that touches each package afterwards records a current decision for every version of it
+already in the witness database (rows are only appended).
+
 **The SQLite module has a native part.** It is installed by `better-sqlite3`'s own install script,
 which downloads a prebuilt binary. npm 12 blocks dependency install scripts unless you approve them.
 npm 11 runs them, but warns about any that `allowScripts` does not list. With `ignore-scripts=true` in
@@ -318,9 +329,10 @@ cd "$(npm root -g)/@cgsec/chaingate" && npm rebuild better-sqlite3 --ignore-scri
 `package.json` applies only when developing ChainGate itself and grants nothing in your project. Do
 not enable every dependency's scripts to fix this.
 
-**Tested platforms.** Only the combinations below have been tested. Anything not listed is untested
-and not supported. On each of them the SQLite module installed from its official prebuilt binary,
-with no Python or compiler.
+**Tested platforms.** The table below is the qualification of 0.1.3. 0.1.4 has so far been tested on Linux x64 with Node.js 22.22.2
+(the full test suite and a parity run on a real seed). The other rows have not yet been repeated for 0.1.4. Anything not
+listed is untested and not supported. On each row the SQLite module installed from its official prebuilt binary, with
+no Python or compiler.
 
 | OS | Architecture | Node.js | npm | How it was tested |
 |----|--------------|---------|-----|-------------------|
@@ -532,16 +544,18 @@ Nexus.
 
 ## Attack Coverage (from the corpus)
 
-The detection engine detects these attacks in the validation corpus. "Detected" means the
-validation script reports `detected=true` with the reasons shown. These results come from the corpus
-and test fixtures, not from live registry traffic.
+The middle column is the pattern layer's result in the validation corpus: the validation script reports
+`detected=true` with the reasons shown. Under `cft-policy-1.2` those pattern signals are contributing
+detail, so they do not warn on their own. The last column is what 0.1.4 does in its own fixture tests.
+None of this comes from live registry traffic.
 
-| Attack | How the detection engine catches it |
-|--------|-------------------------------------|
-| **Axios 1.14.1** | Provenance stopped within the major version, plus three supporting signals: a new email domain (proton.me), a privacy-focused provider, and a switch from automated to manual publishing |
-| **Event-stream 3.3.6** | BLOCK at 3.3.5 for an abrupt handover to a new publisher (right9ctrl), carried to 3.3.6 because the same publisher released it |
-| **Shai-Hulud** | Publisher identity change across 500+ packages (fixture-verified) |
-| **Ua-parser-js** | New unverified domain after established baseline (fixture-verified) |
+| Attack | Pattern layer, validation corpus | 0.1.4 (`cft-policy-1.2`), fixture tests |
+|--------|----------------------------------|------------------------------------------|
+| **Axios 1.14.1** | Provenance stopped within the major version, plus three supporting signals: a new email domain (proton.me), a privacy-focused provider, and a switch from automated to manual publishing | ALLOW when the metadata is seen; a named N1h WARN when the tarball is fetched (the release adds plain-crypto-js, which runs a `postinstall` script) |
+| **Event-stream 3.3.6** | BLOCK at 3.3.5 for an abrupt handover to a new publisher (right9ctrl), carried to 3.3.6 because the same publisher released it | not tested under 1.2; a publisher change is contributing |
+| **Shai-Hulud** | Publisher identity change across 500+ packages (fixture-verified) | the fixture models only the publisher change: ALLOW, recorded as contributing |
+| **Ua-parser-js** | New unverified domain after established baseline (fixture-verified) | not tested under 1.2 |
+| **Tarball replaced after publication** (trivy-shaped fixture) | — | BLOCK (content hash) |
 
 **Limitation.** If an attacker takes over the CI/CD pipeline and publishes through the same
 workflow, as the same publisher, with the same structure, and changes only the code, the metadata

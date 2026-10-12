@@ -11,6 +11,7 @@ import { assertIntegrity } from '../integrity-gate.js';
 import { identity } from '../../proxy/notice.js';
 import { decisionSnapshot, adjudicate, parseTarget } from '../adjudicate.js';
 import { EXIT } from '../constants.js';
+import { otherDatabaseLine } from './pin.js';
 
 const USAGE = 'Usage: chaingate accept <package>@<version> | --revoke <package>@<version> | --list';
 
@@ -69,6 +70,8 @@ export default async function accept(args) {
         return EXIT.ERROR;
       }
       console.log(fmt.ok(`Acceptance revoked: ${id}. ChainGate sends npm its notice again while the warning stands.`));
+      const other = await otherDatabaseLine(paths.witnessDb);         // release audit R7
+      if (other) console.log(fmt.yellow(`  ${other}`));
       return EXIT.OK;
     }
     if (!snap.app?.latest) {
@@ -97,6 +100,8 @@ export default async function accept(args) {
     console.log(fmt.dim('  ChainGate stops sending npm a notice for this version while its record shows only these signals.'));
     console.log(fmt.dim('  This does not override a BLOCK: a later advisory for this version still blocks it.'));
     console.log(fmt.dim(`  Undo: chaingate accept --revoke ${id}`));
+    const other = await otherDatabaseLine(paths.witnessDb);           // release audit R7
+    if (other) console.log(fmt.yellow(`  ${other}`));
   } finally {
     db.close();
   }

@@ -3,7 +3,7 @@
 // Keeps <package> on K within K's caret class: every version of it in that class above K (prereleases included, later
 // releases included) is withheld until `chaingate unpin <package>`. Other majors still resolve. The pin is a live serving
 // overlay of the running proxy, never a stored decision.
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fmt } from '../format.js';
 import { resolvePaths } from '../paths.js';
 import { fetchSelf } from '../proxy-control.js';
@@ -35,9 +35,29 @@ export function proxyPort(env = process.env) {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT;
 }
 
-/** Whether the running proxy enforces pins, in words (D-U4). */
-export async function enforcementLine() {
+// Release audit R7 (G4 tables dated note 4): a proxy that names its witness database applies a write only to that database.
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
+/** The database the running proxy reads, when it names one and it is not `dbPath` (compared as real paths); else null. */
+export function otherDatabase(self, dbPath) {
+  const theirs = self?.ok && self.json?.service === 'chaingate-proxy' && typeof self.json.witness_db === 'string' ? self.json.witness_db : null;
+  if (!theirs) return null;
+  let mine = dbPath;
+  try { mine = realpathSync(dbPath); } catch { /* compared as given */ }
+  return theirs === mine ? null : theirs.replace(UNSAFE, '').slice(0, 300);
+}
+export const notAppliedLine = (other) => `not applied by the running proxy (it reads ${other}); run this command with the scope `
+  + 'the proxy was started with (--scope), or with CHAINGATE_HOME set to its directory.';
+/** One line when the running proxy reads another database than `dbPath`, else null (no proxy, or an older one: not said). */
+export async function otherDatabaseLine(dbPath) {
+  const other = otherDatabase(await fetchSelf(DEFAULT_HOST, proxyPort(), 1500), dbPath);
+  return other ? notAppliedLine(other) : null;
+}
+
+/** Whether the running proxy enforces pins, in words (D-U4); `dbPath`: the database the pin was written to (R7). */
+export async function enforcementLine(dbPath = null) {
   const self = await fetchSelf(DEFAULT_HOST, proxyPort(), 1500);
+  const other = dbPath ? otherDatabase(self, dbPath) : null;
+  if (other) return `recorded; ${notAppliedLine(other)}`;
   const pins = self.ok && self.json.service === 'chaingate-proxy' ? self.json.pins : null;
   if (pins?.enforced === true && pins.last_error != null) {
     // dated note 8.4: enforcing in principle, but its pins read is failing (it holds its last good set)
@@ -116,7 +136,7 @@ export default async function pin(args) {
     for (const o of conflicts) {
       console.log(fmt.yellow(`  conflict: an exact override (chaingate allow) exists for ${o.package_name}@${o.version}; the pin withholds it`));
     }
-    console.log(`  ${await enforcementLine()}`);
+    console.log(`  ${await enforcementLine(paths.witnessDb)}`);
     console.log(fmt.dim(`  Undo: chaingate unpin ${t.name}`));
   } finally {
     db.close();

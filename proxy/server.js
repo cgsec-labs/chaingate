@@ -31,7 +31,7 @@ import { buildNotice, pinNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_
 import { createPinSet, withheldBy } from '../witness/pins.js';
 // 0.1.4 group 3b (D-N3, D-N4): N1h judged at tarball time, bounded; the dependency cache's stats on /self
 import { judgeAtTarball } from './dependency-judge.js';
-import { dependencyCacheStats } from '../gates/dependency-cache.js';
+import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cache.js';
 // 0.1.4 group 3c (D-M2..D-M4): MC while the tarball streams
 import { createTarWalker } from './tar-walk.js';
 import { rememberManifestHooks, manifestHooksFor, mcRow, recordMc, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
@@ -233,7 +233,10 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
   let parsed;
   try {
     parsed = JSON.parse(raw.toString('utf8'));
-    if (parsed && typeof parsed === 'object') rememberManifestHooks(packageName, parsed.versions);   // 3c (D-M3)
+    if (parsed && typeof parsed === 'object') {
+      rememberManifestHooks(packageName, parsed.versions);   // 3c (D-M3)
+      setDependencyDoc(packageName, parsed);                 // release audit R4: N1h judges from what npm already fetched
+    }
   } catch (err) {
     log?.warn?.(`[proxy] ${packageName}: non-JSON packument body: ${err.message}`);
   }
@@ -645,6 +648,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   let seedV3 = null;
   let depCache = null;
   let depFetcher = null;
+  let witnessDbReal = null;               // release audit R7: reported by /_chaingate/self
   if (config.witnessDbPath) {
     try {
       mkdirSync(dirname(config.witnessDbPath), { recursive: true });
@@ -654,6 +658,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     try {
       witnessDb = openWitnessDB(config.witnessDbPath);
       witnessDb.applySchema();
+      try { witnessDbReal = realpathSync(config.witnessDbPath); } catch { witnessDbReal = config.witnessDbPath; }
     } catch (err) {
       const msg =
         `chaingate-proxy: failed to open witness DB at ${config.witnessDbPath}: ${err.message}\n` +
@@ -823,7 +828,10 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     let parsed;
     try {
       parsed = JSON.parse(Buffer.from(await upstream.body.arrayBuffer()).toString('utf8'));
-      if (parsed && typeof parsed === 'object') rememberManifestHooks(canonicalName, parsed.versions);   // 3c (D-M3)
+      if (parsed && typeof parsed === 'object') {
+        rememberManifestHooks(canonicalName, parsed.versions);   // 3c (D-M3)
+        setDependencyDoc(canonicalName, parsed);                 // release audit R4
+      }
     } catch (err) {
       return { ok: false, why: `the metadata could not be read (${err.message})` };
     }
@@ -916,6 +924,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         unstored_blocks: unstored.describe(),
         // 0.1.4 group 2d (E26): whether this process enforces the user's pins, and what it holds
         pins: pinSet ? pinSet.stats() : { enforced: false, count: 0, generation: 0, last_error: 'no witness database' },
+        // release audit R7: the database this process reads, so `pin`/`accept`/`unpin` can tell whether it applies their write
+        witness_db: witnessDb ? witnessDbReal : null,
         dependency_cache: dependencyCacheStats(),                 // 0.1.4 group 3b (E34)
         evaluation: tracker ? tracker.stats() : null,
         // U-05 gap-closure r2, Addendum 1 §B: the process's decision-storage state, from its own signals.
@@ -964,6 +974,16 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 + 'by a failure or the input rule)' : r.why };
           } catch (err) {
             state.c1 = err instanceof EvaluationBusy ? { busy: true, why: err.message } : { ok: false, why: err.message };
+          }
+        } else if (version != null && !unstored.get(canonicalName, version) && !overriddenLive(canonicalName, version)
+          && manifestHooksFor(canonicalName, version) === undefined) {
+          // Release audit R3 (G4 tables dated note 4): the version was evaluated, but the registry manifest MC compares against
+          // is no longer in the hook map. Re-run C1 to refill it -- unless MC is already final for this version. Best effort:
+          // a failure here changes neither the stored record nor the serve decision; MC then records "not checked".
+          let final = true;
+          try { final = mcDeterminate(witnessDb.getLatestNonOverrideDecision(canonicalName, version)); } catch { final = true; }
+          if (!final) {
+            try { await tracker.run(canonicalName, () => evaluatePackage(route.name, canonicalName, req.headers.authorization)); } catch { /* busy or failed */ }
           }
         }
         // Tarball BLOCK gate — check BEFORE contacting upstream so we don't
@@ -1090,7 +1110,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion, ...cls, reason,
                   policy: policyPrefix(now.gates_fired), notice: false, k, late: true },
                 { kind: 'named-served', package_name: canonicalName, version: `${state.tarballVersion}`, diskKey: 'late',
-                  classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage, late: true }, reason,
+                  classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage, late: true,
+                    history_cutoff: seedV3?.meta?.history_cutoff ?? null }, reason,
                   policy_version: policyPrefix(now.gates_fired), k_version: k });
               }
             } catch (err) {

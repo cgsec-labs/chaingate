@@ -262,8 +262,9 @@ seed signature-verified at runtime: the tool still reports `authenticated: false
 
 ## Platform support
 
-Only the combinations in the README's "Tested platforms" table have been tested. On Windows that
-includes a standard (non-administrator) account on Windows 10 with Node 24.
+The README's "Tested platforms" table is the qualification of 0.1.3; only those combinations have been tested. On
+Windows that includes a standard (non-administrator) account on Windows 10 with Node 24. 0.1.4 has so far been tested
+on Linux x64 with Node.js 22.22.2 only.
 
 On Windows (from 0.1.2), the active and previous seed bundles are recorded in one file,
 `seeds\activation.json`, which is replaced in a single rename: Windows cannot rename a symbolic link

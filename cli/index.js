@@ -35,7 +35,7 @@ Commands:
   allow <p@v>       Override a WARN/BLOCK for a specific package version
   stop              Stop the proxy and restore .npmrc
   update-seed       Download and verify the latest seed database
-  why <p@v>         Explain a check result (--packument | --from <file> | --cached)
+  why <p@v>         The recorded decision for a version (or --packument <file> | --from <file>)
   history <pkg>     Show the version timeline for a package
   doctor            Check local invariants (6 health checks)
   check <p@v>       Evaluate a release from --packument <file> (CI exit codes)

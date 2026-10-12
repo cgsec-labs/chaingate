@@ -9,6 +9,7 @@ import { identity } from '../../proxy/notice.js';
 import { classLabel } from '../../witness/pins.js';
 import { decisionSnapshot, adjudicate } from '../adjudicate.js';
 import { EXIT } from '../constants.js';
+import { otherDatabaseLine } from './pin.js';
 
 const USAGE = 'Usage: chaingate unpin <package> [<major> | 0.<minor>]';
 
@@ -52,6 +53,8 @@ export default async function unpin(args) {
     console.log(fmt.ok(`Unpinned ${name}: ${removed.map((p) => `${p.k_version} (${classLabel(p.class_key)})`).join(', ')}.`));
     console.log(fmt.dim('  npm may keep using metadata it cached (up to its max-age, usually 5 minutes); '
       + '`npm install --prefer-online` refreshes it now.'));
+    const other = await otherDatabaseLine(paths.witnessDb);           // release audit R7
+    if (other) console.log(fmt.yellow(`  ${other}`));
   } finally {
     db.close();
   }

@@ -1,6 +1,15 @@
 // 0.1.4 group 3c (D-M2; G3 dated note 5): a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers only.
-// It keeps the ROOT package.json (`<first path segment>/package.json`; the last one wins, as validate.py read_tar keeps the
-// last) and skips every other content byte. It never touches the bytes npm receives: the caller feeds it a copy of each chunk.
+// It keeps the ROOT package.json and skips every other content byte. It never touches the bytes npm receives: the caller
+// feeds it a copy of each chunk.
+//
+// Which entry is the root package.json follows npm's extractor (release audit R2, G4 tables dated note 4): pacote installs
+// regular files only (links are filtered) with `strip: 1`, and node-tar strips any leading root by win32 rules on every
+// platform and refuses `..`. Three file-system views are kept, each with its own last entry:
+//   POSIX (Linux): the installed path is exactly `package.json`;
+//   macOS (case-insensitive): the same, compared case-insensitively;
+//   Windows: `\` is also a separator, case-insensitive, trailing dots and spaces trimmed, the 8.3 name `PACKAG~n.JSO`.
+// The counted code (tarfile) reads the literal `<dir>/package.json` only; these views can only add detections, since
+// `npm pack` never writes such names.
 //
 // Framing follows the readers it must agree with -- tarfile (the counted code) and node-tar (what npm installs):
 //   pax `x` (and the old Solaris `X`) apply to the next entry, `g` to every following one; both `path` and `size` apply;
@@ -12,12 +21,48 @@
 //   block is installed by npm, so the walk reads it -- stated in dated note 5, a deviation that can only add detections).
 // Past a cap or on any gunzip/tar error the outcome is "not checked", with the reason.
 import zlib from 'node:zlib';
+import { win32 } from 'node:path';
 
 export const DEFAULTS = Object.freeze({ maxCompressed: 64 * 1024 * 1024, maxUncompressed: 256 * 1024 * 1024,
   maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024 });
 const REGULAR = new Set(['0', '\0', '7']);
 const stats = { created: 0 };
 export const walkerStats = () => ({ ...stats });
+
+/** node-tar's strip-absolute-path: every leading root, by win32 rules (a POSIX root is also a win32 one). */
+function stripAbsolute(p) {
+  let parsed = win32.parse(p);
+  while (win32.isAbsolute(p) || parsed.root) {
+    const root = p.charAt(0) === '/' && p.slice(0, 4) !== '//?/' ? '/' : parsed.root;
+    p = p.slice(root.length);
+    parsed = win32.parse(p);
+  }
+  return p;
+}
+/** The segments of the path npm writes an entry to inside the package folder, or null when it writes none. */
+function installedSegments(name, windows) {
+  const parts = (windows ? name.replace(/\\/g, '/') : name).split('/');
+  parts.splice(0, 1);                                      // strip: 1
+  const rel = stripAbsolute(parts.join('/'));
+  if (!rel || rel.replace(/\\/g, '/').split('/').includes('..')) return null;
+  return rel.split(windows ? /[\\/]/ : '/').filter((x) => x !== '' && x !== '.');
+}
+const fold = (x) => x.toUpperCase().toLowerCase();         // Unicode case folding, approximately (U+017F -> s)
+/** The views ('posix' | 'macos' | 'windows') in which an entry is the root package.json. */
+export function rootViews(name) {
+  const out = [];
+  const p = installedSegments(name, false);
+  if (p && p.length === 1) {
+    if (p[0] === 'package.json') out.push('posix');
+    if (fold(p[0]) === 'package.json') out.push('macos');
+  }
+  const w = installedSegments(name, true);
+  if (w && w.length === 1) {
+    const t = w[0].replace(/[. ]+$/, '');
+    if (fold(t) === 'package.json' || /^packag~\d+\.jso$/i.test(t)) out.push('windows');
+  }
+  return out;
+}
 
 const cstr = (b) => { const i = b.indexOf(0); return b.subarray(0, i < 0 ? b.length : i).toString('utf8'); };
 
@@ -71,6 +116,7 @@ export function createTarWalker(opts = {}) {
   let collect = null;                                      // { kind: 'pj' | 'L' | 'K' | 'x' | 'g', chunks }
   let nextName = null; let paxNext = new Map(); const paxGlobal = new Map();
   let packageJson = null; let zeroBlocks = 0;
+  const views = { posix: null, macos: null, windows: null };   // view -> { buf, name }: the last root entry in that view
   const gunzip = zlib.createGunzip();
   let resolveSettled;
   const settled = new Promise((r) => { resolveSettled = r; });
@@ -87,7 +133,10 @@ export function createTarWalker(opts = {}) {
   function complete() {
     if (!collect) return;
     const body = Buffer.concat(collect.chunks);
-    if (collect.kind === 'pj') packageJson = body;
+    if (collect.kind === 'pj') {
+      for (const v of collect.views) views[v] = { buf: body, name: collect.name };
+      if (collect.views.includes('posix')) packageJson = body;
+    }
     else if (collect.kind === 'L') nextName = cstr(body);
     else if (collect.kind === 'x') paxNext = paxRecords(body);
     else if (collect.kind === 'g') for (const [k, v] of paxRecords(body)) paxGlobal.set(k, v);
@@ -122,10 +171,10 @@ export function createTarWalker(opts = {}) {
           nextName = null; paxNext = new Map();
           if (!Number.isSafeInteger(size) || size < 0) { fail('tar: invalid size'); return; }
           if (size > o.maxUncompressed) { fail(`an entry over the uncompressed cap (${o.maxUncompressed} bytes)`); return; }
-          const slash = name.indexOf('/');
-          if (REGULAR.has(type) && slash >= 0 && name.slice(slash + 1) === 'package.json') {
+          const rv = REGULAR.has(type) ? rootViews(name) : [];
+          if (rv.length) {
             if (size > o.maxPackageJson) { fail(`package.json over ${o.maxPackageJson} bytes`); return; }
-            collect = { kind: 'pj', chunks: [] };
+            collect = { kind: 'pj', chunks: [], views: rv, name };
           } else collect = null;
         } else {
           if (!Number.isSafeInteger(size) || size < 0) { fail('tar: invalid size'); return; }
@@ -150,6 +199,16 @@ export function createTarWalker(opts = {}) {
     }
   }
   gunzip.on('data', onData);
+  function grouped() {
+    const out = [];
+    for (const [v, label] of [['posix', 'Linux'], ['macos', 'macOS'], ['windows', 'Windows']]) {
+      const e = views[v];
+      const g = out.find((x) => x.packageJson === (e?.buf ?? null));
+      if (g) g.platforms.push(label);
+      else out.push({ platforms: [label], packageJson: e?.buf ?? null, name: e?.name ?? null });
+    }
+    return out;
+  }
 
   return {
     write(chunk) {
@@ -159,15 +218,18 @@ export function createTarWalker(opts = {}) {
       if (gunzip.writableLength > o.maxBehind) { fail('the walk fell behind the download'); return; }
       gunzip.write(chunk);
     },
-    /** Finish: { ok: true, packageJson: Buffer | null } or { ok: false, reason }. */
+    /**
+     * Finish: { ok: true, packageJson: Buffer | null (the POSIX view), views } or { ok: false, reason }. `views` groups the
+     * three file-system views by the entry each one installs: [{ platforms: ['Linux', 'macOS', 'Windows'], packageJson, name }].
+     */
     async end() {
       if (!failed && !ended) { gunzip.end(); await settled; }
       if (failed) return { ok: false, reason: failed };
-      if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return { ok: true, packageJson }; }   // the end is final
+      if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return { ok: true, packageJson, views: grouped() }; }   // the end is final
       if (state !== 'header' || pending.length) return { ok: false, reason: 'tar: truncated archive' };
-      return { ok: true, packageJson };
+      return { ok: true, packageJson, views: grouped() };
     },
   };
 }
 
-export default { createTarWalker, walkerStats, DEFAULTS };
+export default { createTarWalker, walkerStats, rootViews, DEFAULTS };

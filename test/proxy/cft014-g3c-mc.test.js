@@ -103,17 +103,13 @@ test('G3c-4/G3c-5 (D-M4, D-M5) the next download carries the notice without a se
   });
 });
 
-test('G3c-6 (D-M3) no registry manifest at hand -> not checked, retried at the next download', async () => {
+test('G3c-6 (D-M3; G4 dated note 4 R3) the hook map lost the package: the download refreshes it and MC is checked at once', async () => {
+  // before R3 this download recorded "not checked" and was retried next time; the refresh-failure case is G4-8b
   await withProxy(async ({ base, proxy }) => {
     await get(`${base}/m`);
     forgetManifestHooks();
     await get(`${base}/m/-/m-1.1.0.tgz`);
     await settle();
-    assert.equal(mcRow(proxy, '1.1.0')?.result, 'SKIP');
-    assert.match(mcRow(proxy, '1.1.0').detail, /not checked: no registry manifest at hand/);
-    await get(`${base}/m`);
-    await get(`${base}/m/-/m-1.1.0.tgz`);
-    await settle();
-    assert.equal(mcRow(proxy, '1.1.0').result, 'WARN');
+    assert.equal(mcRow(proxy, '1.1.0')?.result, 'WARN');
   });
 });
