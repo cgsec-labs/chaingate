@@ -63,7 +63,7 @@ test('G2c-1b (D-R1) at 2,000 events ordinary ones drop first, named and fact eve
   assert.equal(inst.dropped, 2002, '`dropped` is every event not recorded, important ones included');
 });
 
-test('G2c-1c (D-R1) at most 20 installs (least recently active evicted); `fresh` is per install; default = latest with a tarball', () => {
+test('G2c-1c (D-R1) at most 20 installs (least recently active evicted); disk claims are per install; default = latest with a tarball', () => {
   let t = 0;
   const s = createInstallSummary({ now: () => t });
   for (let i = 0; i < 21; i += 1) { t = i * 1000; s.record({ session: `s${i}` }, served(`p${i}`, '1.0.0')); }
@@ -71,10 +71,12 @@ test('G2c-1c (D-R1) at most 20 installs (least recently active evicted); `fresh`
   assert.equal(all.installs.length, 20);
   assert.ok(!all.installs.some((i) => i.events[0].package === 'p0'), 'the oldest install was evicted');
   assert.equal(all.stats.installs_evicted, 1);
+  // dated note 7.1: disk writes are claimed per disk event and install
   const first = s.record({ session: 'fx' }, named('q', '1.5.0'));
   const again = s.record({ session: 'fx' }, named('q', '1.5.0'));
   const other = s.record({ session: 'fy' }, named('q', '1.5.0'));
-  assert.deepEqual([first.fresh, again.fresh, other.fresh], [true, false, true]);
+  assert.deepEqual([s.claimDisk(first.key, 'named-served|q@1.5.0'), s.claimDisk(again.key, 'named-served|q@1.5.0'),
+    s.claimDisk(other.key, 'named-served|q@1.5.0')], [true, false, true]);
   t = 99_000;
   s.record({ session: 'pk' }, { kind: 'tag-moved', package: 'p', tag: 'latest', from: '1.3.0', to: '1.2.0', facts: ['seed-v3:pin'], reason: 'x' });
   const latest = s.snapshot();

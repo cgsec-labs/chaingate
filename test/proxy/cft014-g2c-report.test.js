@@ -136,7 +136,8 @@ test('G2c-3a (D-R2, E20) the disk record holds named-served, fact-refused and fa
     assert.deepEqual(named.classes.named, ['seed-v3:dac-trajectory:surface']);
     assert.ok(named.reason.startsWith('seed-v3: cft-policy-1.2: seed-v3:dac-trajectory:surface'));
     const tagRow = rows.find((x) => x.kind === 'fact-tag-moved');
-    assert.deepEqual([tagRow.classes.tag, tagRow.classes.to, tagRow.classes.facts], ['latest', '1.2.0', ['seed-v3:pin']]);
+    // dated note 7.3: one row per withheld version, carrying its (capped) tag list
+    assert.deepEqual([tagRow.classes.tags, tagRow.classes.facts], [[{ tag: 'latest', to: '1.2.0' }], ['seed-v3:pin']]);
     await get(`${proxyUrl}/p`, 'sessdisk2');                                     // another install: its own row
     const db2 = openWitnessDB(dbPath, { readonly: true });
     try { assert.equal(db2.listNamedFactEvents().filter((x) => x.kind === 'fact-tag-moved').length, 2); } finally { db2.close(); }
