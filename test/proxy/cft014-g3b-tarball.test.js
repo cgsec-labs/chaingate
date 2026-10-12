@@ -80,7 +80,7 @@ test('G3b-7 (D-N3, D-N4) a release adding a hooked dependency: N1h WARN on that 
 });
 
 test('G3b-8 (D-N3) the budget: a dependency whose registry never answers -> not evaluable within the budget; the tarball is served', async () => {
-  await withProxy(async ({ base }) => {
+  await withProxy(async ({ base, proxy }) => {
     await get(`${base}/slowcarrier`);
     const t0 = Date.now();
     const t = await get(`${base}/slowcarrier/-/slowcarrier-1.1.0.tgz`);
@@ -90,6 +90,10 @@ test('G3b-8 (D-N3) the budget: a dependency whose registry never answers -> not 
     const rep = JSON.parse((await get(`${base}/_chaingate/report?all=1`)).body);
     const e = rep.installs.flatMap((i) => i.events).find((x) => x.kind === 'served' && x.package === 'slowcarrier');
     assert.notEqual(e.class, 'named');
+    // G3 dated note 3.7: the record says WHY -- not evaluable within the budget, never clean
+    const row = proxy.witnessDb.getLatestDecision('slowcarrier', '1.1.0').gates_fired.find((g) => g.gate === 'dependency-hooks');
+    assert.equal(row.result, 'SKIP');
+    assert.match(row.detail, /not evaluable: stall \(no answer within/);
   });
 });
 
