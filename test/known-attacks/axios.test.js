@@ -135,7 +135,7 @@ function buildPackument({ hook = true } = {}) {
     version: '1.14.1',
     dependencies: {
       ...CLEAN_DEPS,
-      'plain-crypto-js': '^1.0.0', // phantom dependency
+      'plain-crypto-js': '^4.2.1', // phantom dependency (the real spec)
     },
     ...(hook ? { scripts: { install: 'node install.js' } } : {}),   // the variant's hook (triggers has_install_scripts)
     _npmUser: { ...ATTACK_USER }, // publisher change
@@ -297,11 +297,17 @@ test('axios-shaped VARIANT with an install hook in 1.14.1 (a fixture device; the
   }
 });
 
-test('axios REAL shape (no hook in 1.14.1; the hook is in the injected dependency): under 3a still ALLOW with the pilot signals as NOTE -- N1h (3b) is its row', async () => {
+test('axios REAL shape (no hook in 1.14.1; the hook is in the injected dependency): ALLOW at observation, N1h WARN at the tarball (3b)', async () => {
   const { path: dbPath, cleanup } = tmpDbPath();
   const body = buildPackument({ hook: false });
+  // the injected dependency as the public reporting describes it: 4.2.1 declares the postinstall dropper (fixture text only)
+  const plain = JSON.stringify({ name: 'plain-crypto-js', 'dist-tags': { latest: '4.2.1' },
+    versions: { '4.2.0': { name: 'plain-crypto-js', version: '4.2.0' }, '4.2.1': { name: 'plain-crypto-js', version: '4.2.1', scripts: { postinstall: 'node setup.js' } } },
+    time: { '4.2.0': hoursAgo(200), '4.2.1': hoursAgo(100) } });
   const upstream = await startFakeUpstream((req, res) => {
     if (req.url === '/axios') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(body); return; }
+    if (req.url === '/plain-crypto-js') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(plain); return; }
+    if (req.url.endsWith('.tgz')) { res.writeHead(200, { 'content-type': 'application/octet-stream' }); res.end(Buffer.from([0x1f, 0x8b, 0x08])); return; }
     res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}');
   });
   const proxy = await startProxy(upstream.url, dbPath, { _nowMs: FIXED_NOW });
@@ -312,6 +318,14 @@ test('axios REAL shape (no hook in 1.14.1; the hook is in the injected dependenc
     assert.equal(d.disposition, 'ALLOW', 'the gap group 2a stated: pilot-only signals do not warn in 1.2');
     assert.equal(g['install-introduced'].result, 'ALLOW', 'no hook in the release itself: T1.1 is quiet (correctly)');
     for (const n of ['dep-structure', 'publisher-identity', 'provenance-continuity']) assert.equal(g[n].result, 'NOTE', n);
+    // 3b (D-N7): at the tarball, the added dependency is judged on its own release -> N1h, a named WARN
+    const t = await undiciRequest(`${proxy.url}/axios/-/axios-1.14.1.tgz`);
+    await t.body.text();
+    assert.equal(t.statusCode, 200);
+    assert.equal(t.headers['npm-notice'], 'chaingate: WARNING axios@1.14.1: it adds a dependency that runs install scripts. Details: chaingate why axios@1.14.1');
+    const after = proxy.server.witnessDb.getLatestDecision('axios', '1.14.1');
+    assert.equal(after.disposition, 'WARN');
+    assert.match(after.gates_fired.find((x) => x.gate === 'dependency-hooks').detail, /plain-crypto-js@4\.2\.1 \(postinstall\)/);
   } finally {
     await close(proxy.server); await close(upstream.server); cleanup();
   }
