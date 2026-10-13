@@ -1,13 +1,18 @@
-// 0.1.5 group 1 — T1.4 size-jump-provenance and T1.5 identity-break, from the served packument, against the runtime
-// predecessor (gates/predecessor.js); both CONTRIBUTING under cft-policy-1.2 until the lineage re-measure (chaingate-ops
-// handover §7.2) confirms T1.4 as named. Expected results are stated from the measured definitions in
-// chaingate-ops tools/corpus/base_rates.py (A:size5x_prov@rt, B:identity@rt), written before the gates.
+// 0.1.5 group 1 — T1.4 size-jump-provenance (NAMED) against the LINEAGE predecessor (gates/lineage-predecessor.js, a port of
+// the seed's FU-2 FINAL rule) and T1.5 identity-break (CONTRIBUTING) against gates/predecessor.js; both from the served
+// packument. Expected results are stated from the measured definitions in chaingate-ops tools/corpus/base_rates.py
+// (A:size5x_prov@lin, B:identity@rt) and the handover's §7.3 decision, written before the gates.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import sizeJumpProvenance, { provenanceBreaks, repoOf } from '../../gates/size-jump-provenance.js';
 import identityBreak, { publisherNew, identityBreaks, maintainersOf } from '../../gates/identity-break.js';
+import { lineagePredecessors, lineagePredecessorOf, majorOf, CALVER_KEY } from '../../gates/lineage-predecessor.js';
 import { CONTRIBUTING_GATES, withRole } from '../../gates/row-class.js';
 import { DEFAULT_GATE_MODULES, createGateRunner } from '../../gates/index.js';
+import POL from '../../seed/v3/policy.js';
+import { classify, servedClass } from '../../witness/row-class.js';
+import { buildNotice, labelFor } from '../../proxy/notice.js';
+import { renderReport } from '../../cli/report-render.js';
 
 const H = 3_600_000;
 const T0 = Date.parse('2026-06-01T00:00:00Z');
@@ -47,32 +52,70 @@ test('G1-1 T1.4 fires on >= 5x with gitHead lost, or with a repository change; n
   assert.match(A(doc, '1.4.0').detail, /below 5×/);
 });
 
-test('G1-2 T1.4 compares within the major: a 1.x patch after 2.0.0 is judged against 1.x; a prerelease is never a predecessor', () => {
+test('G1-2 T1.4 compares within the release line: a 1.x patch after 2.0.0 is judged against 1.x; a prerelease IS the previous build', () => {
   const doc = pk([
     ['1.0.0', 0, man({ size: 1000 })],
-    ['2.0.0-beta.1', 50, man({ size: 90000 })],
-    ['2.0.0', 100, man({ size: 50000, git: 'def' })],
+    ['2.0.0-beta.1', 50, man({ size: 9000 })],
+    ['2.0.0', 100, man({ size: 50000, git: 'def' })],          // vs 2.0.0-beta.1 (a member of line 2): 5.6x, provenance intact -> ALLOW
     ['1.0.1', 200, man({ size: 1200, git: null })],            // vs 1.0.0: 1.2x -> ALLOW (publish order would have said collapse)
-    ['2.0.1', 300, man({ size: 260000, git: null })],          // vs 2.0.0 (not the beta): 5.2x, gitHead lost -> WARN
-    ['3.0.0', 400, man({ size: 999999, git: null })],          // no earlier release of major 3 -> SKIP
+    ['2.0.1', 300, man({ size: 260000, git: null })],          // vs 2.0.0 (the previous build of line 2): 5.2x, gitHead lost -> WARN
+    ['3.0.0', 400, man({ size: 999999, git: null })],          // first of line 3 -> SKIP
   ]);
+  assert.equal(A(doc, '2.0.0').result, 'ALLOW');
+  assert.match(A(doc, '2.0.0').detail, /vs 9000 of 2\.0\.0-beta\.1/);
   assert.equal(A(doc, '1.0.1').result, 'ALLOW');
   assert.match(A(doc, '1.0.1').detail, /vs 1000 of 1\.0\.0/);
   const r = A(doc, '2.0.1');
   assert.equal(r.result, 'WARN');
   assert.match(r.detail, /vs 50000 of 2\.0\.0 \(5\.2×\)/);
   assert.equal(A(doc, '3.0.0').result, 'SKIP');
-  assert.match(A(doc, '3.0.0').detail, /no earlier release of this major/);
+  assert.match(A(doc, '3.0.0').detail, /no earlier version in this release line/);
 });
 
-test('G1-3 T1.4 not evaluable without a size; repository normalisation ignores git+ / .git / trailing slash', () => {
-  const doc = pk([['1.0.0', 0, man({ size: 1000 })], ['1.1.0', 10, { ...man({ size: 9000, git: null }), dist: {} }]]);
+test('G1-3 T1.4 not evaluable without a size on either side; repository normalisation ignores git+ / .git / trailing slash', () => {
+  const doc = pk([['1.0.0', 0, man({ size: 1000 })], ['1.1.0', 10, { ...man({ size: 9000, git: null }), dist: {} }], ['1.2.0', 20, man({ size: 9000 })]]);
   assert.equal(A(doc, '1.1.0').result, 'SKIP');
+  assert.equal(A(doc, '1.2.0').result, 'SKIP');
+  assert.match(A(doc, '1.2.0').detail, /previous version of this release line \(1\.1\.0\) has no size/);
   assert.equal(repoOf({ repository: 'git+https://github.com/o/r.git/' }), 'https://github.com/o/r');
   assert.equal(repoOf({ repository: { url: 'https://github.com/o/r' } }), 'https://github.com/o/r');
   assert.equal(repoOf({ repository: 7 }), null);
   assert.deepEqual(provenanceBreaks(man({ size: 1, repo: 'git+https://github.com/o/r.git' }), man({ size: 1 })), []);
   assert.deepEqual(provenanceBreaks(man({ size: 1, git: null }), man({ size: 1, git: null })), []);       // never had one: no loss
+});
+
+// ------------------------------------------------------------------------------------------------- the lineage predecessor (FU-2 FINAL port)
+test('G1-7 lineage predecessor: publish order within the leading-integer major; stubs and undated versions excluded; ties by version string', () => {
+  const doc = pk([['1.0.0', 0], ['1.0.9', 10], ['1.0.10', 10], ['0.0.1-security', 15], ['1.1.0', null], ['1.2.0', 20], ['0.9.0', 30], ['0.9.1', 40], ['v2-alpha', 50], ['2.0.0', 60]]);
+  const p = lineagePredecessors(doc.versions, doc.time);
+  assert.equal(p.get('1.0.0'), null);
+  assert.equal(p.get('1.0.10'), '1.0.0', 'same second: "1.0.10" < "1.0.9" as strings, so it comes first');
+  assert.equal(p.get('1.0.9'), '1.0.10');
+  assert.equal(p.get('0.0.1-security'), null, 'a stub is in no lineage');
+  assert.equal(p.get('1.1.0'), null, 'undated: in no lineage');
+  assert.equal(p.get('1.2.0'), '1.0.9', 'the stub and the undated version are not predecessors either');
+  assert.equal(p.get('0.9.0'), 'v2-alpha' === p.get('0.9.0') ? 'v2-alpha' : null, '0.9.0 opens line 0 (v2-alpha is later)');
+  assert.equal(p.get('0.9.1'), '0.9.0');
+  assert.equal(majorOf('v2-alpha'), '0', 'a non-digit prefix is major 0 (E2 no-split, E6 fillna)');
+  assert.equal(p.get('v2-alpha'), '0.9.1', 'so it joins line 0');
+  assert.equal(p.get('2.0.0'), null);
+  assert.deepEqual(lineagePredecessorOf(doc.versions, doc.time, '1.2.0'), { version: '1.0.9', manifest: doc.versions['1.0.9'] });
+  assert.equal(lineagePredecessorOf(doc.versions, doc.time, 'nope'), null);
+});
+
+test('G1-8 lineage predecessor: a contiguous CalVer tail of >= 2 decreasing years collapses into one line; a single year does not', () => {
+  const doc = pk([['1.0.0', 0], ['1.1.0', 10], ['2024.1.0', 20], ['2024.2.0', 30], ['2025.1.0', 40], ['2026.0.0-rc.1', 50], ['2026.0.0', 60]]);
+  const p = lineagePredecessors(doc.versions, doc.time);
+  assert.equal(p.get('2024.1.0'), '1.1.0' === p.get('2024.1.0') ? '1.1.0' : null);
+  // distinct majors in order: 1, 2024, 2025, 2026 -> the tail 2026, 2025, 2024 is a strictly decreasing CalVer run -> one line
+  assert.equal(p.get('2025.1.0'), '2024.2.0');
+  assert.equal(p.get('2026.0.0-rc.1'), '2025.1.0', 'the prerelease of the next year is judged against the previous year');
+  assert.equal(p.get('2026.0.0'), '2026.0.0-rc.1');
+  assert.equal(CALVER_KEY, '__CALVER__');
+  const single = pk([['1.0.0', 0], ['2025.1.0', 10], ['2025.2.0', 20]]);
+  const q = lineagePredecessors(single.versions, single.time);
+  assert.equal(q.get('2025.1.0'), null, 'one CalVer major is an ordinary major, not a collapsed tail');
+  assert.equal(q.get('2025.2.0'), '2025.1.0');
 });
 
 // ------------------------------------------------------------------------------------------------- T1.5 identity-break
@@ -111,10 +154,11 @@ test('G1-5 T1.5 "new" means unseen in versions published BEFORE the candidate; e
   assert.deepEqual(identityBreaks(man({ size: 1 }), man({ size: 1 })), []);
 });
 
-// ------------------------------------------------------------------------------------------------- roles and wiring
-test('G1-6 both gates are CONTRIBUTING under cft-policy-1.2 (WARN -> NOTE), wired into the default runner, history-independent', () => {
-  assert.ok(CONTRIBUTING_GATES.has('size-jump-provenance') && CONTRIBUTING_GATES.has('identity-break'));
-  assert.equal(withRole({ gate: 'size-jump-provenance', result: 'WARN', detail: 'd' }).result, 'NOTE');
+// ------------------------------------------------------------------------------------------------- roles, wiring, the named row
+test('G1-6 T1.4 is NAMED and T1.5 CONTRIBUTING under cft-policy-1.2; both wired into the default runner, history-independent', () => {
+  assert.ok(POL.NAMED_RUNNER_GATES.includes('size-jump-provenance') && !CONTRIBUTING_GATES.has('size-jump-provenance'));
+  assert.ok(CONTRIBUTING_GATES.has('identity-break') && !POL.NAMED_RUNNER_GATES.includes('identity-break'));
+  assert.equal(withRole({ gate: 'size-jump-provenance', result: 'WARN', detail: 'd' }).result, 'WARN');
   assert.equal(withRole({ gate: 'identity-break', result: 'WARN', detail: 'd' }).result, 'NOTE');
   assert.deepEqual(DEFAULT_GATE_MODULES.map((m) => m.name).filter((n) => /size-jump-provenance|identity-break/.test(n)),
     ['size-jump-provenance', 'identity-break']);
@@ -126,7 +170,25 @@ test('G1-6 both gates are CONTRIBUTING under cft-policy-1.2 (WARN -> NOTE), wire
   const d = run({ ecosystem: 'npm', packageName: 'x', version: '1.1.0', incoming: {}, baseline: null, history: [],
     rawVersions: doc.versions, rawTimes: doc.time, config: {} });
   const rows = Object.fromEntries(d.results.map((r) => [r.gate, r.result]));
-  assert.equal(rows['size-jump-provenance'], 'NOTE');
+  assert.equal(rows['size-jump-provenance'], 'WARN');
   assert.equal(rows['identity-break'], 'NOTE');
-  assert.equal(d.disposition, 'ALLOW', 'contributing rows never make a warning on their own');
+  assert.equal(d.disposition, 'WARN', 'the named row makes the warning; the contributing row is detail beside it');
+});
+
+test('G1-9 a size-jump-provenance WARN is a named row: classify, notice label, report block with a packument baseline', () => {
+  const row = { gate: 'size-jump-provenance', result: 'WARN', detail: 'unpackedSize 6000 vs 1000 of 1.0.0 (6.0×), at or above 5×, and gitHead absent (the predecessor had one) vs 1.0.0' };
+  assert.deepEqual(classify([row]).named, ['size-jump-provenance']);
+  assert.equal(servedClass([row]).class, 'named');
+  assert.equal(labelFor('size-jump-provenance'), 'its tarball grew fivefold and its link to the repository broke');
+  assert.equal(buildNotice({ kind: 'WARNING', pkg: 'h', version: '1.1.0', labels: ['size-jump-provenance'] }),
+    'chaingate: WARNING h@1.1.0: its tarball grew fivefold and its link to the repository broke. Details: chaingate why h@1.1.0');
+  const START = '2026-10-13T09:00:00.000Z';
+  const text = renderReport({ service: 'chaingate-proxy', version: '0.1.5', started_at: START, policy: 'cft-policy-1.2', view: 'latest',
+    seed: null, stats: {}, installs: [{ key: 'npm-session:a', grouping: 'npm-session', started_at: START, last_at: START, dropped: 0,
+      dropped_important: 0, events: [{ at: START, kind: 'served', package: 'h', version: '1.1.0', class: 'named', coverage: 'no-seed',
+        named: ['size-jump-provenance'], contributing: ['identity-break'], reason: `size-jump-provenance: ${row.detail}`, policy: null, notice: true, k: '1.0.0' }] }] },
+  { source: 'proxy' }).text;
+  assert.ok(text.includes('h@1.1.0  NAMED WARNING: its tarball grew fivefold and its link to the repository broke'), text);
+  assert.ok(text.includes('  baseline: packument'), text);
+  assert.ok(text.includes('to stay on 1.0.0: chaingate pin h@1.0.0'), text);
 });
