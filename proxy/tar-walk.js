@@ -19,11 +19,20 @@
 //   Windows file system MAY also map there (Unicode case folds, the 8.3 name, trailing dots or spaces) are separate
 //   candidates that never replace a view's entry: MC compares each of them on its own, so they can only add a detection.
 // Past a cap, on a gunzip error or a truncated archive, the outcome is "not checked", with the reason.
+// 0.1.5 static checks step 1: an optional KEEP LIST. `createTarWalker({ keep })` also keeps the bodies of at most `maxKeep` named
+// files (`maxKeepBytes` each) on the Linux view -- the files the manifest points npm at (main, bin, install-hook targets) -- exactly
+// as it keeps the root package.json; every other byte is still skipped. `keep` is a list of package-relative paths known before
+// the first byte (the registry manifest), or a function of the parsed root package.json applied when that entry completes (entries
+// that preceded it are stated as not kept). The result then carries `files` [{ path, buf, name, platformsNotChecked }] and `notKept`
+// [{ path, reason }]; without `keep` the result is unchanged, key for key. Where macOS or Windows would install ANOTHER entry at a
+// kept path (a case alias, a backslash separator), that platform is listed in platformsNotChecked: the body read is the Linux one.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
 
 export const DEFAULTS = Object.freeze({ maxCompressed: 64 * 1024 * 1024, maxUncompressed: 256 * 1024 * 1024,
-  maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024, maxApprox: 8, maxApproxBytes: 2 * 1024 * 1024 });
+  maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024, maxApprox: 8, maxApproxBytes: 2 * 1024 * 1024,
+  maxKeep: 6, maxKeepBytes: 1024 * 1024 });
+const MAX_SEEN_BEFORE = 4096;                               // entry paths remembered until a keep FUNCTION resolves
 const stats = { created: 0 };
 export const walkerStats = () => ({ ...stats });
 
@@ -124,6 +133,52 @@ export function createTarWalker(opts = {}) {
   let ex = null; let gex = {}; let sawNull = false;
   const views = { linux: null, macos: null, windows: null };   // view -> { buf, name }: the last entry npm installs there
   const approx = []; let approxBytes = 0;
+  // 0.1.5 keep list: targets (normalised Linux-view paths), kept bodies (last entry wins, as node-tar overwrites), what was not kept
+  const keepOpt = o.keep; const keepGiven = keepOpt !== undefined;
+  let keepTargets = Array.isArray(keepOpt) ? null : (typeof keepOpt === 'function' ? null : new Set());
+  const keepOrder = []; const kept = new Map(); const notKept = []; const aliases = new Map();
+  const seenBefore = new Set(); let seenOverflow = false;
+  const normKeep = (p) => {
+    if (typeof p !== 'string' || p.includes('\0')) return null;
+    const n = posix.normalize(p).replace(/^\.\//, '');
+    return n === '' || n === '.' || n === '..' || n.startsWith('../') || n.startsWith('/') ? null : n;
+  };
+  const pushNotKept = (path, reason) => { if (!notKept.some((x) => x.path === path)) notKept.push({ path, reason }); };
+  function setKeep(list) {
+    keepTargets = new Set();
+    for (const p of Array.isArray(list) ? list : []) {
+      const n = normKeep(p);
+      if (n === null) { pushNotKept(typeof p === 'string' ? p : String(p), 'outside the package'); continue; }
+      if (n === 'package.json') { pushNotKept(n, 'the root package.json is read by the manifest check, not kept'); continue; }
+      if (!keepTargets.has(n)) { keepTargets.add(n); keepOrder.push(n); }
+    }
+  }
+  if (Array.isArray(keepOpt)) setKeep(keepOpt);
+  else if (keepGiven && typeof keepOpt !== 'function') pushNotKept(null, 'keep list not computed: `keep` is neither a list of paths nor a function');
+  /** The keep FUNCTION, once the FIRST Linux-view package.json is complete: it decides on the parsed object (null when unparseable).
+   *  A later root package.json (MC reads the last) does not re-decide: the bodies between could not be kept anyway. */
+  function resolveKeep(body) {
+    let pj = null; try { pj = JSON.parse(body.toString('utf8')); } catch { pj = null; }
+    if (pj === null || typeof pj !== 'object' || Array.isArray(pj)) pj = null;
+    let list;
+    try { list = keepOpt(pj); } catch (err) { setKeep([]); pushNotKept(null, `keep list not computed: ${err?.message ?? err}`); return; }
+    setKeep(list);
+    for (const t of keepOrder) if (seenBefore.has(t)) pushNotKept(t, 'preceded package.json');
+    if (seenOverflow) pushNotKept(null, `entries before package.json beyond ${MAX_SEEN_BEFORE} not tracked`);
+    seenBefore.clear();
+  }
+  /** Another entry that a case-insensitive or Windows file system installs at a kept path (the Linux body is the one read). */
+  function noteAliases(entryPath, lx) {
+    if (!keepTargets || !keepTargets.size) return;
+    const wx = writtenRel(entryPath, true); const wxn = wx != null ? wx.replace(/\\/g, '/') : null;
+    for (const t of keepTargets) {
+      if (lx === t) continue;
+      const tl = t.toLowerCase(); const hit = aliases.get(t) ?? new Set();
+      if (lx != null && (lx.toLowerCase() === tl || fold(lx) === fold(t))) hit.add('macOS');
+      if (wxn != null && (wxn.toLowerCase() === tl || fold(wxn.replace(/[. ]+$/, '')) === fold(t))) hit.add('Windows');
+      if (hit.size) aliases.set(t, hit);
+    }
+  }
   const gunzip = zlib.createGunzip();
   let resolveSettled;
   const settled = new Promise((r) => { resolveSettled = r; });
@@ -141,8 +196,10 @@ export function createTarWalker(opts = {}) {
     if (!collect) return;
     const body = Buffer.concat(collect.chunks);
     const c = collect; collect = null;
+    if (c.kind === 'keep') { kept.set(c.path, { buf: body, name: c.name }); return; }
     if (c.kind === 'pj') {
       for (const v of c.exact) views[v] = { buf: body, name: c.name };
+      if (typeof keepOpt === 'function' && keepTargets === null && c.exact.includes('linux')) resolveKeep(body);
       if (c.approx.length) {
         approxBytes += body.length;
         if (approx.length >= o.maxApprox || approxBytes > o.maxApproxBytes) { fail('too many possible package.json entries'); return; }
@@ -220,6 +277,17 @@ export function createTarWalker(opts = {}) {
       if (tg.exact.length || tg.approx.length) {
         if (size > o.maxPackageJson) throw new BadHeader(`package.json over ${o.maxPackageJson} bytes`);
         collect = { kind: 'pj', chunks: [], exact: tg.exact, approx: tg.approx, name: entryPath };
+      } else if (keepGiven) {                                 // 0.1.5: a keep-list target, on the Linux view (writtenRel, as package.json)
+        const lx = writtenRel(entryPath, false);
+        if (keepTargets === null) { if (lx != null) { if (seenBefore.size < MAX_SEEN_BEFORE) seenBefore.add(lx); else seenOverflow = true; } }
+        else {
+          if (lx != null && keepTargets.has(lx)) {
+            if (size > o.maxKeepBytes) pushNotKept(lx, `over the kept-file cap (${o.maxKeepBytes} bytes)`);
+            else if (!kept.has(lx) && kept.size >= o.maxKeep) pushNotKept(lx, `beyond ${o.maxKeep} kept files`);
+            else collect = { kind: 'keep', chunks: [], path: lx, name: entryPath };
+          }
+          noteAliases(entryPath, lx);
+        }
       }
     }
     return size;
@@ -265,6 +333,15 @@ export function createTarWalker(opts = {}) {
     }
   }
   gunzip.on('data', onData);
+  /** 0.1.5: `files` in keep order (kept bodies, Linux view) and `notKept` with one reason each; a target never seen is stated. */
+  function keepResult() {
+    if (typeof keepOpt === 'function' && keepTargets === null) { setKeep([]); pushNotKept(null, 'keep list not computed: no root package.json in the archive'); }
+    const plat = (t) => ['macOS', 'Windows'].filter((x) => aliases.get(t)?.has(x));
+    for (const t of keepOrder) if (!kept.has(t) && !notKept.some((x) => x.path === t)) {
+      const a = plat(t); pushNotKept(t, a.length ? `not in the archive (an entry installs there on ${a.join(', ')})` : 'not in the archive');
+    }
+    return { files: keepOrder.filter((t) => kept.has(t)).map((t) => ({ path: t, buf: kept.get(t).buf, name: kept.get(t).name, platformsNotChecked: plat(t) })), notKept };
+  }
   function grouped() {
     const out = [];
     for (const [v, label] of [['linux', 'Linux'], ['macos', 'macOS'], ['windows', 'Windows']]) {
@@ -293,7 +370,7 @@ export function createTarWalker(opts = {}) {
       if (!failed && !ended) { gunzip.end(); await settled; }
       if (failed) return { ok: false, reason: failed };
       const done = () => ({ ok: true, packageJson: views.linux?.buf ?? null, views: grouped(),
-        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })) });
+        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })), ...(keepGiven ? keepResult() : {}) });
       if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return done(); }   // the end is final
       if (state !== 'header' || pending.length) return { ok: false, reason: 'tar: truncated archive' };
       return done();
