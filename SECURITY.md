@@ -10,8 +10,9 @@ not open public issues for vulnerabilities.
 
 ChainGate's runtime trusts a single Ed25519 public key, embedded
 as a literal in `witness/seed_verify.js`. The corresponding
-private key signs the legacy witness seed bundles published to this
-repository's releases (`seed-v2.x`). The runtime rejects any seed bundle
+private key signs the seeds published to this repository's releases:
+the legacy witness seed bundles (`seed-v2.x`) and the v3 detection
+seeds (`seed-v3.*`, starting with `seed-v3.1-full`). The runtime rejects any seed bundle
 whose signature does not verify against this pinned key,
 regardless of where the bundle is hosted or how it is delivered.
 
@@ -28,9 +29,22 @@ fingerprint.
 
 ### Current key custody
 
-The private key that signs **legacy witness seeds** resides on a
-single build host as a file with restricted permissions (mode 0400,
-single-user readable). That host is the trust root for seed signing,
+The private key that signs all ChainGate seeds (legacy witness seeds
+`seed-v2.x` and v3 detection seeds `seed-v3.*`, starting with
+`seed-v3.1-full`) resides on a single build host as a file with
+restricted permissions (mode 0400, in an owner-only directory).
+Signing is a manual maintainer step: the seed tooling refuses to sign
+unless the release's qualification record is accepted, checks this
+before it reads the key, and never reads the key otherwise. The public
+key's fingerprint is `ed25519:09f6c9fdb8f5a2ea`; its only use is seed
+signing. The public key is embedded in the runtime
+(`witness/seed_verify.js`), so rotating it requires a new runtime
+release; there is no online revocation, and a compromised key would be
+answered by a runtime release pinning a new key and re-signed seeds,
+while older runtimes keep trusting the old key. Users can verify a
+seed themselves with the PEM and the openssl command in the release
+notes and SEEDS.md; the runtime verifies the signature automatically
+before import. That host is the trust root for seed signing,
 and it is a single point of failure. The plan is to move seed signing
 to keyless signing with Sigstore and GitHub Actions OIDC before wider
 use. That migration has
@@ -46,6 +60,10 @@ makes **no claim of npm package provenance** (see "npm package
 provenance" below). The unscoped `chaingate` package on npm is an
 unrelated project.
 
+**Update (2026-10-13).** The v3 detection seed `seed-v3.1-full` was
+signed with the pinned key and published as a GitHub pre-release. The
+keyless-signing migration above has still not happened.
+
 Until the migration is complete, users in regulated environments
 or with elevated trust requirements may:
 
@@ -60,8 +78,9 @@ or with elevated trust requirements may:
 ### v3 detection seeds and trust modes
 
 The v3 detection seed is **supplied locally** (`chaingate init --seed <file>`,
-`chaingate update-seed --seed <file>`). It is **not downloaded automatically**,
-and no v3 seed is published yet. Before use, the runtime checks the
+`chaingate update-seed --seed <file>`). It is **not downloaded automatically**.
+The first published v3 seed is `seed-v3.1-full`, a signed GitHub
+pre-release (see SEEDS.md). Before use, the runtime checks the
 seed's schema and contract versions, its required bindings and its
 SHA-256 against the `.sha256` sidecar, and opens it read-only.
 
@@ -77,8 +96,9 @@ There are exactly two trust modes, and no silent downgrade:
   it only with a seed file you obtained from a source you trust.
 
 In both modes, a signature that is present but cannot be checked is
-refused rather than ignored. The current v3 release-candidate seed is
-unsigned.
+refused rather than ignored. The published `seed-v3.1-full` seed is
+signed with the pinned key and installs in `authenticated` mode. The
+earlier v3.0-rc3 test seed, never published as a release, is unsigned.
 
 ### Verification properties
 
@@ -152,9 +172,11 @@ OSV vulnerability database.
 - **Legacy witness seeds** (`seed-v2.x`) are signed with the
   Ed25519 key described above and published as releases on this
   repository.
-- **v3 detection seeds are currently unsigned.** They can be used
-  only in `unsigned-development` mode, which reports
-  `authenticated: false`, and none is published.
+- **v3 detection seeds**, starting with `seed-v3.1-full`, are signed
+  with the same key and published as releases on this repository.
+  Authenticated mode is the default. `unsigned-development` is only
+  for unsigned engineering and test seeds such as v3.0-rc3, which was
+  never published as a release.
 
 Release notes for each bundle attribute the build to a specific
 commit on the private infrastructure repository. Reproducibility
@@ -257,14 +279,16 @@ v3 detection seeds are never downloaded automatically. When one is made availabl
 exact identifiers (file SHA-256, logical digest, corpus snapshot) are recorded in
 [SEEDS.md](SEEDS.md) in a signed commit, with a signed git tag carrying the file digest.
 [SEEDS.md](SEEDS.md) explains how to verify both the git signature and the file. That verification
-authenticates the digest through the maintainer's git signing key. It does not make an unsigned
-seed signature-verified at runtime: the tool still reports `authenticated: false`.
+authenticates the digest through the maintainer's git signing key. A signed seed such as `seed-v3.1-full` is also
+verified at runtime against the pinned key. The git record does not make an unsigned seed signature-verified at
+runtime: the tool still reports `authenticated: false`.
 
 ## Platform support
 
 The README's "Tested platforms" table is the qualification of 0.1.3; only those combinations have been tested. On
-Windows that includes a standard (non-administrator) account on Windows 10 with Node 24. 0.1.4 has so far been tested
-on Linux x64 with Node.js 22.22.2 only.
+Windows that includes a standard (non-administrator) account on Windows 10 with Node 24. 0.1.4 ran its full test suite
+on Linux x64 with Node.js 22.22.2, and CI on its release commit passed all 36 jobs on Linux, macOS (arm64 and x64) and
+Windows Server 2022 with Node.js 22 and 24.
 
 On Windows (from 0.1.2), the active and previous seed bundles are recorded in one file,
 `seeds\activation.json`, which is replaced in a single rename: Windows cannot rename a symbolic link
