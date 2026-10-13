@@ -56,7 +56,7 @@ import sizeJump from './size-jump.js';
 import publishToolChange from './publish-tool-change.js';
 // 0.1.4 group 3b (E32): N1h -- dependency-hooks (named)
 import dependencyHooks from './dependency-hooks.js';
-// 0.1.5 group 1: T1.4 size-jump-provenance and T1.5 identity-break (contributing until the lineage re-measure; ops handover §7.2)
+// 0.1.5 group 1: T1.4 size-jump-provenance (NAMED; lineage predecessor) and T1.5 identity-break (contributing) -- ops handover §7.3
 import sizeJumpProvenance from './size-jump-provenance.js';
 import identityBreak from './identity-break.js';
 import { withRole, validRows, validDeps, validNotes } from './row-class.js';

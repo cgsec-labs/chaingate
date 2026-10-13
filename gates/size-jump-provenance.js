@@ -1,19 +1,21 @@
-// 0.1.5 group 1 (T1.4) size-jump-provenance -- "a payload bundled into the tarball, published from outside the repository's
-// CI": the candidate's dist.unpackedSize at or above 5x its predecessor's (gates/predecessor.js: the highest lower release
-// of the same major, published before) AND the candidate's provenance to the repository broke against that predecessor:
-// its gitHead is absent where the predecessor had one, or its repository URL differs.
+// 0.1.5 group 1 (T1.4) size-jump-provenance -- a NAMED gate in cft-policy-1.2: "a payload bundled into the tarball, published
+// from outside the repository's CI". The candidate's dist.unpackedSize at or above 5x its LINEAGE predecessor's
+// (gates/lineage-predecessor.js: the previous version in publish order within its release line, FU-2 FINAL) AND the
+// candidate's provenance to the repository broke against that predecessor: its gitHead is absent where the predecessor had
+// one, or its repository URL differs.
 //
-// Measured before it was written (chaingate-ops, docs/operator-runbooks/pin-admission-1.1-handover-20261013.md §7.1,
-// tools/corpus/base_rates.py over 24,152,465 corpus versions, 2026-10-13, publish-order baseline): fires on 0.028 % of
-// versions (1 per 3,810 established versions), and on the first malicious version of 8 established packages that no named
-// rule of 0.1.4 reaches (57.4 % -> 64.8 % of 108 established labelled packages; +14 of 174 overall). Operator ruling
-// 2026-10-13: NAMED in 0.1.5 once the same figure holds against the runtime predecessor (§7.2, base-rates-1.2 `@rt`);
-// CONTRIBUTING until then, so its row is recorded as NOTE and shown beside a named row and in `chaingate why`.
+// Measured before it was written (chaingate-ops, docs/operator-runbooks/pin-admission-1.1-handover-20261013.md §7.1-§7.3,
+// tools/corpus/base_rates.py over 24,154,424 corpus versions, 2026-10-13, FU-2 lineage baseline): fires on 0.020 % of
+// versions (1 per 6,083 established versions) and on the first malicious version of 8 established labelled packages that no
+// named rule of 0.1.4 reaches (leo-*, creditcard.js, mbt, node-env-resolver; 57.4 % -> 64.8 % of 108 established labelled
+// packages), all plain releases. Against gates/predecessor.js the same rule fires 5x more often with no recall gain
+// (canary/nightly prereleases compared with an old stable), which is why this gate uses the lineage predecessor.
+// Operator ruling 2026-10-13: NAMED, conditional on this lineage re-measure, which held (§7.3).
 //
 // Reads only the served packument (`rawVersions`, `rawTimes`): history-independent, like the other Tier 1 gates.
 // Deterministic. Nothing here is a judgement of the code; a release that bundles its build output and moves its repository
 // in one version fires it, and `chaingate why` says exactly which two facts did.
-import { predecessorOf, MAX_WALK } from './predecessor.js';
+import { lineagePredecessorOf } from './lineage-predecessor.js';
 
 export const RATIO = 5;
 const GATE = 'size-jump-provenance';
@@ -48,10 +50,10 @@ export default {
     const cand = versions?.[input?.version];
     const size = sizeOf(cand);
     if (size === null) return result('SKIP', 'not evaluable: no dist.unpackedSize for this version');
-    const pred = predecessorOf(versions, input?.rawTimes, input?.version, (m) => sizeOf(m) !== null);
-    if (pred?.beyond) return result('SKIP', `not evaluable: no predecessor within the last ${MAX_WALK} lower releases`);
-    if (!pred) return result('SKIP', 'not evaluable: no earlier release of this major with a size');
+    const pred = lineagePredecessorOf(versions, input?.rawTimes, input?.version);
+    if (!pred) return result('SKIP', 'not evaluable: no earlier version in this release line');
     const psize = sizeOf(pred.manifest);
+    if (psize === null) return result('SKIP', `not evaluable: the previous version of this release line (${pred.version}) has no size`);
     const ratio = size / psize;
     const sizeText = `unpackedSize ${size} vs ${psize} of ${pred.version} (${ratio.toFixed(1)}×)`;
     if (ratio < RATIO) return result('ALLOW', `${sizeText}, below ${RATIO}×`);
