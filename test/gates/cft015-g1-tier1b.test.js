@@ -32,7 +32,7 @@ test('G1-1 T1.4 fires on >= 5x with gitHead lost, or with a repository change; n
     ['1.0.0', 0, man({ size: 1000 })],
     ['1.1.0', 100, man({ size: 6000, git: null })],                                 // 6x and gitHead lost -> WARN
     ['1.2.0', 200, man({ size: 31000, repo: 'https://github.com/evil/r' })],        // 5.2x and repository moved -> WARN
-    ['1.3.0', 300, man({ size: 160000 })],                                          // 5.2x, provenance intact -> ALLOW
+    ['1.3.0', 300, man({ size: 160000, repo: 'https://github.com/evil/r' })],        // 5.2x, provenance as in 1.2.0 -> ALLOW
     ['1.4.0', 400, man({ size: 170000, git: null, repo: 'https://github.com/evil2/r' })],   // 1.1x, both broke -> ALLOW (size)
   ]);
   const r11 = A(doc, '1.1.0');

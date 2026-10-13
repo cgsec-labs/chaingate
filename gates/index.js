@@ -56,6 +56,9 @@ import sizeJump from './size-jump.js';
 import publishToolChange from './publish-tool-change.js';
 // 0.1.4 group 3b (E32): N1h -- dependency-hooks (named)
 import dependencyHooks from './dependency-hooks.js';
+// 0.1.5 group 1: T1.4 size-jump-provenance and T1.5 identity-break (contributing until the lineage re-measure; ops handover §7.2)
+import sizeJumpProvenance from './size-jump-provenance.js';
+import identityBreak from './identity-break.js';
 import { withRole, validRows, validDeps, validNotes } from './row-class.js';
 
 // NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
@@ -95,8 +98,10 @@ export { MIN_HISTORY_DEPTH };
 // rule was validated on with no depth requirement (validate_a1.py, A1 0 / 2,982). Under the guard, T1.1 would SKIP on a
 // package's first sight -- exactly the case it exists for.
 // dependency-hooks (3b) likewise reads only the served packument (and the dependency's own served packument).
+// 0.1.5 group 1: T1.4 and T1.5 likewise read only the served packument (its versions, times, sizes, gitHead, repository,
+// _npmUser, maintainers, _npmVersion); under the guard they would SKIP on a package's first sight, the case they exist for.
 const HISTORY_INDEPENDENT_GATES = new Set(['content-hash', 'seed-v3', 'install-introduced', 'size-jump', 'publish-tool-change',
-  'dependency-hooks']);
+  'dependency-hooks', 'size-jump-provenance', 'identity-break']);
 
 export const DEFAULT_GATE_MODULES = Object.freeze([
   contentHash,
@@ -109,6 +114,8 @@ export const DEFAULT_GATE_MODULES = Object.freeze([
   sizeJump,
   publishToolChange,
   dependencyHooks,
+  sizeJumpProvenance,
+  identityBreak,
 ]);
 
 // FAIL-OPEN, AND WHERE IT STOPS.

@@ -14,6 +14,9 @@ export const CONTRIBUTING_GATES = Object.freeze(new Set([
   'publisher-identity', 'dep-structure', 'provenance-continuity', 'release-age', 'scope-boundary',
   // 0.1.4 group 3a (D-T4, D-T5): T1.2 at >= 2x and T1.3, contributing in 1.2 (r3 §18.6, §18.7)
   'size-jump', 'publish-tool-change',
+  // 0.1.5 group 1: T1.4 size-jump-provenance (named once the lineage re-measure confirms it: ops handover §7.2) and
+  // T1.5 identity-break (contributing by operator ruling 2026-10-13)
+  'size-jump-provenance', 'identity-break',
 ]));
 
 /** A runner row with the 1.2 role applied: a contributing gate's WARN becomes NOTE. Everything else unchanged. */
