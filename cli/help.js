@@ -14,7 +14,7 @@ export const COMMAND_HELP = Object.freeze({
     + '  chaingate why <package>@<version>                     (no mode: the same as --cached)',
   history: 'chaingate history <package> [--limit N] [--json] [--scope user|project]',
   doctor: 'chaingate doctor [--json] [--scope user|project]',
-  check: 'chaingate check <package>@<version> --packument <file> [--json] [--scope user|project]\n  Exit codes (follow the effective action): 0=ALLOW, 2=WARN, 3=BLOCK, 4=tool error',
+  check: 'chaingate check <package>@<version> --packument <file> [--tarball <file>] [--json] [--scope user|project]\n  Exit codes (follow the effective action): 0=ALLOW, 2=WARN, 3=BLOCK, 4=tool error',
   overrides: 'chaingate overrides [list|revoke <package>@<version>] [--json] [--scope user|project]',
   accept: 'chaingate accept <package>@<version> | --revoke <package>@<version> | --list [--scope user|project]',
   pin: 'chaingate pin <package>@<version> | --list [--scope user|project]',
