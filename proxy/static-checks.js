@@ -21,6 +21,7 @@ import { posix } from 'node:path';
 import { pyTruthy } from '../seed/v3/packument.js';
 import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
+import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
 export const STATIC_CHECKS_VERSION = 'static-checks-1.0';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -35,6 +36,20 @@ export const CHECKS = Object.freeze([
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
 export const MAX_ARMED_WALKS = 4;
+/** 0.1.5 (#15): with the per-user `static_withhold` switch on, an armed download is held in memory up to this many bytes while the
+ *  static checks read it (design note section 8 item 2); past it the download is served and recorded as today. With the ceiling
+ *  above, at most MAX_ARMED_WALKS x 8 MiB are held at once. */
+export const STATIC_WITHHOLD_CAP_BYTES = 8 * 1024 * 1024;
+/**
+ * 0.1.5 (#15): the static checks that withhold a held download: a static row whose result is WARN and whose gate the policy NAMES.
+ * Rows are expected with their 1.2 role applied (`withRole`), so a contributing check's WARN is already a NOTE and never withholds.
+ * A named row that is not a static check is served with its notice, as today. `named` defaults to the policy's named runner gates.
+ */
+export function withholdingChecks(rows, named = NAMED_RUNNER_GATES) {
+  if (!Array.isArray(rows)) return [];
+  const set = new Set(named);
+  return [...new Set(rows.filter((r) => r && r.result === 'WARN' && STATIC_GATES.includes(r.gate) && set.has(r.gate)).map((r) => r.gate))].sort();
+}
 const INSTALL_HOOKS = ['preinstall', 'install', 'postinstall'];
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const names = (list, s) => list.filter(([, re]) => re.test(s)).map(([n]) => n);

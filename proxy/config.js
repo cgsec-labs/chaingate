@@ -69,11 +69,13 @@ function readPersisted(env) {
   const active = resolveActiveBundle(base);
 
   // The unstored-BLOCK caps apply with or without a v3 seed (pilot-only setups have the same record).
-  const caps = cfg ? validateConfig(cfg, file).caps : { entries: null, bytes: null };
+  const valid = cfg ? validateConfig(cfg, file) : null;
+  const caps = valid ? valid.caps : { entries: null, bytes: null };
+  const staticWithhold = valid ? valid.staticWithhold : false;      // 0.1.5 (#15); applies with or without a v3 seed
   const empty = { source: cfg ? file : null, base, seedV3Path: null, seedV3Trust: null,
     seedV3BundleDir: null, seedV3BundleId: null, seedV3Expected: null,
     policyOnUnusableInput: null, policyOnNoEvidence: null,
-    unstoredBlockCapEntries: caps.entries, unstoredBlockCapBytes: caps.bytes };
+    unstoredBlockCapEntries: caps.entries, unstoredBlockCapBytes: caps.bytes, staticWithhold };
   if (!active) return empty;
 
   // The bundle says what it is; it is verified through the PINNED directory.
@@ -97,6 +99,7 @@ function readPersisted(env) {
     policyOnNoEvidence: policy.on_no_evidence,
     unstoredBlockCapEntries: caps.entries,
     unstoredBlockCapBytes: caps.bytes,
+    staticWithhold,
   };
 }
 
@@ -137,6 +140,8 @@ export function loadConfig(env = process.env, overrides = {}) {
     // Validated (ranges, refusing start-up by name) by the proxy: proxy/unstored-blocks.js validateCaps.
     unstoredBlockCapEntries: env.CHAINGATE_UNSTORED_BLOCK_CAP_ENTRIES || persisted.unstoredBlockCapEntries,
     unstoredBlockCapBytes: env.CHAINGATE_UNSTORED_BLOCK_CAP_BYTES || persisted.unstoredBlockCapBytes,
+    // 0.1.5 (#15): hold an armed download (up to 8 MiB) while the static checks read it; persisted only, off by default
+    staticWithhold: persisted.staticWithhold === true,
     configSource: persisted.source,
     chaingateBase: persisted.base,
   };

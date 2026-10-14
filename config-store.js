@@ -92,7 +92,14 @@ export function validateConfig(cfg, file = '(in memory)') {
     caps[out] = v;
   }
 
-  return { policy: resolved, caps };
+  // 0.1.5 (#15): the per-user switch that holds an armed download while the tarball static checks read it. Off by default;
+  // anything but a boolean refuses, so a typo can never switch it on or off silently.
+  const sw = cfg.static_withhold;
+  if (sw !== undefined && sw !== null && typeof sw !== 'boolean') {
+    bad(`static_withhold must be true or false, got ${JSON.stringify(sw)}`);
+  }
+
+  return { policy: resolved, caps, staticWithhold: sw === true };
 }
 
 /**

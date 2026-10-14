@@ -35,7 +35,8 @@ import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cach
 // 0.1.4 group 3c (D-M2..D-M4): MC while the tarball streams
 import { createTarWalker } from './tar-walk.js';
 import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
-import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS } from './static-checks.js';
+import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
+  withholdingChecks } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
 /** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
 function parsedPackageJson(walk) {
@@ -217,6 +218,73 @@ async function streamUpstream(res, upstream, statusCode, extraHeaders = null, ta
   } catch (err) {
     if (!res.writableEnded) res.destroy(err);
   }
+}
+
+/** Resolves when `res` can take more bytes, or when it has gone away (so a held download never waits on a closed socket). */
+function drained(res) {
+  return new Promise((resolve) => {
+    const done = () => { res.removeListener('drain', done); res.removeListener('close', done); resolve(); };
+    res.once('drain', done); res.once('close', done);
+  });
+}
+/** Resolves once `res` has finished or closed. */
+function settled(res) {
+  return new Promise((resolve) => {
+    if (res.writableFinished || res.destroyed) { resolve(); return; }
+    const done = () => { res.removeListener('finish', done); res.removeListener('close', done); resolve(); };
+    res.once('finish', done); res.once('close', done);
+  });
+}
+
+/**
+ * 0.1.5 (#15, the per-user `static_withhold` switch): hold an ARMED download in memory while the static checks read it, so a named
+ * static WARN can withhold the download that reveals it. Every chunk goes to `tap` (the walker) as it arrives.
+ *   { held: true, headers, body }   the whole body arrived within `cap`; nothing has been sent (the caller serves or withholds it)
+ *   { held: false }                 streamed as today: a status other than 200, a Content-Length over `cap`, or the cap reached
+ *                                   mid-stream (the held bytes are flushed first, the rest streams)
+ *   { aborted: true }               npm went away, or the upstream failed, while holding: nothing to record
+ */
+async function holdUpstream(res, upstream, statusCode, extraHeaders, tap, cap) {
+  const headersOf = () => (extraHeaders ? extraHeaders(relayResponseHeaders(upstream.headers)) : relayResponseHeaders(upstream.headers));
+  const announced = Number(upstream.headers?.['content-length']);
+  if (statusCode !== 200 || (Number.isFinite(announced) && announced > cap)) {
+    await streamUpstream(res, upstream, statusCode, extraHeaders, tap);
+    return { held: false };
+  }
+  let gone = false;
+  const onClose = () => { if (!res.writableFinished) { gone = true; upstream.body?.destroy?.(); } };
+  res.once('close', onClose);
+  const chunks = []; let size = 0; let streaming = false;
+  try {
+    for await (const chunk of upstream.body) {
+      if (gone) break;
+      try { tap(chunk); } catch { /* the walk never affects the download */ }
+      if (streaming) { if (!res.write(chunk)) await drained(res); continue; }
+      chunks.push(chunk); size += chunk.length;
+      if (size > cap) {                                     // the cap reached mid-stream: serve as today from here
+        streaming = true;
+        res.writeHead(statusCode, headersOf());
+        for (const c of chunks.splice(0)) if (!res.write(c)) await drained(res);
+      }
+    }
+  } catch (err) {
+    if (!res.writableEnded) res.destroy(err);
+    return streaming ? { held: false } : { aborted: true };
+  } finally {
+    res.removeListener('close', onClose);
+  }
+  if (gone) return { aborted: true };
+  if (streaming) { res.end(); await settled(res); return { held: false }; }
+  return { held: true, headers: headersOf(), body: Buffer.concat(chunks) };
+}
+
+/** 0.1.5 (#15): the 403 of a download the user's static_withhold switch withholds (a serving choice; the decision stays WARN). */
+function staticWithheldResponse(pkg, version, checks) {
+  const id = `${pkg}@${version}`;
+  const detail = `${id} is withheld by your static_withhold setting: ${checks.join(', ')}; details: chaingate why ${id}; `
+    + `to install it anyway: chaingate accept ${id}`;
+  const notice = buildNotice({ kind: 'WITHHELD', pkg, version, labels: checks, tail: '(your static_withhold setting)' });
+  return { body: { error: 'withheld_by_static_check', package: pkg, version, checks, detail }, detail, notice };
 }
 
 // Buffer upstream packument, run it through the witness, then either:
@@ -1066,6 +1134,18 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${named.join(', ')} `
             + `(${decidingReason(latest.gates_fired, 'WARN')})${accepted ? ' (accepted)' : ''}`, `${canonicalName}@${state.tarballVersion}`);
         }
+        // 0.1.5 (#15): with the static_withhold switch on, a version whose record carries a named static WARN the user has not
+        // accepted is withheld at every download, as a pin withholds (`chaingate accept` releases it). Off: served with its notice.
+        if (config.staticWithhold && latest && state.tarballVersion != null && !state.override && !accepted) {
+          const checks = withholdingChecks(latest.gates_fired);
+          if (checks.length) {
+            const w = staticWithheldResponse(canonicalName, state.tarballVersion, checks);
+            noteInstall(req, { kind: 'refused', package: canonicalName, version: state.tarballVersion, facts: [], status: 403,
+              reason: w.detail, policy: policyPrefix(latest.gates_fired) });
+            writeJson(res, 403, w.body, w.notice ? { 'npm-notice': w.notice } : {});
+            return;
+          }
+        }
         const notice = named.length && !accepted
           ? buildNotice({ kind: 'WARNING', pkg: canonicalName, version: state.tarballVersion, labels: named }) : null;
         const upstream = await fetchTarball(route.name, route.filename, {
@@ -1117,9 +1197,14 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           else { armedWalks += 1; armedSlot = true; staticWhy = 'armed'; keepOpts = { keep: keepListFor(staticManifest).paths }; }
         }
         const walker = walkLatest && (!mcDeterminate(walkLatest) || staticDue) ? createTarWalker(keepOpts) : null;
+        const headerFn = notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null;
+        const tap = walker ? (c) => walker.write(c) : null;
+        let held = null;
         try {
-          await streamUpstream(res, upstream, upstream.statusCode,
-            notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null, walker ? (c) => walker.write(c) : null);
+          // 0.1.5 (#15): with the user's static_withhold switch on, an ARMED download is held (up to 8 MiB) while the checks read it
+          if (config.staticWithhold && armedSlot && walker) {
+            held = await holdUpstream(res, upstream, upstream.statusCode, headerFn, tap, STATIC_WITHHOLD_CAP_BYTES);
+          } else await streamUpstream(res, upstream, upstream.statusCode, headerFn, tap);
         } catch (err) {
           if (armedSlot) { armedWalks -= 1; armedSlot = false; }            // the slot is freed on every exit, or the ceiling would stick
           throw err;
@@ -1127,16 +1212,45 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         if (walker) {
           const walk = await walker.end();
           if (armedSlot) { armedWalks -= 1; armedSlot = false; }
-          // an aborted download is not recorded: it is walked again next time
-          if (res.writableFinished) {
+          let lateRows = null;                                  // MC's row and the five static rows (1.2 roles), computed once
+          const rowsOfWalk = () => lateRows ?? (lateRows = [mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion)),
+            ...(staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed })
+              : staticWhy === 'no-manifest' ? noManifestRows(armed)
+                : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
+                  : unarmedRows('no named row, no identity-break, no coverage gap')).map(withRole)]);
+          // 0.1.5 (#15): a held download is served or withheld only now, after the walk; withheld only for a named static WARN
+          // the user has not accepted (while every check is contributing this never happens, and the held bytes are served)
+          let staticHold = null;
+          if (held?.held) {
+            let checks = [];
+            try { checks = withholdingChecks(rowsOfWalk().slice(1)); } catch (err) {
+              log?.warn?.(`[static] ${canonicalName}@${state.tarballVersion}: rows not computed (${err.message}); served`);
+            }
+            if (checks.length) {
+              try {
+                const acc = witnessDb.getAcceptance(canonicalName, state.tarballVersion);
+                if (acc && Array.isArray(acc.named) && checks.every((c) => acc.named.includes(c))) checks = [];
+              } catch (err) {
+                log?.warn?.(`[accept] ${canonicalName}@${state.tarballVersion}: acceptance not readable (${err.message}); withheld`);
+              }
+            }
+            if (checks.length) {
+              staticHold = staticWithheldResponse(canonicalName, state.tarballVersion, checks);
+              noteInstall(req, { kind: 'refused', package: canonicalName, version: state.tarballVersion, facts: [], status: 403,
+                reason: staticHold.detail, policy: policyPrefix(walkLatest.gates_fired) });
+              writeJson(res, 403, staticHold.body, staticHold.notice ? { 'npm-notice': staticHold.notice } : {});
+            } else {
+              res.writeHead(upstream.statusCode, held.headers);
+              res.end(held.body);
+            }
+            await settled(res);
+          }
+          // an aborted download is not recorded: it is walked again next time (a withheld one is recorded: its rows withheld it)
+          if (res.writableFinished || staticHold) {
             try {
-              const row = mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion));
+              const [row, ...sRows] = rowsOfWalk();
               const prevMc = walkLatest.gates_fired?.find?.((g) => g && g.gate === MC_GATE);
               const mcChanged = !(prevMc && prevMc.result === row.result && prevMc.detail === row.detail);
-              const sRows = (staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed })
-                : staticWhy === 'no-manifest' ? noManifestRows(armed)
-                  : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
-                    : unarmedRows('no named row, no identity-break, no coverage gap')).map(withRole);
               const outcome = recordLate({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, rows: [row, ...sRows] });
               if (outcome === 'wrote' && row.result === 'WARN' && mcChanged) {
                 const now = witnessDb.getLatestDecision(canonicalName, state.tarballVersion);
