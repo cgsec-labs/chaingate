@@ -10,7 +10,8 @@ import { openWitnessDB } from '../../witness/db.js';
 import { verifyPersistedSignature } from '../../witness/seed_verify.js';
 import { readInstallMarker, markerPath } from '../legacy-seed.js';
 import { checkSelfWitness, hasAnyChaingateInWitness, OWN_PACKAGE_NAME } from '../self-witness.js';
-import { DEFAULT_PORT, DEFAULT_HOST, NPMRC_MARKER_START, EXIT } from '../constants.js';
+import { DEFAULT_HOST, NPMRC_MARKER_START, EXIT } from '../constants.js';
+import { proxyPort } from './pin.js';
 import { resolveActiveBundle, verifyBundleDir, activeBundleId, ActivationBroken, staleLegacyLink,
   previousBundleId, readActivationIntent, intentFile, surveyLeftovers, INTENT_FILE } from '../seed-bundle.js';
 import { readConfigStrict, validateConfig, POLICY_VALUES } from '../../config-store.js';
@@ -247,13 +248,14 @@ export default async function doctor(args) {
     });
   }
 
-  // 4. Proxy port responding
+  // 4. Proxy port responding (0.1.5 #4: CHAINGATE_PORT when set, the variable the proxy reads, as report and pin do)
+  const port = proxyPort(process.env);
   {
-    const responding = await isPortInUse(DEFAULT_PORT, DEFAULT_HOST);
+    const responding = await isPortInUse(port, DEFAULT_HOST);
     checks.push({
       name: 'proxy-port',
       pass: responding,
-      detail: responding ? `${DEFAULT_HOST}:${DEFAULT_PORT} accepting connections` : `${DEFAULT_HOST}:${DEFAULT_PORT} not responding`,
+      detail: responding ? `${DEFAULT_HOST}:${port} accepting connections` : `${DEFAULT_HOST}:${port} not responding`,
     });
   }
 
@@ -400,7 +402,7 @@ export default async function doctor(args) {
       });
     } else {
       try {
-        const self = await fetchProxySelf(DEFAULT_HOST, DEFAULT_PORT);
+        const self = await fetchProxySelf(DEFAULT_HOST, port);
         selfDoc = self && typeof self === 'object' ? self : null;
         const versionMatch = self.version === CLI_VERSION;
         const pidMatch = Number(self.pid) === Number(pidFromFile);
