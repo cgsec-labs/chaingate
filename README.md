@@ -149,13 +149,13 @@ targets; at most 6 files of 1 MiB each -- and runs five checks over them, each a
 - **S0** an install-hook command carries a fetch (curl, wget, Invoke-WebRequest, certutil -urlcache, bitsadmin) and an
   execute or decode (a pipe into a shell or interpreter, powershell -enc, base64 -d, eval, iex);
 - **S1** a hook target under 8 KiB carries a network sink and an execution sink (a loader);
-- **S2** an entry file carries 20 or more `_0x…` identifiers and a decode marker (eval, Function, atob, a long
+- **S2** an entry file carries 20 or more `_0x` identifiers and a decode marker (eval, Function, atob, a long
   String.fromCharCode run, or hex escapes over 15 % of the file);
 - **S3** a file carries a credential source (.npmrc, ssh keys, cloud credentials, token variables, a process.env dump) and
   an outbound sink to a host that is not the registry (a known exfiltration host class, a raw IP, or a POST to a literal host);
 - **S4** an entry file overrides `XMLHttpRequest.prototype.send`, `window.fetch` or `window.ethereum.request` and carries
   two or more cryptocurrency-address regexes.
-All five are contributing rows (`static:S0-shell-fetch-in-hook` … `static:S4-wallet-swap-hook`): recorded as notes, shown
+All five are contributing rows (`static:S0-shell-fetch-in-hook` through `static:S4-wallet-swap-hook`): recorded as notes, shown
 in `chaingate why` and `chaingate report --json`, never a warning on their own until a measured base rate and an operator
 ruling name one. A row names the markers that matched, the file and its size -- never the file's content. The marker
 lists are constants under the version `static-checks-1.0`, the same lists the operator's recon tool runs. A download the
