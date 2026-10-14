@@ -170,6 +170,11 @@ a result, and as not checked only when no named rule did.
 `chaingate check` (the CI command) evaluates the seed only in 0.1.4. Install-introduced, N1h and MC are reported by the
 proxy, not by `check`.
 
+Since 0.1.5, `chaingate check <pkg>@<ver> --packument <file> --tarball <file>` also reads that local archive offline -- the
+manifest check and the five tarball checks above, the keep list from the packument's manifest -- and reports their rows in the
+record's `tarball` member (`chaingate.check/4`, which is `/3` plus that one optional member). Those rows never change the
+decision or the exit code in 0.1.5: a CI job that wants to gate on them reads `tarball.disposition`.
+
 **What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), or a
 version your pin withholds, ChainGate sends npm a notice on the tarball response, and npm prints it. Other refusals (an
 evaluation that failed or is busy, a full record) carry only the HTTP error. `chaingate why <pkg>@<ver>`, the command the

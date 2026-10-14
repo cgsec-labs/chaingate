@@ -32,6 +32,7 @@ const EXPLAIN_VERSION_FOR_SCHEMA = Object.freeze({
   'chaingate.check/1': EXPLAIN_VERSION_1,
   'chaingate.check/2': EXPLAIN_VERSION_2,
   'chaingate.check/3': EXPLAIN_VERSION_2,
+  'chaingate.check/4': EXPLAIN_VERSION_2,   // 0.1.5 step 5: /3 plus the optional tarball member; the explanation is the seed decision's
 });
 
 const has = (o, k) => o !== null && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);

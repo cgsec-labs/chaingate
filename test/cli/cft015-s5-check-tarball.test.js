@@ -87,13 +87,13 @@ function env(dir, seedDb) {
     CHAINGATE_POLICY_ON_UNUSABLE_INPUT: 'WARN', CHAINGATE_POLICY_ON_NO_EVIDENCE: 'WARN', CHAINGATE_WITNESS_DB: path.join(dir, 'w.db') };
 }
 
-test('R1 without --tarball the record is today\'s /3, member for member; with --tarball it is /4 with the tarball member and nothing else changed', () => {
+test('R1 without --tarball the record is today\'s /3, member for member; with --tarball it is /4 with the tarball member and nothing else changed', async () => {
   const s = buildSeed({ layout: '1.1' }); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-s5-'));
   try {
     const w = world(dir, { tarballFiles: { 'package.json': JSON.stringify({ name: 'p', version: '1.3.0', main: 'index.js' }), 'index.js': 'module.exports = 1;\n' } });
-    const plain = runCheck({ name: 'p', version: '1.3.0', packument: w.pk, env: env(dir, s.dbPath), cwd: dir });
+    const plain = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, env: env(dir, s.dbPath), cwd: dir });
     assert.equal(plain.record.schema, 'chaingate.check/3'); assert.equal(plain.record.result, 'evaluated'); assert.ok(!('tarball' in plain.record));
-    const withT = runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
+    const withT = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
     const r = withT.record;
     assert.equal(r.schema, 'chaingate.check/4'); assert.equal(withT.exit, plain.exit, 'the exit code follows effective.action, which the tarball never changes in 0.1.5');
     const { tarball, schema, ...rest } = r; const { schema: s3, ...plainRest } = plain.record;
@@ -117,12 +117,12 @@ test('R1 without --tarball the record is today\'s /3, member for member; with --
   } finally { s.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('R2 a loader in the hook target and a tarball package.json that adds a hook: S1 NOTE (contributing), MC WARN, tarball.disposition WARN -- decision, effective and exit untouched', () => {
+test('R2 a loader in the hook target and a tarball package.json that adds a hook: S1 NOTE (contributing), MC WARN, tarball.disposition WARN -- decision, effective and exit untouched', async () => {
   const s = buildSeed({ layout: '1.1' }); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-s5-'));
   try {
     const w = world(dir, { tarballFiles: { 'package.json': JSON.stringify({ name: 'p', version: '1.3.0', main: 'index.js', scripts: { postinstall: 'node install.js' } }), 'install.js': LOADER, 'index.js': 'module.exports = 1;\n' } });
-    const plain = runCheck({ name: 'p', version: '1.3.0', packument: w.pk, env: env(dir, s.dbPath), cwd: dir });
-    const { record: r, exit } = runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
+    const plain = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, env: env(dir, s.dbPath), cwd: dir });
+    const { record: r, exit } = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
     const row = (g) => r.tarball.rows.find((x) => x.gate.startsWith(g));
     assert.equal(row('install-manifest-mismatch').result, 'WARN'); assert.match(row('install-manifest-mismatch').detail, /declares postinstall; the registry entry declares no install hook/);
     assert.equal(row('static:S1').result, 'NOTE', 'contributing: a WARN is recorded as NOTE');
@@ -133,26 +133,26 @@ test('R2 a loader in the hook target and a tarball package.json that adds a hook
   } finally { s.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('R3 a tarball that is not a gzip archive: the walk is stated, every row "not checked", disposition SKIP; an unreadable file is a tool error', () => {
+test('R3 a tarball that is not a gzip archive: the walk is stated, every row "not checked", disposition SKIP; an unreadable file is a tool error', async () => {
   const s = buildSeed({ layout: '1.1' }); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-s5-'));
   try {
     const w = world(dir, { tarballFiles: { 'package.json': '{}' } }); fs.writeFileSync(w.tb, 'not a gzip archive');
-    const { record: r, exit } = runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
+    const { record: r, exit } = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
     assert.equal(r.schema, 'chaingate.check/4'); assert.equal(r.tarball.walk.ok, false); assert.match(r.tarball.walk.reason, /gunzip/);
     for (const x of r.tarball.rows) { assert.equal(x.result, 'SKIP'); assert.match(x.detail, /^not checked: gunzip/); }
-    assert.equal(r.tarball.disposition, 'SKIP'); assert.deepEqual(validateRecord(r), []); assert.equal(exit, 2, 'WARNCFG on no evidence: the seed decision, as without a tarball');
-    const missing = runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: path.join(dir, 'nope.tgz'), env: env(dir, s.dbPath), cwd: dir });
+    assert.equal(r.tarball.disposition, 'SKIP'); assert.deepEqual(validateRecord(r), []); assert.equal(exit, 3, 'the recorded advisory pin on p@1.3.0 decides (BLOCK), exactly as without a tarball');   // corrected after the failing-first record: the fixture pins p@1.3.0
+    const missing = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: path.join(dir, 'nope.tgz'), env: env(dir, s.dbPath), cwd: dir });
     assert.equal(missing.record.result, 'tool_error'); assert.equal(missing.record.error.code, 'tarball_unreadable'); assert.equal(missing.exit, 4);
     assert.deepEqual(validateRecord(missing.record), []);
   } finally { s.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('R4 a version the packument does not carry: the check is refused as today, and the tarball\'s own package.json is the keep list\'s source (stated)', () => {
+test('R4 a version the packument does not carry: the check is refused as today, and the tarball\'s own package.json is the keep list\'s source (stated)', async () => {
   const s = buildSeed({ layout: '1.1' }); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-s5-'));
   try {
     const doc = docFor('p'); const pk = path.join(dir, 'p.json'); fs.writeFileSync(pk, JSON.stringify(doc));
     const tb = path.join(dir, 'p-9.9.9.tgz'); fs.writeFileSync(tb, tgz({ 'package.json': JSON.stringify({ name: 'p', version: '9.9.9', main: 'lib/main.js' }), 'lib/main.js': 'module.exports = 1;\n' }));
-    const { record: r } = runCheck({ name: 'p', version: '9.9.9', packument: pk, tarball: tb, env: env(dir, s.dbPath), cwd: dir });
+    const { record: r } = await runCheck({ name: 'p', version: '9.9.9', packument: pk, tarball: tb, env: env(dir, s.dbPath), cwd: dir });
     assert.equal(r.result, 'refused'); assert.equal(r.schema, 'chaingate.check/4');
     assert.deepEqual(r.tarball.keep_list, { source: 'tarball package.json', candidates: 5 });
     assert.equal(r.tarball.rows[0].result, 'SKIP'); assert.equal(r.tarball.rows[0].detail, 'not checked: no registry manifest at hand');
