@@ -150,7 +150,7 @@ export default async function why(args) {
     return code;
   }
 
-  const { record } = runCheck({ name: parsed.name, version: parsed.version, packument: opts.packument,
+  const { record } = await runCheck({ name: parsed.name, version: parsed.version, packument: opts.packument,
     scope: opts.scope });
   if (record.result === 'tool_error') {
     console.error(fmt.fail(`${parsed.name}@${parsed.version}: tool error (${record.error.code}): ${record.error.message}`));
