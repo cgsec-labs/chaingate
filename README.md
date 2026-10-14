@@ -169,7 +169,9 @@ A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaing
 it. The report counts a release as checked when another named rule (install-introduced or the seed's strict tier) gave
 a result, and as not checked only when no named rule did.
 
-`chaingate check` (the CI command) evaluates the seed; install-introduced and N1h are reported by the proxy, not by `check`.
+`chaingate check` (the CI command) evaluates the seed only in 0.1.4. Install-introduced, N1h and MC are reported by the
+proxy, not by `check`.
+
 Since 0.1.5, `chaingate check <pkg>@<ver> --packument <file> --tarball <file>` also reads that local archive offline -- the
 manifest check and the five tarball checks above, the keep list from the packument's manifest -- and reports their rows in the
 record's `tarball` member (`chaingate.check/4`, which is `/3` plus that one optional member). Those rows never change the
