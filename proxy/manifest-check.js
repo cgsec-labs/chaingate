@@ -105,20 +105,32 @@ export function mcRow(walk, mh) {
 const aggregate = (results) => (results.some((r) => r?.result === 'BLOCK') ? 'BLOCK'
   : (results.some((r) => r?.result === 'WARN') ? 'WARN' : 'ALLOW'));
 
-/** Write the MC row into one new decision row when the outcome changed. 'wrote' | 'raced' | false. */
-export function recordMc({ db, pkg, version, latest, row }) {
-  const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
-  const prev = rows.find((g) => g && g.gate === GATE);
-  if (prev && prev.result === row.result && prev.detail === row.detail) return false;
-  const results = [...rows.filter((g) => !(g && g.gate === GATE)), row];
+/**
+ * 0.1.5 (static checks step 2): write several LATE rows -- rows a walk yields after the download was served (MC, the static checks)
+ * -- into ONE new decision row when any of them changed: each incoming row replaces its gate's earlier row, every other row is kept.
+ * 'wrote' | 'raced' (another decision landed meanwhile) | false (nothing changed, or no rows).
+ */
+export function recordLate({ db, pkg, version, latest, rows }) {
+  const have = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
+  const incoming = (Array.isArray(rows) ? rows : []).filter((r) => r && typeof r.gate === 'string');
+  if (!incoming.length) return false;
+  const same = (row) => { const prev = have.find((g) => g && g.gate === row.gate); return !!prev && prev.result === row.result && prev.detail === row.detail; };
+  if (incoming.every(same)) return false;
+  const gates = new Set(incoming.map((r) => r.gate));
+  const results = [...have.filter((g) => !(g && gates.has(g.gate))), ...incoming];
   const fresh = db.getLatestNonOverrideDecision(pkg, version);
   if (fresh && fresh.id !== latest.id) return 'raced';
   db.insertGateDecision(pkg, version, aggregate(results), results);
   return 'wrote';
 }
+/** Write the MC row into one new decision row when the outcome changed. 'wrote' | 'raced' | false. */
+export const recordMc = ({ db, pkg, version, latest, row }) => recordLate({ db, pkg, version, latest, rows: [row] });
 
+/** Whether the stored record already holds a determinate (WARN or ALLOW) row for a late gate: tarballs are immutable per version, so
+ *  a determinate outcome is never walked for again. */
+export const lateDeterminate = (latest, gate) => (Array.isArray(latest?.gates_fired) ? latest.gates_fired : [])
+  .some((g) => g && g.gate === gate && (g.result === 'WARN' || g.result === 'ALLOW'));
 /** Whether the stored row already holds a determinate MC outcome (tarballs are immutable per version: no second walk). */
-export const mcDeterminate = (latest) => (Array.isArray(latest?.gates_fired) ? latest.gates_fired : [])
-  .some((g) => g && g.gate === GATE && (g.result === 'WARN' || g.result === 'ALLOW'));
+export const mcDeterminate = (latest) => lateDeterminate(latest, GATE);
 
-export default { hookDict, manifestMismatch, rememberManifestHooks, manifestHooksFor, forgetManifestHooks, mcRow, recordMc, mcDeterminate, GATE };
+export default { hookDict, manifestMismatch, rememberManifestHooks, manifestHooksFor, forgetManifestHooks, mcRow, recordMc, recordLate, lateDeterminate, mcDeterminate, GATE };

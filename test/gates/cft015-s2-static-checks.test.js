@@ -171,7 +171,7 @@ test('T9 recordLate(rows): several late rows join the version\'s decision in one
   assert.equal(M.recordLate({ db, pkg: 'p', version: '1.0.0', latest, rows }), 'wrote');
   assert.equal(writes.length, 1); assert.equal(writes[0].agg, 'WARN');
   assert.deepEqual(writes[0].rows.map((r) => r.gate), ['install-introduced', 'install-manifest-mismatch', 'static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target']);
-  const after = { id: 8, gates_fired: writes[0].rows };
+  const after = { id: 8, gates_fired: writes[0].rows }; fresh = after;                // the write landed: the stored decision is now `after`
   assert.equal(M.recordLate({ db, pkg: 'p', version: '1.0.0', latest: after, rows }), false, 'nothing changed: no write');
   assert.equal(M.recordLate({ db, pkg: 'p', version: '1.0.0', latest: after, rows: [{ ...rows[1], result: 'SKIP', detail: 'not checked: x' }] }), 'wrote');
   assert.equal(writes[1].rows.filter((r) => r.gate === rows[1].gate).length, 1, 'a row replaces its gate\'s earlier row');
