@@ -1,9 +1,8 @@
 > **Research prototype, not production-ready.**
 > A change in a package's metadata is a reason to look, not proof of malicious intent. What exists
 > today: a local proxy, a CLI, a witness store, the rules of policy `cft-policy-1.2` (facts that block,
-> named rules that warn, contributing signals shown as detail), seed verification (legacy seeds are
-> signed; the current v3 seed is unsigned and reported as unsigned) and ALLOW / WARN / BLOCK
-> enforcement, with a passing test suite. [What's built today](#whats-built-today) lists what runs;
+> named rules that warn, contributing signals shown as detail), signed seeds verified against a key
+> built into the runtime, and ALLOW / WARN / BLOCK enforcement, with a passing test suite. [What's built today](#whats-built-today) lists what runs;
 > [What's next](#whats-next) lists what does not exist yet.
 
 # ChainGate
@@ -138,9 +137,8 @@ Some named rows are checked when npm downloads the tarball:
 - **MC** reads the tarball while it streams to npm. It reads the archive as npm's extractor (node-tar) does, and
   compares every entry npm writes as the root `package.json`: on Linux checked against npm 10.9.7's and 11.19.0's own
   extractor, on macOS and Windows emulated, with names those systems may also map to that file compared on their own.
-  An archive that npm 10 and npm 11 would read differently is "not checked". The download that reveals a
-  mismatch carries no notice, and npm
-  caches it. `chaingate report` lists the mismatch at once. A later download that reaches ChainGate carries the notice,
+  An archive that npm 10 and npm 11 would read differently is "not checked". The download that reveals a mismatch
+  carries no notice, and npm caches it. `chaingate report` lists the mismatch at once. A later download that reaches ChainGate carries the notice,
   but npm installs a tarball it already holds from its own cache without asking ChainGate, so this machine may never
   print it.
 
@@ -255,7 +253,7 @@ whose stored baseline is no longer available.
 - an upstream other than `registry.npmjs.org` may give tarball URLs on its own host, which npm then fetches directly.
 
 **Protected CI workflow (tested):**
-1. Start the proxy with your seed (`chaingate init --seed …`).
+1. Start the proxy with your seed (`chaingate init --seed <folder>/chaingate-seed-v3.db`).
 2. Set `registry` to the proxy, and keep npm's default `replace-registry-host`.
 3. Keep lockfile `resolved` URLs on `registry.npmjs.org`.
 4. Run `npm ci --cache "$(mktemp -d)"`.
@@ -310,8 +308,8 @@ packages. Treat them as a pilot measurement, not an estimate for npm as a whole:
 
 ## Quick Start
 
-You need no account or subscription. The seed is verified locally, so these steps do not download a
-seed.
+You need no account or subscription. You download the detection seed yourself once (below), and
+ChainGate verifies it locally.
 
 Install from npm. ChainGate supports Node.js 22 and 24, the two major versions `package.json`
 declares. The command is `chaingate` either way:
@@ -356,10 +354,12 @@ cd "$(npm root -g)/@cgsec/chaingate" && npm rebuild better-sqlite3 --ignore-scri
 `package.json` applies only when developing ChainGate itself and grants nothing in your project. Do
 not enable every dependency's scripts to fix this.
 
-**Tested platforms.** The table below is the qualification of 0.1.3. 0.1.4 has so far been tested on Linux x64 with Node.js 22.22.2
-(the full test suite and a parity run on a real seed). The other rows have not yet been repeated for 0.1.4. Anything not
-listed is untested and not supported. On each row the SQLite module installed from its official prebuilt binary, with
-no Python or compiler.
+**Tested platforms.** 0.1.4 ran its full test suite on Linux x64 with Node.js 22.22.2. CI on the release commit passed
+all 36 jobs: unit tests and install acceptance on Linux x64 (Ubuntu 24.04), macOS 15 on arm64 and x64, and Windows
+Server 2022, each on Node.js 22 and 24 with npm bundled and latest, plus small-filesystem (disk-full) checks and a
+reduced measurement on Linux and macOS arm64. The table below is the fuller qualification of 0.1.3; its rows that are
+not CI were not repeated in the same form for 0.1.4. Anything not listed is untested and not supported. On each row the
+SQLite module installed from its official prebuilt binary, with no Python or compiler.
 
 | OS | Architecture | Node.js | npm | How it was tested |
 |----|--------------|---------|-----|-------------------|
@@ -384,7 +384,7 @@ Not tested on Windows:
   `npm.cmd install -g @cgsec/chaingate --allow-scripts=better-sqlite3`. To approve it once for all
   your global installs: `npm.cmd config set allow-scripts=better-sqlite3 --location=user`.
 - Start ChainGate with your v3 seed:
-  `chaingate.cmd init --seed C:\path\to\chaingate-seed.db --unsigned-development`. On a new install,
+  `chaingate.cmd init --seed C:\path\to\chaingate-seed-v3.db`. On a new install,
   `init` without `--seed` downloads the older legacy witness seed instead (see below).
 - [SEEDS.md](SEEDS.md) shows how to check a seed file's SHA-256 in PowerShell.
 
@@ -396,11 +396,15 @@ cd chaingate && npm install
 npm test
 ```
 
-**You supply the v3 detection seed.** It is a local file, about 1.9 GB for the full corpus. **It is
-not downloaded automatically, and no v3 seed has been published yet.** Pass it with `--seed`. The
-current release candidate seed is **unsigned**, so it also needs `--unsigned-development`, and the
-tool reports `authenticated: false`. [SEEDS.md](SEEDS.md) lists each v3 seed's exact identifiers and
-how to verify a download. [SECURITY.md](SECURITY.md) describes the trust model.
+**You download the v3 detection seed yourself.** It is published as the signed GitHub pre-release
+[seed-v3.1-full](https://github.com/r-bedekar/chaingate/releases/tag/seed-v3.1-full). Download its
+`chaingate-seed-v3.db`, `.sha256` and `.sig` assets into one folder (the database is about 2 GB) and pass
+the database with `--seed`. **ChainGate does not download it for you.** Before it uses the seed, ChainGate
+checks it against the `.sha256` file and verifies the signature against the key built into the runtime.
+The release page lists the seed's exact identifiers and how to verify the download yourself.
+[SECURITY.md](SECURITY.md) describes the trust model. An unsigned seed, such as the v3.0-rc3 test
+seed described in [SEEDS.md](SEEDS.md), still needs `--unsigned-development`, and the tool then reports
+`authenticated: false`.
 
 Running `chaingate init` without `--seed` does **not** set up v3 detection. On a new install (no v3
 seed and no witness database yet) it downloads the older, signed legacy witness seed (about 100 MB)
@@ -410,9 +414,11 @@ detection, always pass `--seed`.
 **1. Initialize.** This installs the v3 seed, starts the proxy and points npm at it:
 
 ```console
-$ chaingate init --seed ./seed-v3/chaingate-seed.db --unsigned-development
-✓ v3 seed bundle bf5b8bf1ec68897e active
-  sha256 974c7d7ea2f24ef6...  snapshot d47e8679d6dd...  trust unsigned-development
+$ chaingate init --seed ./seed-v3.1/chaingate-seed-v3.db
+Verifying v3 seed signature...
+✓ v3 seed signature verified
+✓ v3 seed bundle <bundle id> active
+  sha256 a4c4e364de00653b...  snapshot <snapshot>...  trust authenticated (authenticated)
   policy on_unusable_input=BLOCK on_no_evidence=WARN
 ✓ .npmrc updated
 ```
@@ -446,9 +452,8 @@ manifest the adapter rejects), and the result names the advisory.
 
 - `chaingate why <pkg>@<ver> --packument <file>` evaluates the release, then explains the result.
 - `chaingate why --from <check.json>` explains a saved `check --json` result without evaluating again.
-- `chaingate why <pkg>@<ver> --cached` shows an old stored decision, labelled `CACHED — UNBOUND`
-  because it records no seed, rule or policy identity, and exits with code 4.
-
+- `chaingate why <pkg>@<ver> --cached` shows an old stored decision, labelled cached and unbound
+  (`CACHED-UNBOUND` in `--json`) because it records no seed, rule or policy identity, and exits with code 4.
 - `chaingate why <pkg>@<ver>` with no mode (the form ChainGate's npm notices print) is the same as `--cached`: the
   proxy's recorded decision, including the install-introduced, N1h and MC rows that `--packument` (seed only, like
   `check`) does not evaluate.
@@ -484,7 +489,8 @@ not running, for example after a restart, npm cannot install anything until you 
 restores `.npmrc`.
 
 **Updating the seed.** Switch to another v3 seed you have with
-`chaingate update-seed --seed <bundle>/chaingate-seed.db [--unsigned-development]`, and go back to the
+`chaingate update-seed --seed <folder>/chaingate-seed-v3.db` (add `--unsigned-development` only for an
+unsigned seed), and go back to the
 previous one with `chaingate update-seed --rollback`. A running proxy keeps its current seed until
 you restart it with `chaingate stop && chaingate init`. On a host that uses a v3 seed,
 `chaingate update-seed` without `--seed` **refuses**, because v3 seeds cannot be downloaded
@@ -520,10 +526,10 @@ non-regular file in their place is refused.
 There are two kinds of seed.
 
 - **v3 detection seed**, installed by `init --seed` or `update-seed --seed`. It is built from public
-  registry metadata on the maintainer's private collection servers. **You supply it locally. It is
-  not downloaded automatically, and none has been published yet.** It is opened read-only and checked
-  against its `.sha256` file. It counts as authenticated only when a signature verifies against the
-  built-in key (see SECURITY.md).
+  registry metadata on the maintainer's private collection servers and published as signed GitHub
+  releases (`seed-v3.*`), starting with `seed-v3.1-full`. **You download it yourself; it is not
+  downloaded automatically.** It is opened read-only and checked against its `.sha256` file. It counts
+  as authenticated only when its signature verifies against the built-in key (see SECURITY.md).
 - **Legacy witness seed**, published as `seed-v2.x` GitHub releases. On a new install, `chaingate init`
   without `--seed` downloads this signed seed for the older witness store. It does **not** set up v3
   detection, and `init` says so.
@@ -582,7 +588,7 @@ None of this comes from live registry traffic.
 | **Event-stream 3.3.6** | BLOCK at 3.3.5 for an abrupt handover to a new publisher (right9ctrl), carried to 3.3.6 because the same publisher released it | not tested under 1.2; a publisher change is contributing |
 | **Shai-Hulud** | Publisher identity change across 500+ packages (fixture-verified) | the fixture models only the publisher change: ALLOW, recorded as contributing |
 | **Ua-parser-js** | New unverified domain after established baseline (fixture-verified) | not tested under 1.2 |
-| **Tarball replaced after publication** (trivy-shaped fixture) | — | BLOCK (content hash) |
+| **Tarball replaced after publication** (trivy-shaped fixture) | n/a | BLOCK (content hash) |
 
 **Limitation.** Under `cft-policy-1.2` a release warns only on a named rule. A takeover that changes the publisher,
 the provenance, the dependencies or the code, but adds no install script, no dependency that runs one and no
