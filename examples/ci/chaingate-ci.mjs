@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// chaingate-ci — one offline CI consumer of `chaingate.check/3` results (0.1.4) and of historical
+// chaingate-ci — one offline CI consumer of `chaingate.check/3` results (0.1.4), `/4` (0.1.5: /3 plus the optional tarball member) and of historical
 // `chaingate.check/2` (0.1.3) and `chaingate.check/1` results (0.1.2 and earlier). Node standard library only.
 //
 //   node chaingate-ci.mjs --expected <manifest> --results <dir> --trusted-seed <sha256> [...]
@@ -54,6 +54,10 @@ const COMBINATIONS = {
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
   'chaingate.check/3': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
+    detection_contract_version: 'cft-detection-contract-1.0',
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
+  // chaingate.check/4 (0.1.5): /3 plus an OPTIONAL `tarball` member written by `chaingate check --tarball`; the SAME combination
+  'chaingate.check/4': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
 };
@@ -180,6 +184,15 @@ const SPEC = {
   override: { reason: T.str, created_at: T.nstr, scope: expect(T.constant('exact-version'), '"exact-version"') },
   explanation: { text: expect((v) => T.strArray(v) && v.length > 0, 'a non-empty array of strings'), structured: T.obj },
   error: { code: expect((v) => typeof v === 'string' && /^[a-z][a-z_]*$/.test(v), 'a lower_snake_case string'), message: T.str },
+  // chaingate.check/4: the tarball member of `chaingate check --tarball` (0.1.5). Its rows are result_row_3 rows; its disposition is
+  // over those rows alone and never the record's effective action.
+  tarball: { source: T.obj, static_checks_version: T.nonEmpty, walk: T.obj, keep_list: T.obj,
+    rows: expect((v) => Array.isArray(v) && v.length > 0, 'a non-empty array'), disposition: expect(T.oneOf(['ALLOW', 'WARN', 'SKIP']), 'ALLOW|WARN|SKIP') },
+  tarball_source: { kind: expect(T.constant('tarball-file'), '"tarball-file"'), path: T.nonEmpty, sha256: T.hex64,
+    bytes: expect((v) => Number.isInteger(v) && v >= 0, 'an integer >= 0') },
+  tarball_walk: { ok: T.bool, reason: T.str },
+  tarball_keep_list: { source: expect(T.oneOf(['registry manifest', 'tarball package.json']), 'registry manifest|tarball package.json'),
+    candidates: expect((v) => Number.isInteger(v) && v >= 0, 'an integer >= 0') },
 };
 
 /** Structural validation of one record. Returns a list of problems (empty = valid). */
@@ -196,8 +209,10 @@ export function validateRecord(rec) {
     return [`result is ${JSON.stringify(rec.result)}, expected one of ${Object.keys(SHAPES).join('|')}`];
   }
   const allowed = SHAPES[rec.result];
+  // /4: an evaluated or refused record MAY carry `tarball` (chaingate check --tarball); it is never required, never on a tool error
+  const optionalTop = rec.schema === 'chaingate.check/4' && rec.result !== 'tool_error' ? ['tarball'] : [];
   for (const k of allowed) if (!has(rec, k)) p.push(`missing member ${k} for result ${rec.result}`);
-  for (const k of Object.keys(rec)) if (!allowed.includes(k)) p.push(`member ${k} is not allowed for result ${rec.result}`);
+  for (const k of Object.keys(rec)) if (!allowed.includes(k) && !optionalTop.includes(k)) p.push(`member ${k} is not allowed for result ${rec.result}`);
   if (p.length) return p;
 
   checkObject('tool', rec.tool, SPEC.tool, p);
@@ -212,7 +227,7 @@ export function validateRecord(rec) {
   checkObject('seed', rec.seed, SPEC.seed, p);
   const d = rec.decision;
   if (checkObject('decision', d, SPEC.decision, p)) {
-    const rowSpec = rec.schema === 'chaingate.check/3' ? SPEC.result_row_3 : SPEC.result_row;
+    const rowSpec = rec.schema === 'chaingate.check/3' || rec.schema === 'chaingate.check/4' ? SPEC.result_row_3 : SPEC.result_row;
     if (Array.isArray(d.results)) d.results.forEach((r, i) => checkObject(`decision.results[${i}]`, r, rowSpec, p));
     if (Array.isArray(d.not_evaluated)) {
       d.not_evaluated.forEach((m, i) => checkObject(`decision.not_evaluated[${i}]`, m, SPEC.not_evaluated_row, p,
@@ -231,6 +246,13 @@ export function validateRecord(rec) {
     }
   }
   checkObject('explanation', rec.explanation, SPEC.explanation, p);
+  if (has(rec, 'tarball') && checkObject('tarball', rec.tarball, SPEC.tarball, p)) {            // /4 only (the member check above)
+    const t = rec.tarball;
+    checkObject('tarball.source', t.source, SPEC.tarball_source, p);
+    checkObject('tarball.walk', t.walk, SPEC.tarball_walk, p, { optional: ['reason'] });
+    checkObject('tarball.keep_list', t.keep_list, SPEC.tarball_keep_list, p);
+    if (Array.isArray(t.rows)) t.rows.forEach((r, i) => checkObject(`tarball.rows[${i}]`, r, SPEC.result_row_3, p));
+  }
 
   if (rec.result === 'evaluated') {
     if (checkObject('candidate', rec.candidate, SPEC.candidate, p) && isObj(rec.candidate.placement)) {
@@ -271,7 +293,7 @@ function combinationProblems(rec) {
   if (rec.result === 'refused') {
     if (rec.schema === 'chaingate.check/1' && has(s, 'decided_by')) {
       p.push('explanation.structured.decided_by is not a member of a chaingate.check/1 refused explanation');
-    } else if (rec.schema === 'chaingate.check/2' || rec.schema === 'chaingate.check/3') {
+    } else if (rec.schema === 'chaingate.check/2' || rec.schema === 'chaingate.check/3' || rec.schema === 'chaingate.check/4') {
       const deciding = rec.decision.results.filter((x) => x.result === rec.decision.disposition)
         .map((x) => JSON.stringify([x.gate, x.detail]));
       if (!Array.isArray(s.decided_by)) p.push(`explanation.structured.decided_by is missing (required in ${rec.schema})`);

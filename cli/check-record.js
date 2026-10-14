@@ -33,6 +33,10 @@ export const SUPPORTED_RECORDS = Object.freeze({
   'chaingate.check/3': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
+  // 0.1.5 static checks step 5: /4 = /3 plus the optional `tarball` member of `chaingate check --tarball`; the SAME combination
+  'chaingate.check/4': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
+    detection_contract_version: 'cft-detection-contract-1.0',
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
 });
 export const CHECK_SCHEMA_IDS = Object.freeze(Object.keys(SUPPORTED_RECORDS));
 
@@ -71,7 +75,7 @@ export function recordCompatibility(rec) {
     if (rec.schema === 'chaingate.check/1' && has) {
       p.push('explanation.structured.decided_by is not a member of a chaingate.check/1 refused explanation');
     }
-    if (rec.schema === 'chaingate.check/2' || rec.schema === 'chaingate.check/3') {
+    if (rec.schema === 'chaingate.check/2' || rec.schema === 'chaingate.check/3' || rec.schema === 'chaingate.check/4') {
       const deciding = (Array.isArray(d.results) ? d.results : []).filter((x) => x && x.result === d.disposition)
         .map((x) => ({ gate: x.gate, detail: x.detail }));
       if (!has || !Array.isArray(s.decided_by)) p.push('explanation.structured.decided_by is missing');
@@ -205,6 +209,15 @@ export function buildCheckRecord({ seed, bundleId = null, policy, domainVersionC
   };
   rec.effective = effectiveFrom(decision.disposition, override);
   rec.explanation = explain(rec);
+  return rec;
+}
+
+/** 0.1.5 (step 5): the `tarball` member of `chaingate check --tarball` makes the record a /4; decision and effective stay as evaluated. */
+export const CHECK_SCHEMA_ID_TARBALL = 'chaingate.check/4';
+export function withTarball(rec, tarball) {
+  if (!rec || rec.result === RESULT.TOOL_ERROR) return rec;
+  rec.schema = CHECK_SCHEMA_ID_TARBALL;
+  rec.tarball = tarball;
   return rec;
 }
 
