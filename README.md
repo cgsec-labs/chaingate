@@ -124,7 +124,8 @@ those checks can make a warning:
     and `optionalDependencies` is judged on its `dependencies` entry, and re-pointing an existing name is not "added";
   - **MC**: the tarball's `package.json` declares install scripts that differ from its registry entry.
 - **Contributing rows are detail.** These are publisher change, new dependency, provenance dropped, release age, scope
-  boundary, size jump of 2x or more, npm-version downgrade, and the seed contract's loose rule. They are listed in
+  boundary, size jump of 2x or more, npm-version downgrade, the seed contract's loose rule, and the five tarball static
+  checks (below). They are listed in
   `chaingate why <pkg>@<ver>` (the recorded decision) and in `chaingate report --json`, and they never make a warning on
   their own.
 
@@ -142,6 +143,27 @@ Some named rows are checked when npm downloads the tarball:
   caches it. `chaingate report` lists the mismatch at once. A later download that reaches ChainGate carries the notice,
   but npm installs a tarball it already holds from its own cache without asking ChainGate, so this machine may never
   print it.
+
+**Tarball checks (0.1.5).** On a download whose version already carries a named WARN row, the identity-break note, or the
+seed's coverage warning (nothing in the finding could be evaluated: a package the seed has never seen), the same walk also
+keeps the bodies of the files the registry manifest points npm at -- the install-hook targets, `main`, up to 4 `bin`
+targets; at most 6 files of 1 MiB each -- and runs five checks over them, each a conjunction of two facts about one file:
+- **S0** an install-hook command carries a fetch (curl, wget, Invoke-WebRequest, certutil -urlcache, bitsadmin) and an
+  execute or decode (a pipe into a shell or interpreter, powershell -enc, base64 -d, eval, iex);
+- **S1** a hook target under 8 KiB carries a network sink and an execution sink (a loader);
+- **S2** an entry file carries 20 or more `_0x…` identifiers and a decode marker (eval, Function, atob, a long
+  String.fromCharCode run, or hex escapes over 15 % of the file);
+- **S3** a file carries a credential source (.npmrc, ssh keys, cloud credentials, token variables, a process.env dump) and
+  an outbound sink to a host that is not the registry (a known exfiltration host class, a raw IP, or a POST to a literal host);
+- **S4** an entry file overrides `XMLHttpRequest.prototype.send`, `window.fetch` or `window.ethereum.request` and carries
+  two or more cryptocurrency-address regexes.
+All five are contributing rows (`static:S0-shell-fetch-in-hook` … `static:S4-wallet-swap-hook`): recorded as notes, shown
+in `chaingate why` and `chaingate report --json`, never a warning on their own until a measured base rate and an operator
+ruling name one. A row names the markers that matched, the file and its size -- never the file's content. The marker
+lists are constants under the version `static-checks-1.0`, the same lists the operator's recon tool runs. A download the
+rule did not arm records "not armed"; a file that is binary, over the cap, absent, or named only by the tarball's own
+`package.json` is "not checked" and says so. A tarball whose download was armed is examined once: the outcome rides every
+later record of that version.
 
 A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaingate why <pkg>@<ver>`). npm does not print
 it. The report counts a release as checked when another named rule (install-introduced or the seed's strict tier) gave

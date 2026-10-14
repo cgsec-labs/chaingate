@@ -20,6 +20,7 @@
 import { posix } from 'node:path';
 import { pyTruthy } from '../seed/v3/packument.js';
 import { DEFAULTS as WALK } from './tar-walk.js';
+import { classify } from '../witness/row-class.js';
 
 export const STATIC_CHECKS_VERSION = 'static-checks-1.0';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -32,6 +33,8 @@ export const CHECKS = Object.freeze([
   { id: 'S4', gate: 'static:S4-wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
 ]);
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
+/** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
+export const MAX_ARMED_WALKS = 4;
 const INSTALL_HOOKS = ['preinstall', 'install', 'postinstall'];
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const names = (list, s) => list.filter(([, re]) => re.test(s)).map(([n]) => n);
@@ -151,33 +154,34 @@ const variants = (n, node) => (node ? [n, `${n}.js`, `${n}.cjs`, `${n}.mjs`, `${
  * (<= 3 hook targets x 5 variants + 5 main variants + 4 bin); never throws on a hostile manifest.
  */
 export function keepListFor(man, source = 'registry manifest') {
-  const roles = {}; const paths = []; const dropped = []; const hooks = [];
+  const roles = {}; const paths = []; const dropped = []; const hooks = []; const targets = [];
   const add = (p, role) => { if (!roles[p]) { roles[p] = []; paths.push(p); } if (!roles[p].includes(role)) roles[p].push(role); };
+  const addTarget = (p, node, role) => { const vs = variants(p, node); for (const v of vs) add(v, role); targets.push({ path: p, variants: vs, role }); };
   const scripts = isObj(man) && isObj(man.scripts) ? man.scripts : {};
   let n = 0;
   for (const hook of INSTALL_HOOKS) {
     const cmd = scripts[hook]; if (typeof cmd !== 'string' || !pyTruthy(cmd)) continue;
-    const g = hookTargets(cmd); const targets = [];
+    const g = hookTargets(cmd); const hookPaths = [];
     for (const r of g.dropped) dropped.push({ hook, reason: r });
     for (const t of g.targets) {
       if (t.cwdUnknown || t.path === null) { dropped.push({ hook, path: shownName(t.raw), reason: 'working directory unknown after an earlier segment' }); continue; }
       const p = norm(t.path); if (outside(p)) { dropped.push({ hook, path: shownName(t.raw), reason: 'target outside the package' }); continue; }
       if (n >= LIMITS.maxHookTargets) { dropped.push({ hook, path: shownName(p), reason: `hook targets beyond ${LIMITS.maxHookTargets}` }); continue; }
-      n += 1; targets.push(p); for (const v of variants(p, t.node)) add(v, 'hook');
+      n += 1; hookPaths.push(p); addTarget(p, t.node, 'hook');
     }
-    hooks.push({ hook, cmd, targets });
+    hooks.push({ hook, cmd, targets: hookPaths });
   }
   const main = isObj(man) && typeof man.main === 'string' && !outside(norm(man.main)) ? norm(man.main) : 'index.js';
-  for (const v of variants(main, true)) add(v, 'main');
+  addTarget(main, true, 'main');
   const bin = isObj(man) ? man.bin : undefined;
   const bins = typeof bin === 'string' ? [bin] : isObj(bin) ? Object.values(bin).filter((v) => typeof v === 'string') : [];
   let nb = 0;
   for (const b of bins) {
     const p = norm(b); if (outside(p)) { dropped.push({ path: shownName(b), reason: 'bin target outside the package' }); continue; }
     if (nb >= LIMITS.maxBin) { dropped.push({ path: shownName(p), reason: `bin targets beyond ${LIMITS.maxBin}` }); continue; }
-    nb += 1; add(p, 'bin');
+    nb += 1; addTarget(p, false, 'bin');
   }
-  return { source, version: STATIC_CHECKS_VERSION, paths, roles, hooks, dropped };
+  return { source, version: STATIC_CHECKS_VERSION, paths, roles, hooks, targets, dropped };
 }
 
 // ---- per-file facts: counts and marker names only ----
@@ -213,12 +217,17 @@ const list = (xs) => xs.join(', ');
  * `packageJson`: the tarball's root package.json, parsed (Linux view), or null; `walk`: the walker result (step 1: `files`, `notKept`).
  * Every row is { gate, result, detail }; the detail never carries publisher text beyond a sanitised path and fixed hook names.
  */
-export function staticRows({ manifest, packageJson = null, walk }) {
-  const row = (c, result, detail) => ({ gate: c.gate, result, detail: clipDetail(detail) });
+export function staticRows({ manifest, packageJson = null, walk, armed = null }) {
+  const suffix = typeof armed === 'string' && armed ? `; armed by ${armed}` : '';
+  const row = (c, result, detail) => ({ gate: c.gate, result, detail: clipDetail(`${detail}${suffix}`) });
   if (!walk || !walk.ok) return CHECKS.map((c) => row(c, 'SKIP', `not checked: ${walk?.reason ?? 'the tarball was not walked'}`));
   if (!Array.isArray(walk.files)) return CHECKS.map((c) => row(c, 'SKIP', 'not checked: the tarball was not examined (keep list not armed)'));
-  const roles = { ...keepListFor(packageJson, 'tarball package.json').roles };
-  for (const [p, r] of Object.entries(keepListFor(manifest).roles)) roles[p] = [...new Set([...(roles[p] ?? []), ...r])];
+  const klReg = keepListFor(manifest); const klTar = keepListFor(packageJson, 'tarball package.json');
+  const roles = { ...klTar.roles };
+  for (const [p, r] of Object.entries(klReg.roles)) roles[p] = [...new Set([...(roles[p] ?? []), ...r])];
+  const primaryOf = {}; for (const t of [...klReg.targets, ...klTar.targets]) for (const v of t.variants) primaryOf[v] ??= t.path;
+  const keptPaths = new Set(walk.files.map((f) => f.path));
+  const keptPrimary = new Set([...keptPaths].map((p) => primaryOf[p] ?? p));
   const rows = [];
   // S0: the hook commands -- the registry manifest's, and those only the tarball package.json declares (MC says they differ)
   const reg = hookDictOf(manifest); const tar = hookDictOf(packageJson);
@@ -229,10 +238,20 @@ export function staticRows({ manifest, packageJson = null, walk }) {
   else rows.push(row(CHECKS[0], 'ALLOW', hooks.length ? 'install hooks carry no fetch-and-execute' : 'no install hook'));
   // S1-S4: the kept bodies by role
   const facts = walk.files.map((f) => ({ f, facts: fileFacts(f), roles: roles[f.path] ?? [], shown: shownName(f.path), plats: Array.isArray(f.platformsNotChecked) ? f.platformsNotChecked : [] }));
-  const notKept = (Array.isArray(walk.notKept) ? walk.notKept : []).filter((x) => x && typeof x.path === 'string' && roles[x.path]);
+  // what the walker did not keep, ONE statement per target (its node-resolution variants are the same target; a kept variant settles it);
+  // a target only the tarball package.json names was never on the keep list: stated as such, never guessed
+  const notKept = []; const stated = new Set();
+  for (const x of Array.isArray(walk.notKept) ? walk.notKept : []) {
+    if (!x || typeof x.path !== 'string' || !roles[x.path]) continue;
+    const prim = primaryOf[x.path] ?? x.path;
+    if (keptPrimary.has(prim) || stated.has(prim)) continue;
+    if (/^not in the archive/.test(String(x.reason)) && x.path !== prim) continue;        // an absent variant is not news; the primary says it
+    stated.add(prim); notKept.push({ path: prim, reason: x.reason });
+  }
+  for (const t of klTar.targets) if (!klReg.roles[t.path] && !keptPrimary.has(t.path) && !stated.has(t.path)) { stated.add(t.path); notKept.push({ path: t.path, reason: 'named by the tarball package.json only (not kept)' }); }
   for (const c of CHECKS.slice(1)) {
     const mine = facts.filter((x) => c.roles.some((r) => x.roles.includes(r)));
-    const skipped = notKept.filter((x) => c.roles.some((r) => roles[x.path].includes(r))).map((x) => `${shownName(x.path)} ${x.reason}`);
+    const skipped = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r))).map((x) => `${shownName(x.path)} ${x.reason}`);
     const hits = []; const platsRead = new Set(); let read = 0;
     for (const x of mine) {
       const F = x.facts;
@@ -253,4 +272,31 @@ export function staticRows({ manifest, packageJson = null, walk }) {
   return rows;
 }
 
-export default { STATIC_CHECKS_VERSION, LIMITS, CHECKS, STATIC_GATES, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName };
+// ---- the trigger (operator ruling 2026-10-13, design note §3) and the retry rule ----
+/**
+ * Why a download's keep-list walk is armed, from the version's recorded rows: a NAMED WARN row (the runner's named gates, or a seed-v3
+ * named row), the identity-break NOTE, or the seed's coverage WARN (nothing in the finding was evaluated: the brand-new-package case).
+ * Any other contributing row, or nothing, returns null. Pure; never throws on a malformed list.
+ */
+export function armedBy(results) {
+  let cls; try { cls = classify(results); } catch { return null; }
+  if (cls.named.length) return `named row${cls.named.length > 1 ? 's' : ''} ${cls.named.join(', ')}`;
+  if (cls.contributing.includes('identity-break')) return 'identity-break';
+  if (cls.coverage.includes('seed-v3:coverage')) return 'seed coverage WARN (nothing in the finding was evaluated)';
+  return null;
+}
+const RETRY_PREFIXES = ['not checked: not armed', 'not checked: no registry manifest at hand'];
+/** The five rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
+export const unarmedRows = (why) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: not armed (${why})`) }));
+/** The five rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
+export const noManifestRows = (armed) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: no registry manifest at hand; armed by ${armed}`) }));
+/** Whether the record's static rows are FINAL: all five present and none a retryable "not checked". A walked outcome, WARN, ALLOW or a
+ *  SKIP for the tarball's own shape, is final: tarballs are immutable per version. */
+export function staticSettled(latest) {
+  const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
+  const mine = STATIC_GATES.map((g) => rows.find((r) => r && r.gate === g));
+  if (mine.some((r) => !r)) return false;
+  return mine.every((r) => typeof r.detail === 'string' && !RETRY_PREFIXES.some((p) => r.detail.startsWith(p)));
+}
+
+export default { STATIC_CHECKS_VERSION, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };

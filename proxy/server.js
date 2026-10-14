@@ -34,7 +34,15 @@ import { judgeAtTarball } from './dependency-judge.js';
 import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cache.js';
 // 0.1.4 group 3c (D-M2..D-M4): MC while the tarball streams
 import { createTarWalker } from './tar-walk.js';
-import { rememberManifestHooks, manifestHooksFor, mcRow, recordMc, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
+import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
+import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS } from './static-checks.js';
+import { withRole } from '../gates/row-class.js';
+/** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
+function parsedPackageJson(walk) {
+  if (!walk?.ok || !walk.packageJson) return null;
+  try { const pj = JSON.parse(walk.packageJson.toString('utf8').replace(/^\uFEFF/, '')); return pj !== null && typeof pj === 'object' && !Array.isArray(pj) ? pj : null; } catch { return null; }
+}
+let armedWalks = 0;                                        // 0.1.5: armed keep-list walks in flight (process-wide ceiling MAX_ARMED_WALKS)
 // 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
@@ -984,7 +992,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           let final = true;
           try {
             const app = witnessDb.getApplicableDecision(canonicalName, version, { overrideLive: false });
-            final = Boolean(app.block) || mcDeterminate(app.latest)
+            // 0.1.5 static checks: a version whose armed static walk is still due needs the manifest too (the keep list's source)
+            final = Boolean(app.block) || (mcDeterminate(app.latest) && !(armedBy(app.latest?.gates_fired) && !staticSettled(app.latest)))
               || Boolean(pinSet && withheldBy(pinSet.forPackage(canonicalName), canonicalName, version));
           } catch { final = true; }
           if (!final) {
@@ -1094,17 +1103,42 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         const current = state.applicable?.latest?.gates_fired?.some?.((g) => g && g.gate === 'install-introduced');
         const walkLatest = upstream.statusCode === 200 && state.tarballVersion != null && !state.override && witnessDb
           && current && !(state.c1 && !state.c1.ok) ? state.applicable.latest : null;
-        const walker = walkLatest && !mcDeterminate(walkLatest) ? createTarWalker() : null;
-        await streamUpstream(res, upstream, upstream.statusCode,
-          notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null, walker ? (c) => walker.write(c) : null);
+        // 0.1.5 static checks (step 3; ruling 2026-10-13): the keep list is ARMED by a named WARN row, the identity-break NOTE or the
+        // seed's coverage WARN, from the registry manifest remembered with the hook map; a settled static outcome is never walked for
+        // again (tarballs are immutable per version), a "not armed" / "no manifest" / ceiling outcome is retried when a later download
+        // is armed. The walk stays on a copy of the stream; the download is never held.
+        const armed = walkLatest ? armedBy(walkLatest.gates_fired) : null;
+        const staticDue = Boolean(walkLatest && armed && !staticSettled(walkLatest));
+        let keepOpts = {}; let staticWhy = null; let armedSlot = false; let staticManifest;
+        if (walkLatest && (!mcDeterminate(walkLatest) || staticDue) && armed) {
+          staticManifest = manifestEntryFor(canonicalName, state.tarballVersion);
+          if (staticManifest === undefined) staticWhy = 'no-manifest';
+          else if (armedWalks >= MAX_ARMED_WALKS) staticWhy = 'ceiling';
+          else { armedWalks += 1; armedSlot = true; staticWhy = 'armed'; keepOpts = { keep: keepListFor(staticManifest).paths }; }
+        }
+        const walker = walkLatest && (!mcDeterminate(walkLatest) || staticDue) ? createTarWalker(keepOpts) : null;
+        try {
+          await streamUpstream(res, upstream, upstream.statusCode,
+            notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null, walker ? (c) => walker.write(c) : null);
+        } catch (err) {
+          if (armedSlot) { armedWalks -= 1; armedSlot = false; }            // the slot is freed on every exit, or the ceiling would stick
+          throw err;
+        }
         if (walker) {
           const walk = await walker.end();
+          if (armedSlot) { armedWalks -= 1; armedSlot = false; }
           // an aborted download is not recorded: it is walked again next time
           if (res.writableFinished) {
             try {
               const row = mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion));
-              const outcome = recordMc({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, row });
-              if (outcome === 'wrote' && row.result === 'WARN') {
+              const prevMc = walkLatest.gates_fired?.find?.((g) => g && g.gate === MC_GATE);
+              const mcChanged = !(prevMc && prevMc.result === row.result && prevMc.detail === row.detail);
+              const sRows = (staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed })
+                : staticWhy === 'no-manifest' ? noManifestRows(armed)
+                  : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
+                    : unarmedRows('no named row, no identity-break, no coverage gap')).map(withRole);
+              const outcome = recordLate({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, rows: [row, ...sRows] });
+              if (outcome === 'wrote' && row.result === 'WARN' && mcChanged) {
                 const now = witnessDb.getLatestDecision(canonicalName, state.tarballVersion);
                 const reason = decidingReason(now.gates_fired, 'WARN');
                 log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${MC_GATE} (${row.detail})`,

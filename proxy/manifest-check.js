@@ -28,13 +28,23 @@ const canonical = (x, d = 0) => {
 export const manifestMismatch = (th, mh) => canonical(th) !== canonical(mh);
 
 // ---- the registry manifests' hooks, per package, as last observed by this process (D-M3) ----
-const observed = new Map();               // package -> { versions: Set, hooked: Map(version -> dict) }; LRU order
+const observed = new Map();               // package -> { versions: Set, hooked: Map(version -> dict), entries: Map(version -> { main, bin }) }; LRU order
+const TEXT_CAP = 200;
+const cap = (s) => (typeof s === 'string' ? s.slice(0, TEXT_CAP) : null);
+/** 0.1.5 static checks: the manifest's main and bin, bounded (publisher text), kept beside the hooks for the keep list. */
+function entryOf(m) {
+  if (!isObj(m)) return null;
+  const main = cap(m.main);
+  const bin = typeof m.bin === 'string' ? cap(m.bin)
+    : isObj(m.bin) ? Object.fromEntries(Object.entries(m.bin).filter(([, v]) => typeof v === 'string').slice(0, 4).map(([k, v]) => [cap(k), cap(v)])) : null;
+  return main !== null || bin !== null ? { main, bin } : null;
+}
 export function rememberManifestHooks(pkg, versions) {
   if (!isObj(versions)) return;
-  const hooked = new Map();
-  for (const [v, m] of Object.entries(versions)) { const d = hookDict(m); if (Object.keys(d).length) hooked.set(v, d); }
+  const hooked = new Map(); const entries = new Map();
+  for (const [v, m] of Object.entries(versions)) { const d = hookDict(m); if (Object.keys(d).length) hooked.set(v, d); const e = entryOf(m); if (e) entries.set(v, e); }
   observed.delete(pkg);
-  observed.set(pkg, { versions: new Set(Object.keys(versions)), hooked });
+  observed.set(pkg, { versions: new Set(Object.keys(versions)), hooked, entries });
   while (observed.size > MAX_PACKAGES) observed.delete(observed.keys().next().value);
 }
 /** The registry manifest's hook dict for pkg@version, or undefined when not at hand. */
@@ -43,6 +53,14 @@ export function manifestHooksFor(pkg, version) {
   if (!e || !e.versions.has(version)) return undefined;
   observed.delete(pkg); observed.set(pkg, e);
   return e.hooked.get(version) ?? {};
+}
+/** 0.1.5: the registry manifest's { main, bin, scripts (install hooks) } for pkg@version -- the keep list's source -- or undefined when not at hand. */
+export function manifestEntryFor(pkg, version) {
+  const e = observed.get(pkg);
+  if (!e || !e.versions.has(version)) return undefined;
+  observed.delete(pkg); observed.set(pkg, e);
+  const x = e.entries.get(version);
+  return { main: x?.main ?? null, bin: x?.bin ?? null, scripts: e.hooked.get(version) ?? {} };
 }
 export function forgetManifestHooks() { observed.clear(); }
 
@@ -133,4 +151,4 @@ export const lateDeterminate = (latest, gate) => (Array.isArray(latest?.gates_fi
 /** Whether the stored row already holds a determinate MC outcome (tarballs are immutable per version: no second walk). */
 export const mcDeterminate = (latest) => lateDeterminate(latest, GATE);
 
-export default { hookDict, manifestMismatch, rememberManifestHooks, manifestHooksFor, forgetManifestHooks, mcRow, recordMc, recordLate, lateDeterminate, mcDeterminate, GATE };
+export default { hookDict, manifestMismatch, rememberManifestHooks, manifestHooksFor, manifestEntryFor, forgetManifestHooks, mcRow, recordMc, recordLate, lateDeterminate, mcDeterminate, GATE };

@@ -144,7 +144,7 @@ test('E1 armed by install-introduced: the first download records S1 as NOTE besi
     assert.equal(s1?.result, 'NOTE', JSON.stringify(rowsOf(proxy, 'q', '1.1.0')));
     assert.equal(s1.detail, 'hook target install.js (211 B) has a network sink (http-request, url-literal) and an execution sink (child_process); armed by named row install-introduced');
     assert.equal(srow(proxy, 'q', '1.1.0', 'S0').detail, 'install hooks carry no fetch-and-execute; armed by named row install-introduced');
-    assert.equal(srow(proxy, 'q', '1.1.0', 'S2').result, 'ALLOW');
+    assert.equal(srow(proxy, 'q', '1.1.0', 'S2').result, 'ALLOW', JSON.stringify(rowsOf(proxy, 'q', '1.1.0').filter((g) => g.gate.startsWith('static:'))));
     const mc = rowsOf(proxy, 'q', '1.1.0').find((g) => g.gate === 'install-manifest-mismatch'); assert.equal(mc.result, 'ALLOW');
     const latest = proxy.witnessDb.getLatestDecision('q', '1.1.0');
     assert.equal(latest.disposition, 'WARN', 'install-introduced, as before');
@@ -180,7 +180,7 @@ test('E3 MC\'s own WARN is a named row: it arms the NEXT download, which walks o
     assert.match(t2.headers['npm-notice'], /install scripts differ/, 'MC\'s notice on the second download, as before');
     assert.equal(proxy.witnessDb.getDecisionHistory('m', '1.1.0').length, n1 + 1, 'one more walk, armed by MC');
     const s1 = srow(proxy, 'm', '1.1.0', 'S1');
-    assert.equal(s1.result, 'SKIP'); assert.equal(s1.detail, 'not checked: s.js not in the archive; armed by named row install-manifest-mismatch');
+    assert.equal(s1.result, 'SKIP'); assert.equal(s1.detail, 'not checked: s.js named by the tarball package.json only (not kept); armed by named row install-manifest-mismatch');   // wording set after the failing-first record: the runtime has no inventory, so it states what it knows
     assert.equal(srow(proxy, 'm', '1.1.0', 'S2').detail, 'entry files carry no obfuscation marker pair (1 file read); armed by named row install-manifest-mismatch');
     assert.equal(rowsOf(proxy, 'm', '1.1.0').find((g) => g.gate === 'install-manifest-mismatch').result, 'WARN', 'MC\'s row rides along unchanged');
     const n2 = proxy.witnessDb.getDecisionHistory('m', '1.1.0').length;

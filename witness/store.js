@@ -273,6 +273,12 @@ export function createWitness({ db, runGates, config, logger }) {
             gateResults.push(mcPrev);
             if (mcPrev.result === 'WARN' && disposition !== 'BLOCK') disposition = 'WARN';
           }
+          // 0.1.5 static checks (step 3): the newest static:* rows -- a walked outcome, or "not armed" as stated -- ride into every
+          // re-evaluation too; the runner never produces them, and whether a later download walks again is decided there
+          // (proxy/static-checks.js staticSettled), never here. They are NOTE/SKIP/ALLOW: the disposition is untouched.
+          const isStatic = (g) => g && typeof g.gate === 'string' && g.gate.startsWith('static:');
+          const staticPrev = newestFirst.map((r) => r.gates_fired.filter(isStatic)).find((xs) => xs.length);
+          if (staticPrev && !isOverrideRow(gateResults) && !gateResults.some(isStatic)) gateResults.push(...staticPrev);
           if (n1h >= 0 && Array.isArray(gateResults[n1h].pending)) {
             // only a DETERMINATE judgement is kept (G3 dated note 3.4): a not-evaluable SKIP is retried, not carried
             // the newest non-override row that HAS an N1h row (rows without the gate, e.g. 0.1.3's, are skipped)
