@@ -6,6 +6,10 @@ ruling live in the private ops repository (chaingate-ops, branch `g10-c2-pin-adm
 `docs/operator-runbooks/pin-admission-1.1-handover-20261013.md` §11; the design note beside it under `docs/design/`).
 
 ## What this branch did (steps 1–3 of the design note §9, plus step 5's tests)
+- Group 1 (`425faf5`..`65b3b92`, before the static checks; operator ruling 2026-10-13, ops handover §7.2/§7.3): T1.4
+  `size-jump-provenance` is NAMED against a lineage predecessor (`gates/lineage-predecessor.js`, a port of the seed's FU-2 FINAL
+  rule) and T1.5 `identity-break` is CONTRIBUTING. It edited `seed/v3/policy.js` (NAMED_RUNNER_GATES gains
+  `size-jump-provenance`), `proxy/notice.js` (its label) and `gates/row-class.js`; the role pins were updated deliberately.
 - Step 1 (`proxy/tar-walk.js`): the walker's keep list — `createTarWalker({ keep })`, bodies up to 1 MiB each, at most 6, `files` and
   `notKept` in the walk result; the MC walk without `keep` is byte-for-byte 0.1.4's.
 - Step 2 (`proxy/static-checks.js`): S0–S4 as pure functions over `{ packageJson, files }`, closed-vocabulary rows,
@@ -14,7 +18,7 @@ ruling live in the private ops repository (chaingate-ops, branch `g10-c2-pin-adm
 - Step 3 (trigger and roles, `fb10b02`): the keep list is armed per the 2026-10-13 ruling (a named WARN row, `identity-break`, or the
   brand-new-package coverage case); `armed by` in the detail; the five `static:*` gates are CONTRIBUTING in `gates/row-class.js`;
   store carry-forward; README "Tarball checks (0.1.5)" section; CONTRIBUTING lists the five gates. `seed/v3/policy.js` and
-  `proxy/notice.js` untouched by design.
+  `proxy/notice.js` untouched by step 3, by design. (That applies to step 3 only: group 1, below, already edited both.)
 - Step 5 failing-first (`28882dd`): `test/cli/cft015-s5-check-tarball.test.js` for `chaingate check --tarball`; its implementation is
   the parked WIP (below).
 
