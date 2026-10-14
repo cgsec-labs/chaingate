@@ -103,6 +103,12 @@ function bytesWithin(u, ms) {
 }
 const settle = () => new Promise((r) => setTimeout(r, 250));
 const staticRowsOf = (proxy, pkg, v) => proxy.witnessDb.getLatestDecision(pkg, v).gates_fired.filter((g) => g.gate.startsWith('static:'));
+// the rows are written after the walk ends, which can trail the client's last byte under load: wait for them (bounded)
+async function staticRowsEventually(proxy, pkg, v, n = 5, ms = 5000) {
+  const until = Date.now() + ms; let rows = staticRowsOf(proxy, pkg, v);
+  while (rows.length < n && Date.now() < until) { await new Promise((r) => setTimeout(r, 50)); rows = staticRowsOf(proxy, pkg, v); }
+  return rows;
+}
 const ON = { staticWithhold: true };
 
 // ------------------------------------------------------------------ the switch (configuration)
@@ -143,11 +149,11 @@ test('W3 withholdingChecks: only a static row that is a NAMED WARN after its 1.2
 test('W4 switch on, armed, all checks contributing: the same status, bytes and static rows as with the switch off', async () => {
   const off = await withProxy({}, async ({ base, proxy }) => {
     await get(`${base}/q`); const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
-    return { status: r.status, body: r.body, rows: staticRowsOf(proxy, 'q', '1.1.0') };
+    return { status: r.status, body: r.body, rows: await staticRowsEventually(proxy, 'q', '1.1.0') };
   });
   const on = await withProxy({ config: ON }, async ({ base, proxy }) => {
     await get(`${base}/q`); const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
-    return { status: r.status, body: r.body, rows: staticRowsOf(proxy, 'q', '1.1.0') };
+    return { status: r.status, body: r.body, rows: await staticRowsEventually(proxy, 'q', '1.1.0') };
   });
   assert.equal(off.status, 200); assert.equal(on.status, 200);
   assert.ok(on.body.equals(TARBALLS['/q/-/q-1.1.0.tgz']), 'the held bytes are served unchanged');
@@ -193,7 +199,7 @@ for (const chunked of [false, true]) {
     await withProxy({ upstream: { chunked }, config: ON }, async ({ base, proxy }) => {
       await get(`${base}/big`); const r = await get(`${base}/big/-/big-1.1.0.tgz`); await settle();
       assert.equal(r.status, 200); assert.ok(r.body.equals(big));
-      const rows = staticRowsOf(proxy, 'big', '1.1.0');
+      const rows = await staticRowsEventually(proxy, 'big', '1.1.0');
       assert.equal(rows.length, 5);
       assert.equal(rows.find((g) => g.gate === 'static:S1-loader-in-hook-target').result, 'NOTE');
     });
@@ -213,7 +219,7 @@ test('W8 switch on: client aborts while the download is held free the armed slot
     release(); await settle();
     const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
     assert.equal(r.status, 200);
-    const rows = staticRowsOf(proxy, 'q', '1.1.0');
+    const rows = await staticRowsEventually(proxy, 'q', '1.1.0');
     assert.equal(rows.length, 5);
     assert.ok(rows.every((g) => !/ceiling/.test(g.detail)), 'the later download was armed, not refused a slot');
   });
