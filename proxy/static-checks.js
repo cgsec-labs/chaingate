@@ -4,14 +4,22 @@
 // gate writes; its detail is built from a closed vocabulary -- the marker NAMES that matched (never file content, never a host, never
 // a command), the file's path sanitised and capped as MC's shownName, and the kept size. "Not checked" (SKIP) is stated per file and
 // never read as absence; a WARN wins over not checked, which wins over ALLOW (as MC). No static row is ever a BLOCK.
-// The marker constants are the ops recon tool's (chaingate-ops tools/recon/v6.5/static-checks.mjs) under the SAME version string, so a
+// The marker constants are the ops recon tool's (chaingate-ops tools/recon/v6.6/static-checks.mjs) under the SAME version string, so a
 // runtime row and a recon row read against each other; a change to any marker bumps STATIC_CHECKS_VERSION on both sides.
+// static-checks-1.1 (operator rulings 2026-10-15; recon first at chaingate-ops 9e5caec, this file mirrors it): S0 adds hook-command
+// exfiltration, S1 adds the oversized hook target, S2 adds numeric hex, S3's sink is the exfil-host class only, and a file row that
+// read nothing although its roles had a candidate says "no eligible file in the tarball".
 //   S0 shell-fetch-in-hook        a preinstall/install/postinstall command carries a FETCH (curl, wget, Invoke-WebRequest, certutil
-//                                 -urlcache, bitsadmin) AND an EXECUTE/DECODE (| sh, powershell -enc, base64 -d, eval, iex)
-//   S1 loader-in-hook-target      a kept hook target under 8 KiB with a NETWORK sink AND an EXECUTION sink
+//                                 -urlcache, bitsadmin) AND an EXECUTE/DECODE (| sh, powershell -enc, base64 -d, eval, iex);
+//                                 OR a NETWORK TOOL at a command position (curl, wget, nc, and nslookup/dig/host/ping with command
+//                                 substitution only) AND a SENDS marker (command substitution, a data flag, a raw-IP or exfil-host URL)
+//   S1 loader-in-hook-target      a kept hook target under 8 KiB with a NETWORK sink AND an EXECUTION sink; OR a hook target over the
+//                                 1 MiB kept-file cap (oversized-hook-target, size from the tar header, body not read)
 //   S2 obfuscated-entry           a kept main/bin target with >= 20 distinct `_0x[0-9a-f]{4,6}` identifiers AND a decode marker
-//                                 (eval, Function, atob, a String.fromCharCode run of >= 50 codes, hex-escape density > 15 %)
-//   S3 secret-harvest-with-sink   a kept main/bin/hook target with a CREDENTIAL source AND an OUTBOUND sink to a non-registry host
+//                                 (eval, Function, atob, a String.fromCharCode run of >= 50 codes, hex-escape density > 15 %,
+//                                 >= 1,000 numeric 0x literals)
+//   S3 secret-harvest-with-sink   a kept main/bin/hook target with a CREDENTIAL source AND an exfil-host sink (raw-IP and POST to
+//                                 another literal host are recorded sinks, never firing)
 //   S4 wallet-swap-hook           a kept main/bin target that OVERRIDES XMLHttpRequest.prototype.send / window.fetch /
 //                                 window.ethereum.request AND carries >= 2 crypto-address regex families
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
@@ -23,9 +31,11 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.0';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.1';
+/** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
+export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
-  s2MinIdents: 20, s2MinCharCodes: 50, s2HexDensity: 0.15, s4MinAddressFamilies: 2, headBytes: 8000, detailChars: 400 });
+  s2MinIdents: 20, s2MinCharCodes: 50, s2HexDensity: 0.15, s2MinNumericHex: 1000, s4MinAddressFamilies: 2, headBytes: 8000, detailChars: 400 });
 export const CHECKS = Object.freeze([
   { id: 'S0', gate: 'static:S0-shell-fetch-in-hook', roles: null, notice: 'an install script fetches and runs remote code' },
   { id: 'S1', gate: 'static:S1-loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
@@ -58,7 +68,7 @@ const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u206
 export const shownName = (n) => { const x = String(n ?? '').replace(UNSAFE, ''); return x.length > 80 ? `${x.slice(0, 80)}…` : x; };
 const clipDetail = (s) => (s.length > LIMITS.detailChars ? `${s.slice(0, LIMITS.detailChars - 1)}…` : s);
 
-// ---- marker constants (closed vocabulary; names are what reaches a row) -- the recon v6.5 lists, verbatim ----
+// ---- marker constants (closed vocabulary; names are what reaches a row) -- the recon v6.6 lists, verbatim ----
 export const FETCH_MARKERS = [
   ['curl', /\bcurl(?:\.exe)?\b/i], ['wget', /\bwget(?:\.exe)?\b/i],
   ['Invoke-WebRequest', /Invoke-WebRequest|Invoke-RestMethod|\biwr\b|\birm\b/i],
@@ -86,6 +96,8 @@ export const EXEC_SINKS = [
 export const DECODE_MARKERS = [['eval', /\beval\s*\(/], ['Function', /(?:^|[^\w$.])(?:new\s+)?Function\s*\(/], ['atob', /\batob\s*\(/]];
 export const OBF_IDENT = /_0x[0-9a-f]{4,6}\b/g;
 const HEX_ESCAPE = /\\x[0-9a-fA-F]{2}/g;
+/** 1.1 S2: a numeric hex literal (0x1F), never an _0x identifier or a regex source like 0x[a-f]. */
+const NUMERIC_HEX = /(?<![\w$.])0[xX][0-9a-fA-F]+\b/g;
 const CHARCODE_RUN = new RegExp(`String\\.fromCharCode\\s*\\(\\s*(?:\\d{1,3}\\s*,\\s*){${LIMITS.s2MinCharCodes - 1},}\\d{1,3}`);
 export const CRED_SOURCES = [
   ['npmrc', /\.npmrc\b/], ['ssh-key', /\.ssh\/|\bid_rsa\b|\bid_ed25519\b|\bid_ecdsa\b/],
@@ -112,12 +124,34 @@ export const ADDRESS_FAMILIES = [
 ];
 
 // ---- S0 over a hook command string ----
-/** { fetch, exec, fires } for one hook command; a non-string never throws and never fires. */
+/** 1.1 S0 network tools, matched only at a command position (string start, or after ; & | ( ` or $( , optionally behind sudo/env). */
+const CMD_POS = String.raw`(?:^|[;&|(\x60]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?`;
+const tool = (re) => new RegExp(`${CMD_POS}(?:${re})(?:\\.exe)?(?=\\s|$|[;&|)])`, 'i');
+export const NET_TOOLS = [['curl', tool('curl')], ['wget', tool('wget')], ['nc', tool('nc|ncat|netcat')], ['nslookup', tool('nslookup')],
+  ['dig', tool('dig')], ['host', tool('host')], ['ping', tool('ping')]];
+/** 1.1 S0: the DNS tools count only with command substitution (the DNS-exfiltration shape). */
+export const DNS_TOOLS = Object.freeze(['nslookup', 'dig', 'host', 'ping']);
+const ANY_URL = /https?:\/\/[^\s'"`]+/g;
+/** 1.1 S0 "sends" markers: what makes a network tool in a hook carry data out. */
+export const SEND_MARKERS = [
+  ['command-substitution', /\$\(|`/],
+  ['data-flag', /(?:^|\s)(?:--data(?:-[a-z]+)?|--form(?:-string)?|--upload-file|--post-data|--post-file)(?=[\s=]|$)|(?:^|\s)-[dFT](?=\s|[^\s-])/],
+  ['raw-ip-url', RAW_IP_URL],
+  ['exfil-host-url', { test: (s) => (s.match(ANY_URL) || []).some((u) => EXFIL_HOSTS.test(u)) }],
+];
+const sendsOf = (s) => SEND_MARKERS.filter(([, re]) => re.test(s)).map(([n]) => n);
+/** { fetch, exec, net_tools, sends, exfil, fires } for one hook command; a non-string never throws and never fires. */
 export function hookFetchExec(cmd) {
   const s = typeof cmd === 'string' ? cmd : '';
   const fetch = names(FETCH_MARKERS, s); const exec = names(EXEC_MARKERS, s);
-  return { fetch, exec, fires: fetch.length > 0 && exec.length > 0 };
+  const net_tools = names(NET_TOOLS, s); const sends = sendsOf(s);
+  // 1.1: hook-command exfiltration = a network tool at a command position AND a sends marker; the DNS tools only with command substitution
+  const exfil = net_tools.some((t) => (DNS_TOOLS.includes(t) ? sends.includes('command-substitution') : sends.length > 0));
+  return { fetch, exec, net_tools, sends, exfil, fires: (fetch.length > 0 && exec.length > 0) || exfil };
 }
+/** The S0 detail for a fired hook: the 1.0 fetch-and-execute part, the 1.1 exfiltration part, or both (marker names only). */
+const s0What = (r) => [r.fetch.length && r.exec.length ? `contains a fetch (${r.fetch.join(', ')}) and an execute (${r.exec.join(', ')})` : null,
+  r.exfil ? `runs a network tool (${r.net_tools.join(', ')}) that sends (${r.sends.join(', ')})` : null].filter(Boolean).join(' and ');
 
 // ---- the keep list: what the registry manifest points npm at ----
 const META = /[`$(){}<>*?![\]'"&#~\\]/;
@@ -210,12 +244,13 @@ export function fileFacts(file) {
   let hex = 0; for (const m of s.matchAll(HEX_ESCAPE)) hex += m ? 1 : 0;
   const hexDensity = s.length ? (hex * 4) / s.length : 0;
   const decode = names(DECODE_MARKERS, s); if (CHARCODE_RUN.test(s)) decode.push('fromCharCode-run'); if (hexDensity > LIMITS.s2HexDensity) decode.push('hex-density');
+  const numericHex = (s.match(NUMERIC_HEX) || []).length; if (numericHex >= LIMITS.s2MinNumericHex) decode.push('numeric-hex');
   const sinks = []; if (EXFIL_HOSTS.test(s)) sinks.push('exfil-host'); if (RAW_IP_URL.test(s)) sinks.push('raw-ip');
   const hosts = new Set(); for (const m of s.matchAll(URL_HOST)) hosts.add(m[1].toLowerCase());
   const foreign = [...hosts].filter((h) => !REGISTRY_HOSTS.includes(h) && !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(h));
   if (foreign.length && POST_MARKER.test(s)) sinks.push('post-to-literal-host');
   return { ...base, binary: false, net_sinks: names(NET_SINKS, s), exec_sinks: names(EXEC_SINKS, s), obf_idents: idents.size, decode_markers: decode,
-    hex_density: Number(hexDensity.toFixed(3)), cred_sources: names(CRED_SOURCES, s), sinks, overrides: names(OVERRIDES, s), address_families: names(ADDRESS_FAMILIES, s) };
+    hex_density: Number(hexDensity.toFixed(3)), numeric_hex: numericHex, cred_sources: names(CRED_SOURCES, s), sinks, overrides: names(OVERRIDES, s), address_families: names(ADDRESS_FAMILIES, s) };
 }
 
 // ---- the rows ----
@@ -249,7 +284,7 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
   const hooks = Object.entries(reg).map(([hook, cmd]) => ({ src: '', hook, cmd }));
   for (const [hook, cmd] of Object.entries(tar)) if (reg[hook] !== cmd) hooks.push({ src: 'tarball package.json ', hook, cmd });
   const fired = hooks.map((h) => ({ ...h, r: hookFetchExec(h.cmd) })).filter((h) => h.r.fires);
-  if (fired.length) rows.push(row(CHECKS[0], 'WARN', `${fired[0].src}${fired[0].hook} command contains a fetch (${list(fired[0].r.fetch)}) and an execute (${list(fired[0].r.exec)})${fired.length > 1 ? `; and ${fired.length - 1} more hook(s)` : ''}`));
+  if (fired.length) rows.push(row(CHECKS[0], 'WARN', `${fired[0].src}${fired[0].hook} command ${s0What(fired[0].r)}${fired.length > 1 ? `; and ${fired.length - 1} more hook(s)` : ''}`));
   else rows.push(row(CHECKS[0], 'ALLOW', hooks.length ? 'install hooks carry no fetch-and-execute' : 'no install hook'));
   // S1-S4: the kept bodies by role
   const facts = walk.files.map((f) => ({ f, facts: fileFacts(f), roles: roles[f.path] ?? [], shown: shownName(f.path), plats: Array.isArray(f.platformsNotChecked) ? f.platformsNotChecked : [] }));
@@ -261,12 +296,18 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
     const prim = primaryOf[x.path] ?? x.path;
     if (keptPrimary.has(prim) || stated.has(prim)) continue;
     if (/^not in the archive/.test(String(x.reason)) && x.path !== prim) continue;        // an absent variant is not news; the primary says it
-    stated.add(prim); notKept.push({ path: prim, reason: x.reason });
+    stated.add(prim); notKept.push({ path: prim, reason: x.reason, roles: roles[x.path], ...(Number.isFinite(x.size) ? { size: x.size } : {}) });
   }
   for (const t of klTar.targets) if (!klReg.roles[t.path] && !keptPrimary.has(t.path) && !stated.has(t.path)) { stated.add(t.path); notKept.push({ path: t.path, reason: 'named by the tarball package.json only (not kept)' }); }
+  // 1.1 S1: a hook target over the kept-file cap is a fact of its own (size from the tar header; the body is not read)
+  const oversized = (x) => (x.roles ?? []).includes('hook') && Number.isFinite(x.size) && /^over the kept-file cap/.test(String(x.reason));
+  // 1.1 nothing read (ruled 2026-10-14, per row): the reasons that mean no eligible file was there to read, as against a cap or a limit
+  const absentOnly = (rs) => rs.length > 0 && rs.every((x) => /^not in the archive/.test(String(x.reason)));
+  const candidateOf = (c) => klReg.paths.find((p) => klReg.roles[p].some((r) => c.roles.includes(r)) && primaryOf[p] === p);
   for (const c of CHECKS.slice(1)) {
     const mine = facts.filter((x) => c.roles.some((r) => x.roles.includes(r)));
-    const skipped = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r))).map((x) => `${shownName(x.path)} ${x.reason}`);
+    const unread = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r)) && !(c.id === 'S1' && oversized(x)));
+    const skipped = unread.map((x) => `${shownName(x.path)} ${x.reason}`);
     const hits = []; const platsRead = new Set(); let read = 0;
     for (const x of mine) {
       const F = x.facts;
@@ -276,11 +317,14 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
       let detail = null;
       if (c.id === 'S1' && F.net_sinks.length && F.exec_sinks.length) detail = `hook target ${x.shown} (${F.size} B) has a network sink (${list(F.net_sinks)}) and an execution sink (${list(F.exec_sinks)})`;
       else if (c.id === 'S2' && F.obf_idents >= LIMITS.s2MinIdents && F.decode_markers.length) detail = `entry file ${x.shown} (${F.size} B) has ${F.obf_idents} _0x identifiers and a decode marker (${list(F.decode_markers)})`;
-      else if (c.id === 'S3' && F.cred_sources.length && F.sinks.length) detail = `${x.shown} (${F.size} B) has a credential source (${list(F.cred_sources)}) and an outbound sink (${list(F.sinks)})`;
+      else if (c.id === 'S3' && F.cred_sources.length && F.sinks.includes('exfil-host')) detail = `${x.shown} (${F.size} B) has a credential source (${list(F.cred_sources)}) and an outbound sink (${list(F.sinks)})`;
       else if (c.id === 'S4' && F.overrides.length && F.address_families.length >= LIMITS.s4MinAddressFamilies) detail = `entry file ${x.shown} (${F.size} B) has an override (${list(F.overrides)}) and ${F.address_families.length} address-regex families (${list(F.address_families)})`;
       if (detail) hits.push({ detail, plats: x.plats });
     }
+    if (c.id === 'S1') for (const x of notKept.filter(oversized)) hits.push({ detail: `hook target ${shownName(x.path)} (${x.size} B) is over the 1 MiB keep cap: oversized-hook-target, body not read`, plats: [] });
+    const cand = read || hits.length || (skipped.length && !(skipped.length === unread.length && absentOnly(unread))) ? null : candidateOf(c);
     if (hits.length) rows.push(row(c, 'WARN', `${hits[0].detail}${hits.length > 1 ? `; and ${hits.length - 1} more file(s)` : ''}${platSuffix(hits[0].plats)}`));
+    else if (cand) rows.push(row(c, 'SKIP', `not checked: ${NOTHING_READ} (${skipped.length ? `${skipped[0]}${skipped.length > 1 ? `; and ${skipped.length - 1} more` : ''}` : shownName(cand)})`));
     else if (skipped.length) rows.push(row(c, 'SKIP', `not checked: ${skipped[0]}${skipped.length > 1 ? `; and ${skipped.length - 1} more` : ''}`));
     else rows.push(row(c, 'ALLOW', `${read ? ALLOW_TEXT[c.id](read) : NONE_TEXT[c.id]}${platSuffix([...platsRead])}`));
   }
@@ -314,4 +358,4 @@ export function staticSettled(latest) {
   return mine.every((r) => typeof r.detail === 'string' && !RETRY_PREFIXES.some((p) => r.detail.startsWith(p)));
 }
 
-export default { STATIC_CHECKS_VERSION, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
+export default { STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };

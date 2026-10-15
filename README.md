@@ -147,20 +147,24 @@ seed's coverage warning (nothing in the finding could be evaluated: a package th
 keeps the bodies of the files the registry manifest points npm at -- the install-hook targets, `main`, up to 4 `bin`
 targets; at most 6 files of 1 MiB each -- and runs five checks over them, each a conjunction of two facts about one file:
 - **S0** an install-hook command carries a fetch (curl, wget, Invoke-WebRequest, certutil -urlcache, bitsadmin) and an
-  execute or decode (a pipe into a shell or interpreter, powershell -enc, base64 -d, eval, iex);
-- **S1** a hook target under 8 KiB carries a network sink and an execution sink (a loader);
+  execute or decode (a pipe into a shell or interpreter, powershell -enc, base64 -d, eval, iex), or runs a network tool
+  (curl, wget, nc; nslookup, dig, host or ping only with command substitution) that sends data out (command substitution,
+  a data flag, a raw-IP or known exfiltration host URL);
+- **S1** a hook target under 8 KiB carries a network sink and an execution sink (a loader), or a hook target is over the
+  1 MiB file cap (its size is read from the archive header; its body is not read);
 - **S2** an entry file carries 20 or more `_0x` identifiers and a decode marker (eval, Function, atob, a long
-  String.fromCharCode run, or hex escapes over 15 % of the file);
+  String.fromCharCode run, hex escapes over 15 % of the file, or 1,000 or more numeric hex literals);
 - **S3** a file carries a credential source (.npmrc, ssh keys, cloud credentials, token variables, a process.env dump) and
-  an outbound sink to a host that is not the registry (a known exfiltration host class, a raw IP, or a POST to a literal host);
+  a known exfiltration host (a raw IP or a POST to another host is recorded, never enough on its own);
 - **S4** an entry file overrides `XMLHttpRequest.prototype.send`, `window.fetch` or `window.ethereum.request` and carries
   two or more cryptocurrency-address regexes.
 All five are contributing rows (`static:S0-shell-fetch-in-hook` through `static:S4-wallet-swap-hook`): recorded as notes, shown
 in `chaingate why` and `chaingate report --json`, never a warning on their own until a measured base rate and an operator
 ruling name one. A row names the markers that matched, the file and its size -- never the file's content. The marker
-lists are constants under the version `static-checks-1.0`, the same lists the operator's recon tool runs. A download the
+lists are constants under the version `static-checks-1.1`, the same lists the operator's recon tool runs. A download the
 rule did not arm records "not armed"; a file that is binary, over the cap, absent, or named only by the tarball's own
-`package.json` is "not checked" and says so. A tarball whose download was armed is examined once: the outcome rides every
+`package.json` is "not checked" and says so; a check that found no eligible file to read says "no eligible file in the
+tarball". A tarball whose download was armed is examined once: the outcome rides every
 later record of that version.
 
 A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaingate why <pkg>@<ver>`). npm does not print
