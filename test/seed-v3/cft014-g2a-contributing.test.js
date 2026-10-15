@@ -182,8 +182,9 @@ test('G2a-9 the 1.2 role tables equal r3 §18.7/§18.15/§18.18, and an unlisted
   // 0.1.5 static checks step 3 (deliberate, design note §5): the five tarball static checks start CONTRIBUTING; none is named before measurement
   // static-checks-1.2 (deliberate, operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joins as a sixth, CONTRIBUTING first
   // static checks naming (deliberate, operator ruling 2026-10-15, handover 11.1/11.4): S0 and S5 NAMED, S1-S4 stay contributing
+  // 0.1.5 T1.6 (deliberate, operator 2026-10-15, orchestrator verdict 20:25Z): entry-path-change joins as contributing
   assert.deepEqual([...RC.CONTRIBUTING_GATES].sort(),
-    ['dep-structure', 'identity-break', 'provenance-continuity', 'publish-tool-change', 'publisher-identity', 'release-age',
+    ['dep-structure', 'entry-path-change', 'identity-break', 'provenance-continuity', 'publish-tool-change', 'publisher-identity', 'release-age',
       'scope-boundary', 'size-jump', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry',
       'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);
   assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target']);   // G3 D-N6; 0.1.5 T1.4; 0.1.5 S0+S5 named

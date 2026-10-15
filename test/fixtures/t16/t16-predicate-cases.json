@@ -1,0 +1,26 @@
+{
+ "version": "t16-predicates-1.0",
+ "about": "T1.6 entry-path-change predicate cases: a version manifest (package.json fields name, scripts, bin, main) and its predecessor's -> the components that fire. ONE fixture for the Python measurement (tools/corpus/base_rates.py), the proxy tests and the recon tests (mirrors load it unchanged and assert the same version string). Components: lifecycle_added (a non-install lifecycle script name absent before), lifecycle_changed (present in both, text differs), bin_added (a bin command absent before), bin_changed (same command, different path), main (the entry point differs; absent or empty main = index.js; './x' = 'x'). Lifecycle names = collector/npm_capture.py LIFECYCLE_HOOKS (install hooks preinstall/install/postinstall are T1.1, not T1.6). The predecessor is chosen elsewhere (FU-2 lineage); these cases judge one pair.",
+ "lifecycle_names": ["prepare", "preprepare", "postprepare", "prepack", "postpack", "prepublish", "prepublishOnly", "publish", "postpublish", "preuninstall", "uninstall", "postuninstall", "dependencies"],
+ "cases": [
+  {"id": "no-change", "before": {"name": "p", "main": "index.js", "scripts": {"test": "jest"}}, "after": {"name": "p", "main": "index.js", "scripts": {"test": "mocha"}}, "expect": []},
+  {"id": "prepare-added", "before": {"name": "p", "scripts": {"build": "tsc"}}, "after": {"name": "p", "scripts": {"build": "tsc", "prepare": "node setup.js"}}, "expect": ["lifecycle_added"]},
+  {"id": "prepare-changed", "before": {"name": "p", "scripts": {"prepare": "tsc"}}, "after": {"name": "p", "scripts": {"prepare": "tsc && node x.js"}}, "expect": ["lifecycle_changed"]},
+  {"id": "prepare-removed", "before": {"name": "p", "scripts": {"prepare": "tsc"}}, "after": {"name": "p", "scripts": {}}, "expect": []},
+  {"id": "blank-script-is-absent", "before": {"name": "p", "scripts": {"prepare": "  "}}, "after": {"name": "p", "scripts": {"prepare": "node x.js"}}, "expect": ["lifecycle_added"]},
+  {"id": "install-hook-is-not-t16", "before": {"name": "p", "scripts": {}}, "after": {"name": "p", "scripts": {"postinstall": "node x.js"}}, "expect": []},
+  {"id": "uninstall-and-prepack-added", "before": {"name": "p"}, "after": {"name": "p", "scripts": {"preuninstall": "node a.js", "prepack": "node b.js"}}, "expect": ["lifecycle_added"]},
+  {"id": "added-and-changed", "before": {"name": "p", "scripts": {"prepare": "tsc"}}, "after": {"name": "p", "scripts": {"prepare": "tsc -b", "postpack": "node c.js"}}, "expect": ["lifecycle_added", "lifecycle_changed"]},
+  {"id": "scripts-not-an-object", "before": {"name": "p", "scripts": "oops"}, "after": {"name": "p", "scripts": {"prepare": "x"}}, "expect": ["lifecycle_added"]},
+  {"id": "bin-added", "before": {"name": "p"}, "after": {"name": "p", "bin": {"p": "cli.js"}}, "expect": ["bin_added"]},
+  {"id": "bin-string-form-named-after-package", "before": {"name": "@s/tool", "bin": {"tool": "cli.js"}}, "after": {"name": "@s/tool", "bin": "./cli.js"}, "expect": []},
+  {"id": "bin-path-changed", "before": {"name": "p", "bin": {"p": "cli.js"}}, "after": {"name": "p", "bin": {"p": "dist/cli.js"}}, "expect": ["bin_changed"]},
+  {"id": "bin-second-command", "before": {"name": "p", "bin": {"p": "cli.js"}}, "after": {"name": "p", "bin": {"p": "cli.js", "q": "q.js"}}, "expect": ["bin_added"]},
+  {"id": "bin-removed", "before": {"name": "p", "bin": {"p": "cli.js"}}, "after": {"name": "p"}, "expect": []},
+  {"id": "main-default-equals-index", "before": {"name": "p"}, "after": {"name": "p", "main": "index.js"}, "expect": []},
+  {"id": "main-dot-slash", "before": {"name": "p", "main": "./lib/a.js"}, "after": {"name": "p", "main": "lib/a.js"}, "expect": []},
+  {"id": "main-moved", "before": {"name": "p", "main": "index.js"}, "after": {"name": "p", "main": "dist/index.js"}, "expect": ["main"]},
+  {"id": "main-empty-is-default", "before": {"name": "p", "main": ""}, "after": {"name": "p"}, "expect": []},
+  {"id": "all-components", "before": {"name": "p", "main": "a.js", "scripts": {"prepare": "x"}, "bin": {"p": "a"}}, "after": {"name": "p", "main": "b.js", "scripts": {"prepare": "y", "prepack": "z"}, "bin": {"p": "b", "r": "r"}}, "expect": ["bin_added", "bin_changed", "lifecycle_added", "lifecycle_changed", "main"]}
+ ]
+}
