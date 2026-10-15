@@ -92,9 +92,9 @@ test('U1 armedBy: a named WARN row, the identity-break NOTE, or the seed coverag
   assert.equal(S.MAX_ARMED_WALKS, 4);
 });
 
-test('U2 roles: the five static gates are contributing; a static WARN is recorded as NOTE; MC stays named', async () => {
+test('U2 roles: S1-S4 are contributing (S0 and S5 named 2026-10-15, declared, cft015-s9); a contributing static WARN is recorded as NOTE; MC stays named', async () => {
   const R = await RC(); const S = await SC();
-  for (const g of S.STATIC_GATES) assert.ok(R.CONTRIBUTING_GATES.has(g), g);
+  for (const g of S.STATIC_GATES) assert.equal(R.CONTRIBUTING_GATES.has(g), !['static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target'].includes(g), g);
   assert.equal(R.withRole({ gate: 'static:S1-loader-in-hook-target', result: 'WARN', detail: 'd' }).result, 'NOTE');
   assert.equal(R.withRole({ gate: 'static:S2-obfuscated-entry', result: 'SKIP', detail: 'd' }).result, 'SKIP');
   assert.equal(R.withRole({ gate: 'install-manifest-mismatch', result: 'WARN', detail: 'd' }).result, 'WARN');

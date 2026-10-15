@@ -25,9 +25,9 @@ const PLAIN = { name: 'p', version: '1.0.0', main: 'index.js' };
 const MAIN = file('index.js', 'module.exports = 1;\n');
 const OVER = { path: 'install.js', reason: 'over the kept-file cap (1048576 bytes)', size: 2000000 };
 
-test('A1 identity: static-checks-1.2; six gates, S5 last with recon 1.2\'s gate, roles and notice', async () => {
+test('A1 identity: static-checks-1.2 (now 1.3, declared: wording-only, cft015-s9); six gates, S5 last with recon 1.2\'s gate, roles and notice', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.2');
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.3');
   assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5']);
   assert.deepEqual(S.CHECKS[5], { id: 'S5', gate: S5G, roles: ['hook'], notice: 'an install script runs a file too large to read' });
   assert.deepEqual(S.STATIC_GATES, S.CHECKS.map((c) => c.gate));
@@ -104,14 +104,14 @@ test('W2 end to end: the real walk of a package whose postinstall target is 1.5 
   assert.equal(row(rows, 'S1').result, 'SKIP');
 });
 
-test('R1 roles: S5 is CONTRIBUTING (its WARN is recorded as NOTE), never a named runner gate, and has no notice label until the operator words one', async () => {
+test('R1 roles (declared: S5 NAMED by the operator ruling of 2026-10-15, cft015-s9): its WARN stays WARN, a named runner gate with recon\'s notice text', async () => {
   const RC = await import('../../gates/row-class.js');
   const POL = (await import('../../seed/v3/policy.js')).default;
   const N = await import('../../proxy/notice.js');
-  assert.ok(RC.CONTRIBUTING_GATES.has(S5G));
-  assert.equal(RC.withRole({ gate: S5G, result: 'WARN', detail: 'd' }).result, 'NOTE');
-  assert.ok(!POL.NAMED_RUNNER_GATES.includes(S5G));
-  assert.equal(N.labelFor(S5G), null, 'no notice label until the operator words one');
+  assert.ok(!RC.CONTRIBUTING_GATES.has(S5G));
+  assert.equal(RC.withRole({ gate: S5G, result: 'WARN', detail: 'd' }).result, 'WARN');
+  assert.ok(POL.NAMED_RUNNER_GATES.includes(S5G));
+  assert.equal(N.labelFor(S5G), 'an install script runs a file too large to read');
 });
 
 test('R2 every row-set shape is six rows: failed walk, unarmed, no manifest; staticSettled needs all six', async () => {
