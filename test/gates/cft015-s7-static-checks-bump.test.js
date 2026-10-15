@@ -1,19 +1,17 @@
-// 0.1.5 tarball static checks: static-checks-1.1, the proxy mirror of the ops recon tool's bump (chaingate-ops 9e5caec,
+// 0.1.5 tarball static checks: the proxy mirror of the ops recon tool's static-checks bump (first at chaingate-ops 9e5caec,
 // tools/recon/v6.6/static-checks.mjs; operator rulings 2026-10-15, ops handover section 11; the bump lands in recon first, the proxy
 // mirrors it under the SAME version string and marker lists):
-//   (A) identity: static-checks-1.1; the five gate names unchanged; the new constants equal to recon's;
+//   (A) identity: the version string held (never 1.1); the five gate names unchanged; the new constants equal to recon's;
 //   (N) nothing-read, per row: a file row that read no file although its roles had a candidate (the registry manifest's targets, or
 //       npm's default main index.js) is SKIP "no eligible file in the tarball"; S1 without a hook stays ALLOW "no hook target to read";
 //   (C0) S0 widened: fetch AND execute (1.0), OR a network tool at a command position AND a "sends" marker (hook-command exfiltration);
-//   (C1) S1 oversized hook target: a hook target over the 1 MiB kept-file cap is an S1 WARN of its own (size from the tar header);
+//   HELD (operator 2026-10-15, path (a)): the oversized hook target becomes its own gate static:S5-oversized-hook-target in recon's
+//   static-checks-1.2 commit, and the version string moves with it; both are mirrored then, byte for byte (1.1 is never shipped);
 //   (C2) S2 numeric hex: >= 1,000 numeric 0x literals is a decode marker (paired with >= 20 _0x identifiers as before);
 //   (C3) S3 sink = exfil-host only (raw-ip and post-to-literal-host stay recorded facts, never fire);
-//   (W) the walker states the size of an over-cap kept-file target; end to end through the real walker.
 // Written failing-first against the static-checks-1.0 proxy (af1f3ec). Fixtures are TEXT shaped like the classes' markers.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import zlib from 'node:zlib';
-import { createTarWalker } from '../../proxy/tar-walk.js';
 
 const SC = () => import('../../proxy/static-checks.js');
 const REASON = 'no eligible file in the tarball';
@@ -31,9 +29,9 @@ const HOOKED = { name: 'p', version: '1.0.0', main: 'index.js', scripts: { posti
 const PLAIN = { name: 'p', version: '1.0.0', main: 'index.js' };
 const MAIN = file('index.js', 'module.exports = 1;\n');
 
-test('A1 identity: static-checks-1.1, the five gate names UNCHANGED, the new constants as recon v6.6 (numeric-hex limit, nothing-read reason, S0 network tools and sends markers)', async () => {
+test('A1 identity: the version string held (never static-checks-1.1), the five gate names UNCHANGED, the new constants as recon v6.6 (numeric-hex limit, nothing-read reason, S0 network tools and sends markers)', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.1');
+  assert.notEqual(S.STATIC_CHECKS_VERSION, 'static-checks-1.1', '1.1 is never shipped (operator 2026-10-15)');
   assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);
   assert.equal(S.LIMITS.s2MinNumericHex, 1000); assert.equal(S.LIMITS.maxKeepBytes, 1 << 20); assert.equal(S.LIMITS.s1MaxBytes, 8192);
   assert.equal(S.NOTHING_READ, REASON);
@@ -101,19 +99,6 @@ test('C0b S0 row: the detail names the tool and the sends markers, never the com
   assert.equal(row(S.staticRows({ manifest: old, packageJson: old, walk: walkOf([MAIN]) }), 'S0').detail, 'preinstall command contains a fetch (curl) and an execute (pipe-to-shell)');
 });
 
-test('C1 S1: a hook target over the kept-file cap is an S1 WARN (oversized-hook-target, size from the header, body not read); S3 still states it unread; a main over the cap and a hook beyond 6 files are not S1', async () => {
-  const S = await SC();
-  const nk = [{ path: 'install.js', reason: 'over the kept-file cap (1048576 bytes)', size: 2000000 }];
-  const rows = S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: walkOf([MAIN], nk) });
-  const s1 = row(rows, 'S1'); assert.equal(s1.result, 'WARN');
-  assert.equal(s1.detail, 'hook target install.js (2000000 B) is over the 1 MiB keep cap: oversized-hook-target, body not read');
-  assert.equal(row(rows, 'S3').result, 'SKIP'); assert.match(row(rows, 'S3').detail, /^not checked: install\.js over the kept-file cap/);
-  const m = S.staticRows({ manifest: PLAIN, packageJson: PLAIN, walk: walkOf([], [{ path: 'index.js', reason: 'over the kept-file cap (1048576 bytes)', size: 3000000 }]) });
-  assert.equal(row(m, 'S1').result, 'ALLOW'); assert.equal(row(m, 'S2').result, 'SKIP');
-  const b = row(S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: walkOf([MAIN], [{ path: 'install.js', reason: 'beyond 6 kept files' }]) }), 'S1');
-  assert.equal(b.result, 'SKIP', 'only the size cap is the oversized signal');
-});
-
 test('C2 S2: >= 1,000 numeric 0x literals is the numeric-hex decode marker (with >= 20 _0x identifiers); 999 is not; identifiers alone are not; the count is a recorded fact', async () => {
   const S = await SC();
   const ff = S.fileFacts(file('index.js', OBF_HEX(25, 1000)));
@@ -136,40 +121,3 @@ test('C3 S3: the sink is the exfil-host class only; a POST to another literal ho
   assert.equal(s3(HARVEST, HOOKED, 'install.js').result, 'WARN', 'hook targets are read for S3');
 });
 
-// ---- (W) the real walker: the producer of notKept ----
-function hdr(name, size) {
-  const h = Buffer.alloc(512, 0);
-  Buffer.from(name, 'utf8').copy(h, 0, 0, 100);
-  h.write('0000644\0', 100); h.write('0000000\0', 108); h.write('0000000\0', 116);
-  h.write(`${size.toString(8).padStart(11, '0')}\0`, 124, 'latin1');
-  h.write('00000000000\0', 136); h.write('        ', 148); h.write('0', 156, 'latin1');
-  h.write('ustar\0', 257, 'latin1'); h.write('00', 263, 'latin1');
-  let sum = 0; for (let i = 0; i < 512; i += 1) sum += h[i];
-  h.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 'latin1');
-  return h;
-}
-const entry = (name, content) => { const b = Buffer.isBuffer(content) ? content : Buffer.from(content); return [hdr(name, b.length), b, Buffer.alloc((512 - (b.length % 512)) % 512, 0)]; };
-async function walkTar(parts, keep) {
-  const w = createTarWalker({ keep });
-  const gz = zlib.gzipSync(Buffer.concat([...parts.flat(), Buffer.alloc(1024, 0)]));
-  for (let i = 0; i < gz.length; i += 4096) w.write(gz.subarray(i, i + 4096));
-  return w.end();
-}
-
-test('W1 walker: an over-cap kept-file target is stated with its size from the tar header; the other reasons carry no size', async () => {
-  const big = Buffer.alloc(1536 * 1024, 0x61);
-  const r = await walkTar([entry('package/package.json', JSON.stringify(HOOKED)), entry('package/install.js', big), entry('package/index.js', 'x')], ['install.js', 'index.js', 'lib/absent.js']);
-  assert.equal(r.ok, true, r.reason);
-  assert.deepEqual(r.notKept, [{ path: 'install.js', reason: 'over the kept-file cap (1048576 bytes)', size: 1536 * 1024 }, { path: 'lib/absent.js', reason: 'not in the archive' }]);
-});
-
-test('W2 end to end: the real walk of a package whose postinstall target is 1.5 MiB gives S1 WARN oversized-hook-target with the header size', async () => {
-  const S = await SC();
-  const kl = S.keepListFor(HOOKED);
-  const big = Buffer.from(`// ${'x'.repeat(1536 * 1024)}\n`);
-  const walk = await walkTar([entry('package/package.json', JSON.stringify(HOOKED)), entry('package/install.js', big), entry('package/index.js', 'module.exports = 1;\n')], kl.paths);
-  const rows = S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk });
-  const s1 = row(rows, 'S1'); assert.equal(s1.result, 'WARN', s1.detail);
-  assert.equal(s1.detail, `hook target install.js (${big.length} B) is over the 1 MiB keep cap: oversized-hook-target, body not read`);
-  assert.equal(row(rows, 'S2').result, 'ALLOW');
-});

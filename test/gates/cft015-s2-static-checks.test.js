@@ -34,9 +34,9 @@ const ONE_REGEX_OVERRIDE = 'const evm = /0x[a-fA-F0-9]{40}/g;\nwindow.fetch = as
 const HOOKED = { name: 'p', version: '1.0.0', main: 'index.js', scripts: { postinstall: 'node install.js' } };
 const PLAIN = { name: 'p', version: '1.0.0', main: 'index.js' };
 
-test('T1 identity: static-checks-1.1 (declared: the 1.1 bump, cft015-s7), five checks with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
+test('T1 identity: static-checks-1.0 (held until recon static-checks-1.2, operator 2026-10-15), five checks with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.1');
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.0');
   assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4']);
   assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);
   assert.deepEqual(S.CHECKS.map((c) => c.notice), ['an install script fetches and runs remote code', 'an install script runs a small loader that fetches and executes',

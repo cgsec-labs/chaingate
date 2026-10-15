@@ -6,15 +6,15 @@
 // never read as absence; a WARN wins over not checked, which wins over ALLOW (as MC). No static row is ever a BLOCK.
 // The marker constants are the ops recon tool's (chaingate-ops tools/recon/v6.6/static-checks.mjs) under the SAME version string, so a
 // runtime row and a recon row read against each other; a change to any marker bumps STATIC_CHECKS_VERSION on both sides.
-// static-checks-1.1 (operator rulings 2026-10-15; recon first at chaingate-ops 9e5caec, this file mirrors it): S0 adds hook-command
-// exfiltration, S1 adds the oversized hook target, S2 adds numeric hex, S3's sink is the exfil-host class only, and a file row that
-// read nothing although its roles had a candidate says "no eligible file in the tarball".
+// The static-checks bump (operator rulings 2026-10-15; recon first, this file mirrors it): S0 adds hook-command exfiltration, S2 adds
+// numeric hex, S3's sink is the exfil-host class only, and a file row that read nothing although its roles had a candidate says "no
+// eligible file in the tarball". HELD until recon's static-checks-1.2 commit (operator 2026-10-15; 1.1 is never shipped): the version
+// string and the oversized hook target, which becomes its own gate static:S5-oversized-hook-target.
 //   S0 shell-fetch-in-hook        a preinstall/install/postinstall command carries a FETCH (curl, wget, Invoke-WebRequest, certutil
 //                                 -urlcache, bitsadmin) AND an EXECUTE/DECODE (| sh, powershell -enc, base64 -d, eval, iex);
 //                                 OR a NETWORK TOOL at a command position (curl, wget, nc, and nslookup/dig/host/ping with command
 //                                 substitution only) AND a SENDS marker (command substitution, a data flag, a raw-IP or exfil-host URL)
-//   S1 loader-in-hook-target      a kept hook target under 8 KiB with a NETWORK sink AND an EXECUTION sink; OR a hook target over the
-//                                 1 MiB kept-file cap (oversized-hook-target, size from the tar header, body not read)
+//   S1 loader-in-hook-target      a kept hook target under 8 KiB with a NETWORK sink AND an EXECUTION sink
 //   S2 obfuscated-entry           a kept main/bin target with >= 20 distinct `_0x[0-9a-f]{4,6}` identifiers AND a decode marker
 //                                 (eval, Function, atob, a String.fromCharCode run of >= 50 codes, hex-escape density > 15 %,
 //                                 >= 1,000 numeric 0x literals)
@@ -31,7 +31,7 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.1';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.0';   // held: becomes static-checks-1.2 with recon's commit (1.1 is never shipped)
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -149,7 +149,7 @@ export function hookFetchExec(cmd) {
   const exfil = net_tools.some((t) => (DNS_TOOLS.includes(t) ? sends.includes('command-substitution') : sends.length > 0));
   return { fetch, exec, net_tools, sends, exfil, fires: (fetch.length > 0 && exec.length > 0) || exfil };
 }
-/** The S0 detail for a fired hook: the 1.0 fetch-and-execute part, the 1.1 exfiltration part, or both (marker names only). */
+/** The S0 detail for a fired hook: the 1.0 fetch-and-execute part, the bump's exfiltration part, or both (marker names only). */
 const s0What = (r) => [r.fetch.length && r.exec.length ? `contains a fetch (${r.fetch.join(', ')}) and an execute (${r.exec.join(', ')})` : null,
   r.exfil ? `runs a network tool (${r.net_tools.join(', ')}) that sends (${r.sends.join(', ')})` : null].filter(Boolean).join(' and ');
 
@@ -296,17 +296,15 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
     const prim = primaryOf[x.path] ?? x.path;
     if (keptPrimary.has(prim) || stated.has(prim)) continue;
     if (/^not in the archive/.test(String(x.reason)) && x.path !== prim) continue;        // an absent variant is not news; the primary says it
-    stated.add(prim); notKept.push({ path: prim, reason: x.reason, roles: roles[x.path], ...(Number.isFinite(x.size) ? { size: x.size } : {}) });
+    stated.add(prim); notKept.push({ path: prim, reason: x.reason });
   }
   for (const t of klTar.targets) if (!klReg.roles[t.path] && !keptPrimary.has(t.path) && !stated.has(t.path)) { stated.add(t.path); notKept.push({ path: t.path, reason: 'named by the tarball package.json only (not kept)' }); }
-  // 1.1 S1: a hook target over the kept-file cap is a fact of its own (size from the tar header; the body is not read)
-  const oversized = (x) => (x.roles ?? []).includes('hook') && Number.isFinite(x.size) && /^over the kept-file cap/.test(String(x.reason));
-  // 1.1 nothing read (ruled 2026-10-14, per row): the reasons that mean no eligible file was there to read, as against a cap or a limit
+  // nothing read (ruled 2026-10-14, per row): the reasons that mean no eligible file was there to read, as against a cap or a limit
   const absentOnly = (rs) => rs.length > 0 && rs.every((x) => /^not in the archive/.test(String(x.reason)));
   const candidateOf = (c) => klReg.paths.find((p) => klReg.roles[p].some((r) => c.roles.includes(r)) && primaryOf[p] === p);
   for (const c of CHECKS.slice(1)) {
     const mine = facts.filter((x) => c.roles.some((r) => x.roles.includes(r)));
-    const unread = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r)) && !(c.id === 'S1' && oversized(x)));
+    const unread = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r)));
     const skipped = unread.map((x) => `${shownName(x.path)} ${x.reason}`);
     const hits = []; const platsRead = new Set(); let read = 0;
     for (const x of mine) {
@@ -321,7 +319,6 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
       else if (c.id === 'S4' && F.overrides.length && F.address_families.length >= LIMITS.s4MinAddressFamilies) detail = `entry file ${x.shown} (${F.size} B) has an override (${list(F.overrides)}) and ${F.address_families.length} address-regex families (${list(F.address_families)})`;
       if (detail) hits.push({ detail, plats: x.plats });
     }
-    if (c.id === 'S1') for (const x of notKept.filter(oversized)) hits.push({ detail: `hook target ${shownName(x.path)} (${x.size} B) is over the 1 MiB keep cap: oversized-hook-target, body not read`, plats: [] });
     const cand = read || hits.length || (skipped.length && !(skipped.length === unread.length && absentOnly(unread))) ? null : candidateOf(c);
     if (hits.length) rows.push(row(c, 'WARN', `${hits[0].detail}${hits.length > 1 ? `; and ${hits.length - 1} more file(s)` : ''}${platSuffix(hits[0].plats)}`));
     else if (cand) rows.push(row(c, 'SKIP', `not checked: ${NOTHING_READ} (${skipped.length ? `${skipped[0]}${skipped.length > 1 ? `; and ${skipped.length - 1} more` : ''}` : shownName(cand)})`));
