@@ -17,6 +17,8 @@ export const CONTRIBUTING_GATES = Object.freeze(new Set([
   // 0.1.5 group 1: T1.5 identity-break, contributing by operator ruling 2026-10-13 (ops handover §7.3). T1.4
   // size-jump-provenance is a NAMED runner gate (policy.NAMED_RUNNER_GATES), the lineage re-measure having held.
   'identity-break',
+  // 0.1.5 T1.6 entry-path-change (operator 2026-10-15, orchestrator verdict 20:25Z): contributing; every component over the bar but one
+  'entry-path-change',
   // 0.1.5 static checks step 3 (design note §5): the five tarball static checks start CONTRIBUTING; a check becomes named only by an
   // operator ruling after the §6 measurement, one at a time (then: OUT of this list, into policy.NAMED_RUNNER_GATES and proxy/notice.js;
   // a gate left here has its WARN turned into NOTE by withRole, so it can never be named)

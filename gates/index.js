@@ -59,6 +59,7 @@ import dependencyHooks from './dependency-hooks.js';
 // 0.1.5 group 1: T1.4 size-jump-provenance (NAMED; lineage predecessor) and T1.5 identity-break (contributing) -- ops handover §7.3
 import sizeJumpProvenance from './size-jump-provenance.js';
 import identityBreak from './identity-break.js';
+import entryPathChange from './entry-path-change.js';
 import { withRole, validRows, validDeps, validNotes } from './row-class.js';
 
 // NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
@@ -116,6 +117,7 @@ export const DEFAULT_GATE_MODULES = Object.freeze([
   dependencyHooks,
   sizeJumpProvenance,
   identityBreak,
+  entryPathChange,
 ]);
 
 // FAIL-OPEN, AND WHERE IT STOPS.
