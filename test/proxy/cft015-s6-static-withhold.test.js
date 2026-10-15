@@ -1,8 +1,8 @@
 // 0.1.5 follow-up #15 (operator ruling 2026-10-13, design note §8 item 2; design 0.1.5-FOLLOWUPS #15, 2026-10-14): the per-user
 // switch `static_withhold`, off by default. With it on, an ARMED download is held in memory (up to 8 MiB) while the static checks
 // read it, so a NAMED static WARN can withhold the download that reveals it; past the cap the download is served and recorded as
-// today. While every static check is contributing, the switch changes no response and no record (only the time to first byte).
-// Server-level withhold tests land with the commit that names a static check. Tarballs are synthetic; nothing is run.
+// today. While no named static check fires, the switch changes no response and no record (only the time to first byte). The
+// server-level withhold of a named static WARN (S0 and S5, named 2026-10-15) is tested in cft015-s9. Tarballs are synthetic; nothing is run.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';

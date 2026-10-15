@@ -158,10 +158,13 @@ targets; at most 6 files of 1 MiB each -- and runs six checks over them, S0-S4 e
 - **S4** an entry file overrides `XMLHttpRequest.prototype.send`, `window.fetch` or `window.ethereum.request` and carries
   two or more cryptocurrency-address regexes;
 - **S5** a hook target is over the 1 MiB file cap (its size is read from the archive header; its body is not read).
-All six are contributing rows (`static:S0-shell-fetch-in-hook` through `static:S5-oversized-hook-target`): recorded as notes, shown
-in `chaingate why` and `chaingate report --json`, never a warning on their own until a measured base rate and an operator
-ruling name one. A row names the markers that matched, the file and its size -- never the file's content. The marker
-lists are constants under the version `static-checks-1.2`, the same lists the operator's recon tool runs. A download the
+S0 and S5 are named: a WARN from either is a warning. The download that reveals it has already been served, so
+`chaingate report` lists it at once and the next download that reaches ChainGate carries the npm notice ("an install
+script downloads code to run or sends data to an outside host"; "an install script runs a file too large to read").
+They were named after a measurement found no false alarm on either in 19,614 ordinary package versions. S1 to S4 are
+contributing rows: recorded as notes, shown in `chaingate why` and `chaingate report --json`, never a warning on their
+own. A row names the markers that matched, the file and its size -- never the file's content. The marker lists are
+constants under the version `static-checks-1.3`, the same lists the operator's recon tool runs. A download the
 rule did not arm records "not armed"; a file that is binary, over the cap, absent, or named only by the tarball's own
 `package.json` is "not checked" and says so; a check that found no eligible file to read says "no eligible file in the
 tarball". A tarball whose download was armed is examined once: the outcome rides every

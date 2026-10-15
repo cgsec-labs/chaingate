@@ -18,10 +18,11 @@ export const CONTRIBUTING_GATES = Object.freeze(new Set([
   // size-jump-provenance is a NAMED runner gate (policy.NAMED_RUNNER_GATES), the lineage re-measure having held.
   'identity-break',
   // 0.1.5 static checks step 3 (design note §5): the five tarball static checks start CONTRIBUTING; a check becomes named only by an
-  // operator ruling after the §6 measurement, one at a time (then: policy.NAMED_RUNNER_GATES and proxy/notice.js, not this list)
-  'static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook',
-  // static-checks-1.2 (operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joins as a sixth static check, CONTRIBUTING first
-  'static:S5-oversized-hook-target',
+  // operator ruling after the §6 measurement, one at a time (then: OUT of this list, into policy.NAMED_RUNNER_GATES and proxy/notice.js;
+  // a gate left here has its WARN turned into NOTE by withRole, so it can never be named)
+  // static-checks-1.2 (operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joined as a sixth static check, CONTRIBUTING first.
+  // Naming (operator ruling 2026-10-15, ops handover 11.1/11.4): S0 and S5 are NAMED runner gates and left this list; S1-S4 stay.
+  'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook',
 ]));
 
 /** A runner row with the 1.2 role applied: a contributing gate's WARN becomes NOTE. Everything else unchanged. */

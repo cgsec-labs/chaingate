@@ -10,6 +10,9 @@
 // numeric hex, S3's sink is the exfil-host class only, and a file row that read nothing although its roles had a candidate says "no
 // eligible file in the tarball". static-checks-1.2 (recon 7251caa; operator 2026-10-15, path (a); 1.1 was never shipped) adds S5,
 // the oversized hook target as its own gate, judged by one fact: a hook target's size from the tar header.
+// static-checks-1.3 is a WORDING-ONLY bump of 1.2 (operator 2026-10-15; contract 3.5, orchestrator verdict 20:25Z): S0's notice text
+// says what 1.2's S0 catches (fetch-and-execute and hook-command exfiltration). Markers, thresholds, gates and roles are 1.2's, so
+// every outcome is 1.2's. Recon's matching commit: chaingate-ops c135e35 (tools/recon/v6.7/static-checks.mjs), the same two strings.
 //   S0 shell-fetch-in-hook        a preinstall/install/postinstall command carries a FETCH (curl, wget, Invoke-WebRequest, certutil
 //                                 -urlcache, bitsadmin) AND an EXECUTE/DECODE (| sh, powershell -enc, base64 -d, eval, iex);
 //                                 OR a NETWORK TOOL at a command position (curl, wget, nc, and nslookup/dig/host/ping with command
@@ -32,13 +35,13 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.2';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.3';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
   s2MinIdents: 20, s2MinCharCodes: 50, s2HexDensity: 0.15, s2MinNumericHex: 1000, s4MinAddressFamilies: 2, headBytes: 8000, detailChars: 400 });
 export const CHECKS = Object.freeze([
-  { id: 'S0', gate: 'static:S0-shell-fetch-in-hook', roles: null, notice: 'an install script fetches and runs remote code' },
+  { id: 'S0', gate: 'static:S0-shell-fetch-in-hook', roles: null, notice: 'an install script downloads code to run or sends data to an outside host' },
   { id: 'S1', gate: 'static:S1-loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
   { id: 'S2', gate: 'static:S2-obfuscated-entry', roles: ['main', 'bin'], notice: 'its entry file is obfuscated code' },
   { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },

@@ -76,7 +76,10 @@ const CONTRIBUTING_ROWS = Object.freeze(['seed-v3:dac-trajectory:any']);
 // warning, exactly like a NAMED_ROWS entry (r3 §18.7 item 2, §18.11). 3b and 3c add their gates here.
 // 0.1.5 group 1 (operator ruling 2026-10-13, chaingate-ops handover §7.3): T1.4 size-jump-provenance is named -- measured at
 // 0.020 % of 24.15M corpus versions against its lineage predecessor, +8 established labelled packages beyond 0.1.4's named set.
-const NAMED_RUNNER_GATES = Object.freeze(['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance']);
+// 0.1.5 static checks (operator ruling 2026-10-15, chaingate-ops handover 11.1/11.4): S0 and S5 are named -- static-checks-1.2 re-measure:
+// 0 benign per 10k on 19,614 versions each; recall S0 10/1,422 + 2,731/25,196, S5 382/1,413 + 6/24,941; not-checked share <= 1 %.
+const NAMED_RUNNER_GATES = Object.freeze(['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance',
+  'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target']);
 // Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member, D-N4).
 const POLICY_ROW_GATES = Object.freeze(['override', 'seed-v3:known-malicious-pin', 'seed-v3:input', 'seed-v3:channel-a',
   'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage']);

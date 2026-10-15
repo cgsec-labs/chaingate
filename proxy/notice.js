@@ -24,6 +24,9 @@ const LABELS = Object.freeze({
   'dependency-hooks': 'it adds a dependency that runs install scripts',                           // 0.1.4 group 3b (E35)
   'install-manifest-mismatch': "its tarball's install scripts differ from its registry entry",    // 0.1.4 group 3c (E39)
   'size-jump-provenance': 'its tarball grew fivefold and its link to the repository broke',       // 0.1.5 group 1 (T1.4)
+  // 0.1.5 static checks named 2026-10-15: the static-checks-1.3 CHECKS notice text, byte for byte (one wording)
+  'static:S0-shell-fetch-in-hook': 'an install script downloads code to run or sends data to an outside host',
+  'static:S5-oversized-hook-target': 'an install script runs a file too large to read',
 });
 
 const printable = (s) => String(s).replace(/[^\x20-\x7e]/g, '');

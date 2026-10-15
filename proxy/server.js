@@ -47,7 +47,7 @@ let armedWalks = 0;                                        // 0.1.5: armed keep-
 // 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
-import { POLICY_CONTRACT_VERSION } from '../seed/v3/policy.js';
+import { POLICY_CONTRACT_VERSION, NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 import { storageReport } from './storage-health.js';
 import { createDepFetcher } from './dep-fetcher.js';
 
@@ -1249,14 +1249,20 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           if (res.writableFinished || staticHold) {
             try {
               const [row, ...sRows] = rowsOfWalk();
-              const prevMc = walkLatest.gates_fired?.find?.((g) => g && g.gate === MC_GATE);
-              const mcChanged = !(prevMc && prevMc.result === row.result && prevMc.detail === row.detail);
+              // the late rows that are a NEW named WARN: MC's, and (0.1.5, S0 and S5 named 2026-10-15) a named static check's
+              const changed = (r) => { const prev = walkLatest.gates_fired?.find?.((g) => g && g.gate === r.gate); return !(prev && prev.result === r.result && prev.detail === r.detail); };
+              const lateNamed = [row, ...sRows].filter((r) => r.result === 'WARN' && (r.gate === MC_GATE || NAMED_RUNNER_GATES.includes(r.gate)) && changed(r));
               const outcome = recordLate({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, rows: [row, ...sRows] });
-              if (outcome === 'wrote' && row.result === 'WARN' && mcChanged) {
+              if (outcome === 'wrote' && lateNamed.length) {
+                for (const r of lateNamed) {
+                  log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${r.gate} (${r.detail})`,
+                    `${canonicalName}@${state.tarballVersion}|${r.gate}`);
+                }
+              }
+              // a withheld download was already reported as refused (its rows withheld it): no served late event for it
+              if (outcome === 'wrote' && lateNamed.length && !staticHold) {
                 const now = witnessDb.getLatestDecision(canonicalName, state.tarballVersion);
                 const reason = decidingReason(now.gates_fired, 'WARN');
-                log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${MC_GATE} (${row.detail})`,
-                  `${canonicalName}@${state.tarballVersion}|${MC_GATE}`);
                 const cls = servedClass(now.gates_fired);
                 let k = null;                                          // G3 dated note 5.4: K for the late event too
                 try { k = lastVersionWithoutSignal(witnessDb, canonicalName, state.tarballVersion); } catch { k = null; }
