@@ -24,7 +24,7 @@
 // as it keeps the root package.json; every other byte is still skipped. `keep` is a list of package-relative paths known before
 // the first byte (the registry manifest), or a function of the parsed root package.json applied when that entry completes (entries
 // that preceded it are stated as not kept). The result then carries `files` [{ path, buf, name, platformsNotChecked }] and `notKept`
-// [{ path, reason }]; without `keep` the result is unchanged, key for key. Where macOS or Windows would install ANOTHER entry at a
+// [{ path, reason, size? }] (size: the header size of a target not kept for a cap, static-checks-1.2 S5); without `keep` the result is unchanged, key for key. Where macOS or Windows would install ANOTHER entry at a
 // kept path (a case alias, a backslash separator), that platform is listed in platformsNotChecked: the body read is the Linux one.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
@@ -143,7 +143,7 @@ export function createTarWalker(opts = {}) {
     const n = posix.normalize(p).replace(/^\.\//, '');
     return n === '' || n === '.' || n === '..' || n.startsWith('../') || n.startsWith('/') ? null : n;
   };
-  const pushNotKept = (path, reason) => { if (!notKept.some((x) => x.path === path)) notKept.push({ path, reason }); };
+  const pushNotKept = (path, reason, size) => { if (!notKept.some((x) => x.path === path)) notKept.push(size === undefined ? { path, reason } : { path, reason, size }); };
   function setKeep(list) {
     keepTargets = new Set();
     for (const p of Array.isArray(list) ? list : []) {
@@ -282,8 +282,8 @@ export function createTarWalker(opts = {}) {
         if (keepTargets === null) { if (lx != null) { if (seenBefore.size < MAX_SEEN_BEFORE) seenBefore.add(lx); else seenOverflow = true; } }
         else {
           if (lx != null && keepTargets.has(lx)) {
-            if (size > o.maxKeepBytes) pushNotKept(lx, `over the kept-file cap (${o.maxKeepBytes} bytes)`);
-            else if (!kept.has(lx) && kept.size >= o.maxKeep) pushNotKept(lx, `beyond ${o.maxKeep} kept files`);
+            if (size > o.maxKeepBytes) pushNotKept(lx, `over the kept-file cap (${o.maxKeepBytes} bytes)`, size);
+            else if (!kept.has(lx) && kept.size >= o.maxKeep) pushNotKept(lx, `beyond ${o.maxKeep} kept files`, size);
             else collect = { kind: 'keep', chunks: [], path: lx, name: entryPath };
           }
           noteAliases(entryPath, lx);

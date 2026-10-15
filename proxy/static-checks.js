@@ -1,4 +1,4 @@
-// 0.1.5 tarball static checks S0–S4 (design note §4, §5). Pure functions over the registry manifest, the tarball package.json and the
+// 0.1.5 tarball static checks S0–S5 (design note §4, §5). Pure functions over the registry manifest, the tarball package.json and the
 // walker's kept bodies (tar-walk.js `keep`, step 1). Each check is a CONJUNCTION of two facts about ONE file (or one hook command),
 // stated so a reviewer can confirm it by opening the tarball. A row is { gate, result: ALLOW | SKIP | WARN, detail }, the shape every
 // gate writes; its detail is built from a closed vocabulary -- the marker NAMES that matched (never file content, never a host, never
@@ -8,8 +8,8 @@
 // runtime row and a recon row read against each other; a change to any marker bumps STATIC_CHECKS_VERSION on both sides.
 // The static-checks bump (operator rulings 2026-10-15; recon first, this file mirrors it): S0 adds hook-command exfiltration, S2 adds
 // numeric hex, S3's sink is the exfil-host class only, and a file row that read nothing although its roles had a candidate says "no
-// eligible file in the tarball". HELD until recon's static-checks-1.2 commit (operator 2026-10-15; 1.1 is never shipped): the version
-// string and the oversized hook target, which becomes its own gate static:S5-oversized-hook-target.
+// eligible file in the tarball". static-checks-1.2 (recon 7251caa; operator 2026-10-15, path (a); 1.1 was never shipped) adds S5,
+// the oversized hook target as its own gate, judged by one fact: a hook target's size from the tar header.
 //   S0 shell-fetch-in-hook        a preinstall/install/postinstall command carries a FETCH (curl, wget, Invoke-WebRequest, certutil
 //                                 -urlcache, bitsadmin) AND an EXECUTE/DECODE (| sh, powershell -enc, base64 -d, eval, iex);
 //                                 OR a NETWORK TOOL at a command position (curl, wget, nc, and nslookup/dig/host/ping with command
@@ -22,6 +22,7 @@
 //                                 another literal host are recorded sinks, never firing)
 //   S4 wallet-swap-hook           a kept main/bin target that OVERRIDES XMLHttpRequest.prototype.send / window.fetch /
 //                                 window.ethereum.request AND carries >= 2 crypto-address regex families
+//   S5 oversized-hook-target      a hook target over the 1 MiB kept-file cap (size from the tar header; the body is not read)
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -31,7 +32,7 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.0';   // held: becomes static-checks-1.2 with recon's commit (1.1 is never shipped)
+export const STATIC_CHECKS_VERSION = 'static-checks-1.2';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -42,6 +43,7 @@ export const CHECKS = Object.freeze([
   { id: 'S2', gate: 'static:S2-obfuscated-entry', roles: ['main', 'bin'], notice: 'its entry file is obfuscated code' },
   { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
   { id: 'S4', gate: 'static:S4-wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
+  { id: 'S5', gate: 'static:S5-oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' },
 ]);
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
@@ -96,7 +98,7 @@ export const EXEC_SINKS = [
 export const DECODE_MARKERS = [['eval', /\beval\s*\(/], ['Function', /(?:^|[^\w$.])(?:new\s+)?Function\s*\(/], ['atob', /\batob\s*\(/]];
 export const OBF_IDENT = /_0x[0-9a-f]{4,6}\b/g;
 const HEX_ESCAPE = /\\x[0-9a-fA-F]{2}/g;
-/** 1.1 S2: a numeric hex literal (0x1F), never an _0x identifier or a regex source like 0x[a-f]. */
+/** 1.2 S2: a numeric hex literal (0x1F), never an _0x identifier or a regex source like 0x[a-f]. */
 const NUMERIC_HEX = /(?<![\w$.])0[xX][0-9a-fA-F]+\b/g;
 const CHARCODE_RUN = new RegExp(`String\\.fromCharCode\\s*\\(\\s*(?:\\d{1,3}\\s*,\\s*){${LIMITS.s2MinCharCodes - 1},}\\d{1,3}`);
 export const CRED_SOURCES = [
@@ -124,15 +126,15 @@ export const ADDRESS_FAMILIES = [
 ];
 
 // ---- S0 over a hook command string ----
-/** 1.1 S0 network tools, matched only at a command position (string start, or after ; & | ( ` or $( , optionally behind sudo/env). */
+/** 1.2 S0 network tools, matched only at a command position (string start, or after ; & | ( ` or $( , optionally behind sudo/env). */
 const CMD_POS = String.raw`(?:^|[;&|(\x60]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?`;
 const tool = (re) => new RegExp(`${CMD_POS}(?:${re})(?:\\.exe)?(?=\\s|$|[;&|)])`, 'i');
 export const NET_TOOLS = [['curl', tool('curl')], ['wget', tool('wget')], ['nc', tool('nc|ncat|netcat')], ['nslookup', tool('nslookup')],
   ['dig', tool('dig')], ['host', tool('host')], ['ping', tool('ping')]];
-/** 1.1 S0: the DNS tools count only with command substitution (the DNS-exfiltration shape). */
+/** 1.2 S0: the DNS tools count only with command substitution (the DNS-exfiltration shape). */
 export const DNS_TOOLS = Object.freeze(['nslookup', 'dig', 'host', 'ping']);
 const ANY_URL = /https?:\/\/[^\s'"`]+/g;
-/** 1.1 S0 "sends" markers: what makes a network tool in a hook carry data out. */
+/** 1.2 S0 "sends" markers: what makes a network tool in a hook carry data out. */
 export const SEND_MARKERS = [
   ['command-substitution', /\$\(|`/],
   ['data-flag', /(?:^|\s)(?:--data(?:-[a-z]+)?|--form(?:-string)?|--upload-file|--post-data|--post-file)(?=[\s=]|$)|(?:^|\s)-[dFT](?=\s|[^\s-])/],
@@ -145,7 +147,7 @@ export function hookFetchExec(cmd) {
   const s = typeof cmd === 'string' ? cmd : '';
   const fetch = names(FETCH_MARKERS, s); const exec = names(EXEC_MARKERS, s);
   const net_tools = names(NET_TOOLS, s); const sends = sendsOf(s);
-  // 1.1: hook-command exfiltration = a network tool at a command position AND a sends marker; the DNS tools only with command substitution
+  // 1.2: hook-command exfiltration = a network tool at a command position AND a sends marker; the DNS tools only with command substitution
   const exfil = net_tools.some((t) => (DNS_TOOLS.includes(t) ? sends.includes('command-substitution') : sends.length > 0));
   return { fetch, exec, net_tools, sends, exfil, fires: (fetch.length > 0 && exec.length > 0) || exfil };
 }
@@ -263,7 +265,7 @@ const NONE_TEXT = { S1: 'no hook target to read', S2: 'no entry file to read', S
 const list = (xs) => xs.join(', ');
 
 /**
- * The five rows for a finished walk. `manifest`: the registry version manifest (what npm acts on; the keep list's source);
+ * The six rows for a finished walk. `manifest`: the registry version manifest (what npm acts on; the keep list's source);
  * `packageJson`: the tarball's root package.json, parsed (Linux view), or null; `walk`: the walker result (step 1: `files`, `notKept`).
  * Every row is { gate, result, detail }; the detail never carries publisher text beyond a sanitised path and fixed hook names.
  */
@@ -296,7 +298,7 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
     const prim = primaryOf[x.path] ?? x.path;
     if (keptPrimary.has(prim) || stated.has(prim)) continue;
     if (/^not in the archive/.test(String(x.reason)) && x.path !== prim) continue;        // an absent variant is not news; the primary says it
-    stated.add(prim); notKept.push({ path: prim, reason: x.reason });
+    stated.add(prim); notKept.push(Number.isFinite(x.size) ? { path: prim, reason: x.reason, size: x.size } : { path: prim, reason: x.reason });
   }
   for (const t of klTar.targets) if (!klReg.roles[t.path] && !keptPrimary.has(t.path) && !stated.has(t.path)) { stated.add(t.path); notKept.push({ path: t.path, reason: 'named by the tarball package.json only (not kept)' }); }
   // nothing read (ruled 2026-10-14, per row): the reasons that mean no eligible file was there to read, as against a cap or a limit
@@ -307,6 +309,20 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
     const unread = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r)));
     const skipped = unread.map((x) => `${shownName(x.path)} ${x.reason}`);
     const hits = []; const platsRead = new Set(); let read = 0;
+    if (c.id === 'S5') {
+      // S5 (1.2): one fact, a hook target's size: a kept body by its length (binary or not), a target not kept by its tar-header size;
+      // over the 1 MiB kept-file cap fires; a target with no size (absent, or named only by the tarball package.json) is not checked
+      const sized = [...mine.map((x) => ({ path: x.f.path, size: x.facts.size, plats: x.plats })), ...unread.filter((x) => Number.isFinite(x.size)).map((x) => ({ ...x, plats: [] }))];
+      const noSize = unread.filter((x) => !Number.isFinite(x.size));
+      for (const x of sized) { read += 1; for (const p of x.plats) platsRead.add(p); if (x.size > LIMITS.maxKeepBytes) hits.push({ detail: `hook target ${shownName(x.path)} (${x.size} B) is over the 1 MiB keep cap, body not read`, plats: x.plats }); }
+      const cand = read || hits.length || (noSize.length && !absentOnly(noSize)) ? null : candidateOf(c);
+      const sk = noSize.map((x) => `${shownName(x.path)} ${x.reason}`);
+      if (hits.length) rows.push(row(c, 'WARN', `${hits[0].detail}${hits.length > 1 ? `; and ${hits.length - 1} more file(s)` : ''}${platSuffix(hits[0].plats)}`));
+      else if (cand) rows.push(row(c, 'SKIP', `not checked: ${NOTHING_READ} (${sk.length ? `${sk[0]}${sk.length > 1 ? `; and ${sk.length - 1} more` : ''}` : shownName(cand)})`));
+      else if (sk.length && !read) rows.push(row(c, 'SKIP', `not checked: ${sk[0]}${sk.length > 1 ? `; and ${sk.length - 1} more` : ''}`));
+      else rows.push(row(c, 'ALLOW', `${read ? `hook targets are within the 1 MiB keep cap (${plural(read, 'file')} sized)` : 'no hook target'}${platSuffix([...platsRead])}`));
+      continue;
+    }
     for (const x of mine) {
       const F = x.facts;
       if (F.binary) { skipped.push(`${x.shown} is binary (a NUL in the first ${LIMITS.headBytes} bytes)`); continue; }
@@ -342,9 +358,9 @@ export function armedBy(results) {
   return null;
 }
 const RETRY_PREFIXES = ['not checked: not armed', 'not checked: no registry manifest at hand'];
-/** The five rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
+/** The six rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
 export const unarmedRows = (why) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: not armed (${why})`) }));
-/** The five rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
+/** The six rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
 export const noManifestRows = (armed) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: no registry manifest at hand; armed by ${armed}`) }));
 /** Whether the record's static rows are FINAL: all five present and none a retryable "not checked". A walked outcome, WARN, ALLOW or a
  *  SKIP for the tarball's own shape, is final: tarballs are immutable per version. */

@@ -100,9 +100,9 @@ test('R1 without --tarball the record is today\'s /3, member for member; with --
     assert.deepEqual(rest, plainRest, 'every other member is byte-identical to the /3 record');
     assert.equal(tarball.source.kind, 'tarball-file'); assert.equal(tarball.source.path, w.tb);
     assert.equal(tarball.source.sha256, createHash('sha256').update(fs.readFileSync(w.tb)).digest('hex')); assert.equal(tarball.source.bytes, fs.statSync(w.tb).size);
-    assert.equal(tarball.static_checks_version, 'static-checks-1.0'); assert.deepEqual(tarball.walk, { ok: true });
+    assert.equal(tarball.static_checks_version, 'static-checks-1.2'); assert.deepEqual(tarball.walk, { ok: true });
     assert.deepEqual(tarball.keep_list, { source: 'registry manifest', candidates: 5 });
-    assert.deepEqual(tarball.rows.map((x) => x.gate), ['install-manifest-mismatch', 'static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);
+    assert.deepEqual(tarball.rows.map((x) => x.gate), ['install-manifest-mismatch', 'static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S5-oversized-hook-target']);
     assert.equal(tarball.rows[0].result, 'ALLOW'); assert.equal(tarball.rows[3].result, 'ALLOW'); assert.match(tarball.rows[3].detail, /^entry files carry no obfuscation marker pair \(1 file read\); armed by chaingate check --tarball$/);
     assert.equal(tarball.disposition, 'ALLOW');
     assert.deepEqual(validateRecord(r), [], 'the CI consumer accepts a /4 record'); assert.deepEqual(recordCompatibility(r), []);

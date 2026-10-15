@@ -34,13 +34,13 @@ const ONE_REGEX_OVERRIDE = 'const evm = /0x[a-fA-F0-9]{40}/g;\nwindow.fetch = as
 const HOOKED = { name: 'p', version: '1.0.0', main: 'index.js', scripts: { postinstall: 'node install.js' } };
 const PLAIN = { name: 'p', version: '1.0.0', main: 'index.js' };
 
-test('T1 identity: static-checks-1.0 (held until recon static-checks-1.2, operator 2026-10-15), five checks with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
+test('T1 identity: static-checks-1.2 (declared: S5 added, cft015-s8), six checks with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.0');
-  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4']);
-  assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.2');
+  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5']);
+  assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S5-oversized-hook-target']);
   assert.deepEqual(S.CHECKS.map((c) => c.notice), ['an install script fetches and runs remote code', 'an install script runs a small loader that fetches and executes',
-    'its entry file is obfuscated code', 'its code reads credentials and sends them to an outside host', 'its code rewrites wallet addresses in web traffic']);
+    'its entry file is obfuscated code', 'its code reads credentials and sends them to an outside host', 'its code rewrites wallet addresses in web traffic', 'an install script runs a file too large to read']);
   assert.deepEqual(S.STATIC_GATES, S.CHECKS.map((c) => c.gate));
   assert.equal(S.LIMITS.maxKeep, DEFAULTS.maxKeep); assert.equal(S.LIMITS.maxKeepBytes, DEFAULTS.maxKeepBytes);
   assert.equal(S.LIMITS.s1MaxBytes, 8192); assert.equal(S.LIMITS.s2MinIdents, 20); assert.equal(S.LIMITS.s2MinCharCodes, 50); assert.equal(S.LIMITS.s2HexDensity, 0.15); assert.equal(S.LIMITS.s4MinAddressFamilies, 2);
@@ -138,7 +138,7 @@ test('T7 S4 wallet-swap-hook: an override of XMLHttpRequest.prototype.send / win
 test('T8 conventions: a failed or unarmed walk is five "not checked" rows; binary, over-cap and platform statements; a hostile path never reaches a detail; details are bounded', async () => {
   const S = await SC();
   const failed = S.staticRows({ manifest: HOOKED, packageJson: null, walk: { ok: false, reason: 'gunzip: unexpected end of file' } });
-  assert.equal(failed.length, 5); for (const r of failed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: gunzip: unexpected end of file'); }
+  assert.equal(failed.length, 6); for (const r of failed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: gunzip: unexpected end of file'); }
   const unarmed = S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: { ok: true, packageJson: null, views: [], approx: [] } });
   for (const r of unarmed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: the tarball was not examined (keep list not armed)'); }
   assert.deepEqual(failed.map((r) => r.gate), S.STATIC_GATES);
