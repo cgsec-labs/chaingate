@@ -1,12 +1,13 @@
 // 0.1.5 T1.6 entry-path-change -- a CONTRIBUTING gate in cft-policy-1.2: what npm runs or links for a version changed against its
 // LINEAGE predecessor (gates/lineage-predecessor.js: the previous version in publish order within its release line, FU-2 FINAL).
 // Five components, the measurement's own definitions (chaingate-ops collector/npm_capture.py _lifecycle, _bin, _main; shared
-// fixture t16-predicates-1.0, tools/corpus/fixtures/t16-predicate-cases.json):
+// fixture t16-predicates-1.1, tools/corpus/fixtures/t16-predicate-cases-1.1.json; ops collector/install_scripts.py since 74a9823d):
 //   lifecycle_added    a non-install lifecycle script (LIFECYCLE_HOOKS; preinstall/install/postinstall are T1.1) absent before
 //   lifecycle_changed  the same lifecycle script, its text differs
 //   bin_added          a bin command absent before (the string form is named after the package, as npm links it)
 //   bin_changed        the same bin command, a different path
-//   main               the entry point differs (absent or empty main = index.js; "./x" = "x")
+//   main               the entry point differs (absent or empty main = index.js; leading "./" and "/" stripped; a final segment
+//                      without a "." gets ".js", so "/x" = "./x" = "x" = "x.js"; a directory move or .cjs / .mjs stays a change)
 // Measured (ops handover 11.4, base-rates-1.3, 23,456,355 versions @lin): per 10k lifecycle_added 20.47, lifecycle_changed 15.13,
 // bin_added 6.84, bin_changed 2.75, main 69.54. Contributing only (operator, 2026-10-15); naming a component is a later ruling. The
 // predicate follows ops' version string (T16_PREDICATES_VERSION), never leads it.
@@ -15,7 +16,7 @@
 // 2026-10-15). The detail is closed vocabulary: lifecycle names from the fixed list, bin commands as counts, never a path or text.
 import { lineagePredecessorOf } from './lineage-predecessor.js';
 
-export const T16_PREDICATES_VERSION = 't16-predicates-1.0';
+export const T16_PREDICATES_VERSION = 't16-predicates-1.1';
 export const LIFECYCLE_HOOKS = Object.freeze(['prepare', 'preprepare', 'postprepare', 'prepack', 'postpack', 'prepublish', 'prepublishOnly',
   'publish', 'postpublish', 'preuninstall', 'uninstall', 'postuninstall', 'dependencies']);
 export const COMPONENTS = Object.freeze(['lifecycle_added', 'lifecycle_changed', 'bin_added', 'bin_changed', 'main']);
@@ -46,8 +47,16 @@ export function binOf(m) {
   for (const [k, v] of Object.entries(b)) if (typeof v === 'string') out[k] = pathOf(v);
   return out;
 }
+// t16-predicates-1.1: artefact-only normalisation, looser than Node's resolver in two places that can only remove a main change
+// (a leading "/" is absolute to Node; an extensionless main also resolves X, X.json, X.node, X/index.js). Non-strings stay as they are.
+const entryPath = (p) => {
+  if (typeof p !== 'string') return p;
+  while (p.startsWith('./') || p.startsWith('/')) p = p.startsWith('./') ? p.slice(2) : p.slice(1);
+  const last = p.split('/').at(-1);
+  return last && !last.includes('.') ? `${p}.js` : p;
+};
 /** npm's entry point: absent or empty main is index.js. */
-export const mainOf = (m) => { const v = isObj(m) ? m.main : undefined; return v === undefined || v === null || v === '' ? 'index.js' : pathOf(v); };
+export const mainOf = (m) => { const v = isObj(m) ? m.main : undefined; return v === undefined || v === null || v === '' ? 'index.js' : entryPath(v); };
 
 const diff = (cur, prev) => {
   const added = []; const changed = [];
