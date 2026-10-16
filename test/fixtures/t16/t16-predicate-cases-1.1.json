@@ -1,6 +1,6 @@
 {
- "version": "t16-predicates-1.0",
- "about": "T1.6 entry-path-change predicate cases: a version manifest (package.json fields name, scripts, bin, main) and its predecessor's -> the components that fire. ONE fixture for the Python measurement (tools/corpus/base_rates.py), the proxy tests and the recon tests (mirrors load it unchanged and assert the same version string). Components: lifecycle_added (a non-install lifecycle script name absent before), lifecycle_changed (present in both, text differs), bin_added (a bin command absent before), bin_changed (same command, different path), main (the entry point differs; absent or empty main = index.js; './x' = 'x'). Lifecycle names = collector/npm_capture.py LIFECYCLE_HOOKS (install hooks preinstall/install/postinstall are T1.1, not T1.6). The predecessor is chosen elsewhere (FU-2 lineage); these cases judge one pair.",
+ "version": "t16-predicates-1.1",
+ "about": "T1.6 entry-path-change predicate cases: a version manifest (package.json fields name, scripts, bin, main) and its predecessor's -> the components that fire. ONE fixture for the Python measurement (tools/corpus/base_rates.py), the proxy tests and the recon tests (mirrors load it unchanged and assert the same version string). Components: lifecycle_added (a non-install lifecycle script name absent before), lifecycle_changed (present in both, text differs), bin_added (a bin command absent before), bin_changed (same command, different path), main (the entry point differs after normalisation: absent or empty main = index.js; leading './' and '/' stripped; a bare final segment without an extension = the same path + '.js'. Directory moves and .js/.cjs/.mjs/.ts changes stay changes; t16-predicates-1.1, orchestrator verdict 2026-10-15 18:52Z, operator 'Agree' 2026-10-16). Lifecycle names = collector/npm_capture.py LIFECYCLE_HOOKS (install hooks preinstall/install/postinstall are T1.1, not T1.6). The predecessor is chosen elsewhere (FU-2 lineage); these cases judge one pair.",
  "lifecycle_names": ["prepare", "preprepare", "postprepare", "prepack", "postpack", "prepublish", "prepublishOnly", "publish", "postpublish", "preuninstall", "uninstall", "postuninstall", "dependencies"],
  "cases": [
   {"id": "no-change", "before": {"name": "p", "main": "index.js", "scripts": {"test": "jest"}}, "after": {"name": "p", "main": "index.js", "scripts": {"test": "mocha"}}, "expect": []},
@@ -21,6 +21,14 @@
   {"id": "main-dot-slash", "before": {"name": "p", "main": "./lib/a.js"}, "after": {"name": "p", "main": "lib/a.js"}, "expect": []},
   {"id": "main-moved", "before": {"name": "p", "main": "index.js"}, "after": {"name": "p", "main": "dist/index.js"}, "expect": ["main"]},
   {"id": "main-empty-is-default", "before": {"name": "p", "main": ""}, "after": {"name": "p"}, "expect": []},
-  {"id": "all-components", "before": {"name": "p", "main": "a.js", "scripts": {"prepare": "x"}, "bin": {"p": "a"}}, "after": {"name": "p", "main": "b.js", "scripts": {"prepare": "y", "prepack": "z"}, "bin": {"p": "b", "r": "r"}}, "expect": ["bin_added", "bin_changed", "lifecycle_added", "lifecycle_changed", "main"]}
+  {"id": "all-components", "before": {"name": "p", "main": "a.js", "scripts": {"prepare": "x"}, "bin": {"p": "a"}}, "after": {"name": "p", "main": "b.js", "scripts": {"prepare": "y", "prepack": "z"}, "bin": {"p": "b", "r": "r"}}, "expect": ["bin_added", "bin_changed", "lifecycle_added", "lifecycle_changed", "main"]},
+  {"id": "main-leading-slash", "before": {"name": "p", "main": "/dist/openssl.js"}, "after": {"name": "p", "main": "dist/openssl.js"}, "expect": []},
+  {"id": "main-bare-equals-js", "before": {"name": "p", "main": "index"}, "after": {"name": "p", "main": "index.js"}, "expect": []},
+  {"id": "main-bare-path-equals-js", "before": {"name": "p", "main": "./lib/a"}, "after": {"name": "p", "main": "lib/a.js"}, "expect": []},
+  {"id": "main-bare-default", "before": {"name": "p"}, "after": {"name": "p", "main": "index"}, "expect": []},
+  {"id": "main-directory-move-stays", "before": {"name": "p", "main": "dist/x.js"}, "after": {"name": "p", "main": "lib/x.js"}, "expect": ["main"]},
+  {"id": "main-cjs-stays", "before": {"name": "p", "main": "index.js"}, "after": {"name": "p", "main": "index.cjs"}, "expect": ["main"]},
+  {"id": "main-mjs-vs-bare-stays", "before": {"name": "p", "main": "index.mjs"}, "after": {"name": "p", "main": "index"}, "expect": ["main"]},
+  {"id": "main-slash-then-move", "before": {"name": "p", "main": "index.js"}, "after": {"name": "p", "main": "/dist/openssl.js"}, "expect": ["main"]}
  ]
 }
