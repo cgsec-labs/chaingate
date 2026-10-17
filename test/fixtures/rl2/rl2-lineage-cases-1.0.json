@@ -1,0 +1,1147 @@
+{
+ "about": "Seed v3.2 #5 narrow rl2: chains per (lineage key, tag family), 'release' a family; cross_links only where a predecessor is not the previous row of its own chain (none: previous row when ord > 0, cold start at ord 0); live placement per tools/seedgen/placement.py. Every expected value is derived from the rule of record; regenerate with python -m tools.seedgen.rl2_fixture.",
+ "channel_a_rule_version": "infra5d-1.2+fu2final+norm1+sizeshrink+pipekey1",
+ "detector_stub_effective_at": "2026-10-13T22:00:00+00:00",
+ "history_cases": [
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.0"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "1.0.0": null
+    }
+   },
+   "k": 20,
+   "name": "cold-start release",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "1.0.0"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.0",
+       "1.0.1"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "1.0.0": null,
+     "1.0.1": "1.0.0"
+    }
+   },
+   "k": 20,
+   "name": "release after release",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "1.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "1.0.1"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [
+     {
+      "lineage": 0,
+      "ord": 1,
+      "pred_lineage": 1,
+      "pred_ord": 0,
+      "pred_outside_tail": false,
+      "pred_version": "2.1.0-beta.1"
+     }
+    ],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.0.0",
+       "2.1.0"
+      ],
+      "tag_family": "release"
+     },
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.1.0-beta.1"
+      ],
+      "tag_family": "beta"
+     }
+    ],
+    "predecessor": {
+     "2.0.0": null,
+     "2.1.0": "2.1.0-beta.1",
+     "2.1.0-beta.1": null
+    }
+   },
+   "k": 20,
+   "name": "release after a prerelease of another family",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "2.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "2.1.0-beta.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "2.1.0"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.0.0"
+      ],
+      "tag_family": "release"
+     },
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.1.0-beta.1"
+      ],
+      "tag_family": "beta"
+     }
+    ],
+    "predecessor": {
+     "2.0.0": null,
+     "2.1.0-beta.1": null
+    }
+   },
+   "k": 20,
+   "name": "first-of-family prerelease is a cold start",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "2.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "2.1.0-beta.1"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [
+     {
+      "lineage": 1,
+      "ord": 0,
+      "pred_lineage": 0,
+      "pred_ord": 0,
+      "pred_outside_tail": false,
+      "pred_version": "2.1.0-beta.1"
+     }
+    ],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.1.0-beta.1",
+       "2.1.0-beta.2"
+      ],
+      "tag_family": "beta"
+     },
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.0.1"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "2.0.1": "2.1.0-beta.1",
+     "2.1.0-beta.1": null,
+     "2.1.0-beta.2": "2.1.0-beta.1"
+    }
+   },
+   "k": 20,
+   "name": "prerelease after its own family",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "2.1.0-beta.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:05+00:00",
+     "version": "2.0.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "2.1.0-beta.2"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [
+     {
+      "lineage": 0,
+      "ord": 1,
+      "pred_lineage": 1,
+      "pred_ord": 0,
+      "pred_outside_tail": false,
+      "pred_version": "2.1.0-beta.1"
+     }
+    ],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.0.0",
+       "2.1.0"
+      ],
+      "tag_family": "release"
+     },
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.1.0-beta.1",
+       "2.2.0-beta.1"
+      ],
+      "tag_family": "beta"
+     }
+    ],
+    "predecessor": {
+     "2.0.0": null,
+     "2.1.0": "2.1.0-beta.1",
+     "2.1.0-beta.1": null,
+     "2.2.0-beta.1": "2.1.0-beta.1"
+    }
+   },
+   "k": 20,
+   "name": "the tree: one predecessor of a release and of the next prerelease",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "2.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "2.1.0-beta.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "2.1.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:30+00:00",
+     "version": "2.2.0-beta.1"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [
+     [
+      "0.0.2-security",
+      "stub"
+     ]
+    ],
+    "lineages": [
+     {
+      "lineage_key": "0",
+      "members": [
+       "0.1.0",
+       "0.1.1"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "0.0.2-security": null,
+     "0.1.0": null,
+     "0.1.1": "0.1.0"
+    }
+   },
+   "k": 20,
+   "name": "a stub is skipped as predecessor",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "0.1.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "0.0.2-security"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "0.1.1"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [
+     [
+      "1.0.1",
+      "nat_published_at"
+     ]
+    ],
+    "lineages": [
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.0",
+       "1.0.2"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "1.0.0": null,
+     "1.0.1": null,
+     "1.0.2": "1.0.0"
+    }
+   },
+   "k": 20,
+   "name": "an undated row is skipped as predecessor",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "1.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": null,
+     "version": "1.0.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "1.0.2"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.0.0",
+       "2.0.1"
+      ],
+      "tag_family": "release"
+     },
+     {
+      "lineage_key": "2",
+      "members": [
+       "2.0.1-beta.1"
+      ],
+      "tag_family": "beta"
+     }
+    ],
+    "predecessor": {
+     "2.0.0": null,
+     "2.0.1": "2.0.0",
+     "2.0.1-beta.1": null
+    }
+   },
+   "k": 20,
+   "name": "same-timestamp pair takes the resolver's version-string order",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "2.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "2.0.1-beta.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "2.0.1"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [
+     {
+      "lineage": 2,
+      "ord": 0,
+      "pred_lineage": 1,
+      "pred_ord": 1,
+      "pred_outside_tail": false,
+      "pred_version": "8.1.0-dev.2"
+     }
+    ],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "8",
+      "members": [
+       "8.0.0-rc.1",
+       "8.0.0-rc.2"
+      ],
+      "tag_family": "rc"
+     },
+     {
+      "lineage_key": "8",
+      "members": [
+       "8.1.0-dev.1",
+       "8.1.0-dev.2"
+      ],
+      "tag_family": "dev"
+     },
+     {
+      "lineage_key": "8",
+      "members": [
+       "8.0.0"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "8.0.0": "8.1.0-dev.2",
+     "8.0.0-rc.1": null,
+     "8.0.0-rc.2": "8.0.0-rc.1",
+     "8.1.0-dev.1": null,
+     "8.1.0-dev.2": "8.1.0-dev.1"
+    }
+   },
+   "k": 20,
+   "name": "two pipelines in one major (prisma)",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "8.0.0-rc.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "8.1.0-dev.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "8.0.0-rc.2"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:30+00:00",
+     "version": "8.1.0-dev.2"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:40+00:00",
+     "version": "8.0.0"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [
+     {
+      "lineage": 1,
+      "ord": 0,
+      "pred_lineage": 0,
+      "pred_ord": 0,
+      "pred_outside_tail": true,
+      "pred_version": "8.0.0-dev.0"
+     }
+    ],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "8",
+      "members": [
+       "8.0.0-dev.0",
+       "8.0.1-dev.1",
+       "8.0.1-dev.2",
+       "8.0.1-dev.3",
+       "8.0.1-dev.4"
+      ],
+      "tag_family": "dev"
+     },
+     {
+      "lineage_key": "8",
+      "members": [
+       "8.0.0"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "8.0.0": "8.0.0-dev.0",
+     "8.0.0-dev.0": null,
+     "8.0.1-dev.1": "8.0.0-dev.0",
+     "8.0.1-dev.2": "8.0.1-dev.1",
+     "8.0.1-dev.3": "8.0.1-dev.2",
+     "8.0.1-dev.4": "8.0.1-dev.3"
+    }
+   },
+   "k": 3,
+   "name": "cross-link target outside its chain's tail",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "8.0.0-dev.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "8.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "8.0.1-dev.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:30+00:00",
+     "version": "8.0.1-dev.2"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:40+00:00",
+     "version": "8.0.1-dev.3"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:50+00:00",
+     "version": "8.0.1-dev.4"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [
+     {
+      "lineage": 0,
+      "ord": 1,
+      "pred_lineage": 1,
+      "pred_ord": 1,
+      "pred_outside_tail": false,
+      "pred_version": "1.0.1-0"
+     }
+    ],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.0",
+       "1.0.1"
+      ],
+      "tag_family": "release"
+     },
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.1-a1b2c3d",
+       "1.0.1-0"
+      ],
+      "tag_family": "num"
+     }
+    ],
+    "predecessor": {
+     "1.0.0": null,
+     "1.0.1": "1.0.1-0",
+     "1.0.1-0": "1.0.1-a1b2c3d",
+     "1.0.1-a1b2c3d": null
+    }
+   },
+   "k": 20,
+   "name": "commit-hash and numeric prereleases share num",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "1.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "1.0.1-a1b2c3d"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "1.0.1-0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:30+00:00",
+     "version": "1.0.1"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [
+     [
+      "1.0.1",
+      "holding_description"
+     ]
+    ],
+    "lineages": [
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.0",
+       "1.0.2"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "1.0.0": null,
+     "1.0.1": null,
+     "1.0.2": "1.0.0"
+    }
+   },
+   "k": 20,
+   "name": "forward holding-description row is excluded",
+   "rows": [
+    {
+     "first_observed_at": "2026-10-13T23:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "1.0.0"
+    },
+    {
+     "first_observed_at": "2026-10-13T23:00:00+00:00",
+     "holding_description": true,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "1.0.1"
+    },
+    {
+     "first_observed_at": "2026-10-13T23:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "1.0.2"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [],
+    "lineages": [
+     {
+      "lineage_key": "1",
+      "members": [
+       "1.0.0",
+       "1.0.1",
+       "1.0.2"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "1.0.0": null,
+     "1.0.1": "1.0.0",
+     "1.0.2": "1.0.1"
+    }
+   },
+   "k": 20,
+   "name": "holding-description row observed before activation keeps legacy E4",
+   "rows": [
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "1.0.0"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": true,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "1.0.1"
+    },
+    {
+     "first_observed_at": "2026-09-13T22:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "1.0.2"
+    }
+   ]
+  },
+  {
+   "expected": {
+    "cross_links": [],
+    "excluded": [
+     [
+      "0.0.1-security",
+      "stub"
+     ]
+    ],
+    "lineages": [
+     {
+      "lineage_key": "0",
+      "members": [
+       "0.1.0",
+       "0.1.1"
+      ],
+      "tag_family": "release"
+     }
+    ],
+    "predecessor": {
+     "0.0.1-security": null,
+     "0.1.0": null,
+     "0.1.1": "0.1.0"
+    }
+   },
+   "k": 20,
+   "name": "forward legacy stub is excluded as a stub",
+   "rows": [
+    {
+     "first_observed_at": "2026-10-13T23:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:00+00:00",
+     "version": "0.1.0"
+    },
+    {
+     "first_observed_at": "2026-10-13T23:00:00+00:00",
+     "holding_description": true,
+     "published_at": "2026-01-01T00:00:10+00:00",
+     "version": "0.0.1-security"
+    },
+    {
+     "first_observed_at": "2026-10-13T23:00:00+00:00",
+     "holding_description": false,
+     "published_at": "2026-01-01T00:00:20+00:00",
+     "version": "0.1.1"
+    }
+   ]
+  }
+ ],
+ "lineage_rule_version": "fu2-final+e1e4e5+pipekey1+stubpred1",
+ "placement_cases": [
+  {
+   "candidate": {
+    "holding_description": true,
+    "published_s": 1767225610,
+    "version": "1.0.1"
+   },
+   "expected": {
+    "kind": "ineligible-stub",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "1.0.0",
+     "lineage_key": "1",
+     "tag_family": "release"
+    }
+   ],
+   "name": "live release with the holding description is a forward stub"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225620,
+    "version": "2.1.0"
+   },
+   "expected": {
+    "kind": "append",
+    "predecessor_version": "2.1.0-beta.1"
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "2.0.0",
+     "lineage_key": "2",
+     "tag_family": "release"
+    },
+    {
+     "id": 2,
+     "last_published_s": 1767225610,
+     "last_version": "2.1.0-beta.1",
+     "lineage_key": "2",
+     "tag_family": "beta"
+    }
+   ],
+   "name": "release after a prerelease tip extends the prerelease chain"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225620,
+    "version": "2.1.1"
+   },
+   "expected": {
+    "kind": "append",
+    "predecessor_version": "2.1.0"
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "2.1.0-beta.1",
+     "lineage_key": "2",
+     "tag_family": "beta"
+    },
+    {
+     "id": 2,
+     "last_published_s": 1767225610,
+     "last_version": "2.1.0",
+     "lineage_key": "2",
+     "tag_family": "release"
+    }
+   ],
+   "name": "release after a release tip extends the release chain"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225620,
+    "version": "8.0.0-rc.2"
+   },
+   "expected": {
+    "kind": "append",
+    "predecessor_version": "8.0.0-rc.1"
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "8.0.0-rc.1",
+     "lineage_key": "8",
+     "tag_family": "rc"
+    },
+    {
+     "id": 2,
+     "last_published_s": 1767225610,
+     "last_version": "8.1.0-dev.1",
+     "lineage_key": "8",
+     "tag_family": "dev"
+    }
+   ],
+   "name": "prerelease extends its own family"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225610,
+    "version": "2.1.0-beta.1"
+   },
+   "expected": {
+    "kind": "new-family-cold-start",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "2.0.0",
+     "lineage_key": "2",
+     "tag_family": "release"
+    }
+   ],
+   "name": "first prerelease of a family is a cold start"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225610,
+    "version": "2.0.0"
+   },
+   "expected": {
+    "kind": "new-major-cold-start",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "1.0.0",
+     "lineage_key": "1",
+     "tag_family": "release"
+    }
+   ],
+   "name": "release in an uncovered key is a new-major cold start"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225620,
+    "version": "2.1.0"
+   },
+   "expected": {
+    "kind": "unresolved",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "2.0.0",
+     "lineage_key": "2",
+     "tag_family": "release"
+    },
+    {
+     "id": 2,
+     "last_published_s": 1767225610,
+     "last_version": "2.1.0-beta.1",
+     "lineage_key": "2",
+     "tag_family": "beta"
+    },
+    {
+     "id": 3,
+     "last_published_s": 1767225610,
+     "last_version": "2.1.0-rc.1",
+     "lineage_key": "2",
+     "tag_family": "rc"
+    }
+   ],
+   "name": "same-second tie between the two latest tips"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225610,
+    "version": "2.1.0"
+   },
+   "expected": {
+    "kind": "unresolved",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "2.0.0",
+     "lineage_key": "2",
+     "tag_family": "release"
+    },
+    {
+     "id": 2,
+     "last_published_s": 1767225610,
+     "last_version": "2.1.0-beta.1",
+     "lineage_key": "2",
+     "tag_family": "beta"
+    }
+   ],
+   "name": "release at the same second as the latest tip"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225610,
+    "version": "2.0.1"
+   },
+   "expected": {
+    "kind": "historical-omitted",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225620,
+     "last_version": "2.0.2",
+     "lineage_key": "2",
+     "tag_family": "release"
+    }
+   ],
+   "name": "release before its own chain's tip"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225620,
+    "version": "2.0.1"
+   },
+   "expected": {
+    "kind": "unresolved",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "2.0.0",
+     "lineage_key": "2",
+     "tag_family": "release"
+    },
+    {
+     "id": 2,
+     "last_published_s": 1767225630,
+     "last_version": "2.1.0-beta.2",
+     "lineage_key": "2",
+     "tag_family": "beta"
+    }
+   ],
+   "name": "release inside another chain's history"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225605,
+    "version": "0.0.1-security"
+   },
+   "expected": {
+    "kind": "ineligible-stub",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "1.0.0",
+     "lineage_key": "1",
+     "tag_family": "release"
+    }
+   ],
+   "name": "stub"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": null,
+    "version": "1.0.1"
+   },
+   "expected": {
+    "kind": "ineligible-no-publication-time",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225600,
+     "last_version": "1.0.0",
+     "lineage_key": "1",
+     "tag_family": "release"
+    }
+   ],
+   "name": "no publication time"
+  },
+  {
+   "candidate": {
+    "holding_description": false,
+    "published_s": 1767225620,
+    "version": "2026.1.0"
+   },
+   "expected": {
+    "kind": "unresolved",
+    "predecessor_version": null
+   },
+   "lineages": [
+    {
+     "id": 1,
+     "last_published_s": 1767225610,
+     "last_version": "2025.1.0",
+     "lineage_key": "__CALVER__",
+     "tag_family": "release"
+    }
+   ],
+   "name": "calver key"
+  }
+ ],
+ "placement_rule_version": "rl2-placement-1.0",
+ "seed_contract_version": "cft-seed-v3-contract-1.2",
+ "tag_family_fixture": {
+  "sha256": "f4be8bc5ab9eaeb5a59eef8c4f206483cfc545a3aba8e90437fde21c542a7061",
+  "version": "lineage-tag-family-cases-0.2"
+ },
+ "version": "rl2-lineage-cases-1.0"
+}
