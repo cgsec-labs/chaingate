@@ -41,6 +41,20 @@
 //                         this release -- E1 depends on the package's full distinct-major publish
 //                         sequence, which the seed does not store
 //
+// SEED CONTRACT 1.2 (seed v3.2 #5, narrow rl2; placement rule rl2-placement-1.0, the seed side's tools/seedgen/placement.py).
+// The rule of record keys a lineage by (major, prerelease tag family): a prerelease's predecessor is the previous version
+// of its own family in its key, a plain release's is the previous version of ANY family in its key. The seed keeps one
+// chain per (key, family), "release" a family of its own, and every chain's tip, so for a live release:
+//
+//   a prerelease of family f   appends to the (key, f) chain after its tip; the first of its family is
+//                              new-family-cold-start (no predecessor)
+//   a plain release            appends to the chain holding the latest tip across its key's chains (that may be a
+//                              prerelease chain); no chain in the key is new-major-cold-start
+//   a same-second tie the predecessor depends on (the candidate against the tip, or two tips against each other) is
+//   unresolved; a release before its own chain's tip is historical-omitted, inside another chain's history unresolved;
+//   a candidate carrying the npm holding description is ineligible-stub (a live release is always forward of the stub
+//   instant, so the forward stub predicate applies); E1 CalVer stays unresolved. A 1.0 / 1.1 seed is placed as above.
+//
 // Only `recorded` and `append` yield a Channel-A comparison. For every other outcome Channel-A is
 // NOT evaluated and the gate says why, IN ITS OWN WORDS, rather than letting the checker report
 // `uncovered_package` for a package the seed covers. The DAC trajectory is package-level -- it reads
@@ -110,6 +124,29 @@ const CALVER_KEY = '__CALVER__';
 const CALVER_YEAR_MIN = 2000;
 const CALVER_YEAR_MAX = 2027;
 
+const PLACEMENT_RULE_VERSION = 'rl2-placement-1.0';
+const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
+const RELEASE_FAMILY = 'release';
+// the npm holding text the forward stub predicate excludes (collector/stub_recognition.py HOLDING_DESCRIPTION; name-hold
+// texts are NOT excluded, as there)
+const HOLDING_DESCRIPTION = 'security holding package';
+// collector/drift_cooccurrence.py tag_family, pinned by lineage-tag-family-cases-0.2 (Python's `$` also matches before a
+// final newline, hence `\n?`)
+const HEX_ID_RE = /^[0-9a-f]{7,40}\n?$/;
+const FAMILY_RE = /^[A-Za-z]+/;
+
+/** The prerelease tag family: build metadata dropped; no "-" is release; a commit-hash or numeric-first tag is num. */
+function tagFamily(version) {
+  const v = String(version ?? '').split('+')[0];
+  const dash = v.indexOf('-');
+  if (dash < 0) return RELEASE_FAMILY;
+  const pre = v.slice(dash + 1);
+  const first = pre.split('.')[0];
+  if (HEX_ID_RE.test(first) && /[0-9]/.test(first)) return 'num';
+  const m = FAMILY_RE.exec(pre);
+  return m ? m[0].toLowerCase() : 'num';
+}
+
 const majorOf = (version) => (MAJOR_RE.exec(version || '')?.[1] ?? '0');
 const isStub = (version) => STUB_RE.test(version || '');
 const isCalverYear = (major) => /^20\d\d$/.test(major)
@@ -141,6 +178,7 @@ const PLACEMENTS = Object.freeze({
   RECORDED: 'recorded',
   APPEND: 'append',
   NEW_MAJOR_COLD_START: 'new-major-cold-start',
+  NEW_FAMILY_COLD_START: 'new-family-cold-start',
   HISTORICAL_OMITTED: 'historical-omitted',
   INELIGIBLE_STUB: 'ineligible-stub',
   INELIGIBLE_NO_PUBLICATION_TIME: 'ineligible-no-publication-time',
@@ -154,7 +192,7 @@ const PLACEMENTS = Object.freeze({
  *
  * @returns {{kind, lineage_id, ord, channel_a_usable, reason}}
  */
-function resolvePlacement(seed, packageName, version, publishedS) {
+function resolvePlacement(seed, packageName, version, publishedS, { holdingDescription = false } = {}) {
   const no = (kind, reason) => ({ kind, lineage_id: null, ord: null, channel_a_usable: false, reason });
 
   const pkg = seed.db.prepare('SELECT id FROM packages WHERE package_name = ?').get(packageName);
@@ -181,6 +219,12 @@ function resolvePlacement(seed, packageName, version, publishedS) {
   if (ev) {
     return { kind: PLACEMENTS.RECORDED, lineage_id: ev.lineage_id, ord: ev.ord,
       channel_a_usable: true, reason: null };
+  }
+
+  if (seed.meta?.seed_contract_version === SEED_CONTRACT_1_2) {
+    const rows = seed.db.prepare('SELECT id, lineage_key, tag_family, last_version, last_published_s FROM lineages '
+      + 'WHERE package_id = ? ORDER BY ord').all(pkg.id);
+    return placeRl2(rows, version, publishedS, { holdingDescription });
   }
 
   // E4 / E5: outside lineage grouping entirely, so it holds no predecessor.
@@ -237,6 +281,67 @@ function resolvePlacement(seed, packageName, version, publishedS) {
     `(${publishedS}, ${version}) is published before the recorded tip `
     + `(${ln.last_published_s}, ${ln.last_version}) of lineage ${ln.id}: this is a version the `
     + 'seed did not retain, not a new release, and its position in the chain is not recoverable');
+}
+
+/**
+ * Where a LIVE release sits in a contract-1.2 seed (rl2-placement-1.0; the seed side's placement.place, case for case).
+ * `lineages`: the package's rows (id, lineage_key, tag_family, last_version, last_published_s). Never throws.
+ */
+function placeRl2(lineages, version, publishedS, { holdingDescription = false } = {}) {
+  const no = (kind, reason) => ({ kind, lineage_id: null, ord: null, channel_a_usable: false, reason });
+  const append = (id) => ({ kind: PLACEMENTS.APPEND, lineage_id: id, ord: null, channel_a_usable: true, reason: null });
+  if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
+  if (holdingDescription) {
+    return no(PLACEMENTS.INELIGIBLE_STUB, `${version} carries the npm holding description (the forward stub predicate): it `
+      + 'is excluded from lineage grouping and holds no predecessor');
+  }
+  if (publishedS === null || publishedS === undefined) {
+    return no(PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME, 'the release has no publication time (FU-2 E5): it cannot be ordered');
+  }
+  if (!lineages.length) return no(PLACEMENTS.UNCOVERED_PACKAGE, 'the seed records no lineage for this package');
+  const major = majorOf(version);
+  if (isCalverYear(major) || lineages.some((l) => l.lineage_key === CALVER_KEY)) {
+    return no(PLACEMENTS.UNRESOLVED, `the lineage key for major ${major} depends on the FU-2 E1 CalVer collapse, which the `
+      + 'seed does not store');
+  }
+  const key = lineages.filter((l) => l.lineage_key === major);
+  const fam = tagFamily(version);
+  const own = key.filter((l) => l.tag_family === fam);
+  if (own.length > 1) return no(PLACEMENTS.UNRESOLVED, `${own.length} recorded chains carry (${major}, ${fam}); a 1.2 seed holds at most one`);
+  const againstTip = (tip, ownChain) => {
+    if (publishedS > tip.last_published_s) return append(tip.id);
+    if (publishedS === tip.last_published_s) {
+      return no(PLACEMENTS.UNRESOLVED, `this release and the recorded tip ${tip.last_version} of chain ${tip.id} both stamp `
+        + `to the same second ${publishedS}; their true order is not recoverable`);
+    }
+    if (ownChain && ownChain.id === tip.id) {
+      return no(PLACEMENTS.HISTORICAL_OMITTED, `the release precedes the recorded tip ${tip.last_version} of its own chain `
+        + `${tip.id}: a version the seed did not retain`);
+    }
+    return no(PLACEMENTS.UNRESOLVED, `the release falls inside chain ${tip.id}'s history (before its tip ${tip.last_version}): `
+      + 'its predecessor is a row the seed does not name for a live release');
+  };
+  if (fam !== RELEASE_FAMILY) {
+    if (!own.length) {
+      return no(PLACEMENTS.NEW_FAMILY_COLD_START, `no recorded chain carries (${major}, ${fam}): the first ${fam} prerelease `
+        + 'of its key has no predecessor');
+    }
+    return againstTip(own[0], own[0]);
+  }
+  if (!key.length) {
+    return no(PLACEMENTS.NEW_MAJOR_COLD_START, `no recorded chain carries major ${major}: the release is the first of its key`);
+  }
+  if (own.length && publishedS < own[0].last_published_s) {
+    return no(PLACEMENTS.HISTORICAL_OMITTED, `(${publishedS}, ${version}) precedes the recorded tip ${own[0].last_version} `
+      + `of its own chain ${own[0].id}: a version the seed did not retain`);
+  }
+  const latest = Math.max(...key.map((l) => l.last_published_s));
+  const atLatest = key.filter((l) => l.last_published_s === latest);
+  if (atLatest.length > 1) {
+    return no(PLACEMENTS.UNRESOLVED, `the tips ${atLatest.map((l) => l.last_version).join(', ')} of major ${major} stamp to `
+      + `the same second ${latest}; which one precedes this release is not recoverable from second-resolution storage`);
+  }
+  return againstTip(atLatest[0], own.length ? own[0] : null);
 }
 
 // The gap index is computed ONCE PER DOCUMENT, like the domain map above: the store evaluates every version of a
@@ -401,7 +506,8 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
     const row = PK.observationFromManifest(version, manifest,
       typeof input.publishedAt === 'string' ? input.publishedAt : null);
     const publishedS = A.publishedSeconds(row.published_at);
-    place = resolvePlacement(seed, pkg, version, publishedS);
+    place = resolvePlacement(seed, pkg, version, publishedS,
+      { holdingDescription: manifest.description === HOLDING_DESCRIPTION });
     // The candidate's own e-mail is the approver-RESOLVED one, which is what `derive` looks the
     // count up with even though the writer keys the map on the raw address.
     const dvc = resolveDomainVersionCount(domainVersionCount, {
@@ -541,9 +647,9 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
   return { name: SEED_V3_GATE, evaluate, onError, onErrorResult };
 }
 
-export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
+export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, placeRl2, tagFamily, PLACEMENT_RULE_VERSION, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
   resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor, SEMVER_RE };
-export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
+export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, placeRl2, tagFamily, PLACEMENT_RULE_VERSION, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
   resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor, SEMVER_RE };

@@ -199,7 +199,10 @@ test('H1 every history case: predecessorOf gives the rule of record\'s predecess
           if (want === null) { assert.equal(got, null, `${c.name}: ${v} is a cold start`); return; }
           const [plv, po, srow] = got;
           assert.equal(c.expected.lineages[plv.lineage_id - 1].members[po], want, `${c.name}: ${v}`);
-          assert.equal(srow?.version, want, `${c.name}: ${v} carries its predecessor's spine fields (from the link beyond the tail)`);
+          const linked = c.expected.cross_links.some((x) => x.lineage === li && x.ord === ord);
+          // a cross-link always carries its target's spine fields, even beyond the tail; an in-chain row beyond the tail has none
+          if (linked) assert.equal(srow?.version, want, `${c.name}: ${v} carries its linked predecessor's spine fields`);
+          else if (srow !== null) assert.equal(srow.version, want, `${c.name}: ${v}`);
         });
       });
     } finally { db.close(); }
