@@ -108,12 +108,15 @@ function loadStatement(db, key) {
   }
   return st;
 }
-/** Whether this seed has the rl2 layout (contract 1.2: `lineages.tag_family`), once per handle. */
+/**
+ * Whether this seed has the rl2 layout (contract 1.2: `lineages.tag_family`), decided once per handle by COMPILING the rl2
+ * lineage statement (no execution, so a package load still runs a constant number of statements; a legacy seed adds none).
+ */
 const RL2_LAYOUT = new WeakMap();
 function hasRl2(db) {
   let v = RL2_LAYOUT.get(db);
   if (v === undefined) {
-    v = db.prepare("PRAGMA table_info('lineages')").all().some((c) => c.name === 'tag_family');
+    try { db.prepare(LOAD_SQL.lineagesRl2); v = true; } catch { v = false; }
     RL2_LAYOUT.set(db, v);
   }
   return v;

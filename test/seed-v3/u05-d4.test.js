@@ -221,11 +221,14 @@ test('T-L a 1.1 seed without the name column or without the (package_name, versi
   } finally { noName.cleanup(); noIndex.cleanup(); }
 });
 
-test('T-L both seed contracts are supported, and nothing else', () => {
+test('T-L the three seed contracts are supported, and nothing else (1.2 since 0.1.5, seed v3.2)', () => {
   assert.deepEqual([...R.SUPPORTED_SEED_CONTRACT_VERSIONS].sort(),
-    ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1']);
-  const s = buildSeed({ layout: '1.1', contract: 'cft-seed-v3-contract-1.2' });
-  try {
-    assert.throws(() => openFixtureSeed(s.dbPath), (e) => e instanceof R.SeedRefused && /contract_version/.test(e.message));
-  } finally { s.cleanup(); }
+    ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2']);
+  // a 1.1 layout declaring 1.2 is refused (no pipeline-key rule, no cross_links), and so is an unknown contract
+  for (const contract of ['cft-seed-v3-contract-1.2', 'cft-seed-v3-contract-1.3']) {
+    const s = buildSeed({ layout: '1.1', contract });
+    try {
+      assert.throws(() => openFixtureSeed(s.dbPath), (e) => e instanceof R.SeedRefused && /contract_version/.test(e.message), contract);
+    } finally { s.cleanup(); }
+  }
 });
