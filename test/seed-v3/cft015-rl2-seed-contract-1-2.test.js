@@ -318,12 +318,13 @@ test('K1 a check against a 1.2 seed writes chaingate.check/4, with or without a 
     }
     assert.equal(cold.explanation.structured.placement.kind, 'new-family-cold-start');
     assert.equal(app.explanation.structured.placement.kind, 'append');
-    assert.equal(withTarball(cold, null).schema, 'chaingate.check/4');
+    assert.equal(withTarball({ ...cold }, null).schema, 'chaingate.check/4');
     // the same record labelled /3 is not one: /3 carries neither contract 1.2 nor the new placement
     const as3 = { ...cold, schema: 'chaingate.check/3' };
     assert.ok(recordCompatibility(as3).some((x) => /seed\.contract_version/.test(x)));
-    assert.ok(validateRecord(as3).some((x) => /seed\.contract_version/.test(x)));
-    assert.ok(validateRecord(as3).some((x) => /new-family-cold-start/.test(x)), 'the consumer names the placement /3 lacks');
+    assert.ok(validateRecord(as3).some((x) => /candidate\.placement\.kind/.test(x) && /new-family-cold-start/.test(x)),
+      'the consumer names the placement /3 lacks (a combination is checked only once the shape is valid)');
+    assert.ok(validateRecord({ ...app, schema: 'chaingate.check/3' }).some((x) => /seed\.contract_version/.test(x)));
     if (Ajv2020) {
       const Ctor = Ajv2020.default || Ajv2020; const ajv = new Ctor({ strict: true, strictRequired: false, allErrors: true });
       ajv.addSchema(readJson(path.join(HERE, '..', 'fixtures', 'cft03', 'finding.schema.json')));

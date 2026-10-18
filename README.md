@@ -182,6 +182,10 @@ manifest check and the five tarball checks above, the keep list from the packume
 record's `tarball` member (`chaingate.check/4`, which is `/3` plus that one optional member). Those rows never change the
 decision or the exit code in 0.1.5: a CI job that wants to gate on them reads `tarball.disposition`.
 
+A check against a seed of contract `cft-seed-v3-contract-1.2` also writes `chaingate.check/4`, with or without
+`--tarball`: only `/4` carries that seed contract and its placement `new-family-cold-start`, the first prerelease of a new
+tag (for example the first `-rc`), which has no earlier version of its own tag to compare against.
+
 **What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), or a
 version your pin withholds, ChainGate sends npm a notice on the tarball response, and npm prints it. Other refusals (an
 evaluation that failed or is busy, a full record) carry only the HTTP error. `chaingate why <pkg>@<ver>`, the command the

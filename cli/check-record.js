@@ -18,6 +18,7 @@ import G from '../seed/v3/gate.js';
 import { explain } from '../seed/v3/explain.js';
 
 export const CHECK_SCHEMA_ID = 'chaingate.check/3';
+const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
 
 /**
  * The combinations a check record may carry, one per schema (U-05 Amendment 1). 0.1.4 writes only /3; /2 records are
@@ -33,10 +34,11 @@ export const SUPPORTED_RECORDS = Object.freeze({
   'chaingate.check/3': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
-  // 0.1.5 static checks step 5: /4 = /3 plus the optional `tarball` member of `chaingate check --tarball`; the SAME combination
+  // 0.1.5 static checks step 5: /4 = /3 plus the optional `tarball` member of `chaingate check --tarball`; the same combination
+  // plus seed contract 1.2 (FOLLOWUPS #17, operator 2026-10-18), whose rl2 placement adds new-family-cold-start
   'chaingate.check/4': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
-    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2'] }),
 });
 export const CHECK_SCHEMA_IDS = Object.freeze(Object.keys(SUPPORTED_RECORDS));
 
@@ -191,6 +193,8 @@ export function buildCheckRecord({ seed, bundleId = null, policy, domainVersionC
   const rec = common(tool, request);
   rec.result = finding ? RESULT.EVALUATED : RESULT.REFUSED;
   rec.seed = seedIdentity(seed, bundleId);
+  // /3 (0.1.4, published) carries neither seed contract 1.2 nor its placement new-family-cold-start: a 1.2 seed writes /4
+  if (rec.seed.contract_version === SEED_CONTRACT_1_2) rec.schema = CHECK_SCHEMA_ID_TARBALL;
   if (finding) {
     rec.candidate = {
       candidate_digest: finding.candidate.candidate_digest,
@@ -212,7 +216,7 @@ export function buildCheckRecord({ seed, bundleId = null, policy, domainVersionC
   return rec;
 }
 
-/** 0.1.5 (step 5): the `tarball` member of `chaingate check --tarball` makes the record a /4; decision and effective stay as evaluated. */
+/** 0.1.5 (step 5): the `tarball` member of `chaingate check --tarball` makes the record a /4 (as a 1.2 seed does); decision and effective stay as evaluated. */
 export const CHECK_SCHEMA_ID_TARBALL = 'chaingate.check/4';
 export function withTarball(rec, tarball) {
   if (!rec || rec.result === RESULT.TOOL_ERROR) return rec;

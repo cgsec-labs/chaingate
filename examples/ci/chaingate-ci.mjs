@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // chaingate-ci — one offline CI consumer of `chaingate.check/3` results (0.1.4), `/4` (0.1.5: /3 plus the optional tarball member) and of historical
-// `chaingate.check/2` (0.1.3) and `chaingate.check/1` results (0.1.2 and earlier). Node standard library only.
+// `chaingate.check/2` (0.1.3) and `chaingate.check/1` results (0.1.2 and earlier). /4 is also what 0.1.5 writes against a seed of
+// contract 1.2, whose placement adds new-family-cold-start. Node standard library only.
 //
 //   node chaingate-ci.mjs --expected <manifest> --results <dir> --trusted-seed <sha256> [...]
 //                         [--trusted-seeds-file <file>] [--ignore-overrides] [--summary <file>]
@@ -56,10 +57,11 @@ const COMBINATIONS = {
   'chaingate.check/3': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
-  // chaingate.check/4 (0.1.5): /3 plus an OPTIONAL `tarball` member written by `chaingate check --tarball`; the SAME combination
+  // chaingate.check/4 (0.1.5): /3 plus an OPTIONAL `tarball` member written by `chaingate check --tarball`; the same combination
+  // plus seed contract 1.2, which 0.1.5 always reports as /4 (its placement adds new-family-cold-start)
   'chaingate.check/4': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
-    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] },
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2'] },
 };
 const SCHEMA_IDS = Object.keys(COMBINATIONS);
 const DISPOSITIONS = ['ALLOW', 'WARN', 'BLOCK'];
@@ -123,6 +125,9 @@ function splitPair(s) {
 // ---------------------------------------------------------------------------------------------
 const PLACEMENTS = ['recorded', 'append', 'new-major-cold-start', 'historical-omitted', 'ineligible-stub',
   'ineligible-no-publication-time', 'uncovered-package', 'unresolved'];
+// /4 adds the first prerelease of a new tag family (seed contract 1.2), which has no predecessor
+const PLACEMENTS_4 = ['recorded', 'append', 'new-major-cold-start', 'new-family-cold-start', 'historical-omitted',
+  'ineligible-stub', 'ineligible-no-publication-time', 'uncovered-package', 'unresolved'];
 const FINDING_MEMBERS = ['contract_version', 'timestamp_precision', 'corpus_context', 'candidate', 'channel_a',
   'dac_trajectory', 'seed'];
 
@@ -194,6 +199,8 @@ const SPEC = {
   tarball_keep_list: { source: expect(T.oneOf(['registry manifest', 'tarball package.json']), 'registry manifest|tarball package.json'),
     candidates: expect((v) => Number.isInteger(v) && v >= 0, 'an integer >= 0') },
 };
+// /4: the same placement object, whose kind may also be new-family-cold-start.
+SPEC.placement_4 = { ...SPEC.placement, kind: expect(T.oneOf(PLACEMENTS_4), `one of ${PLACEMENTS_4.join('|')}`) };
 
 /** Structural validation of one record. Returns a list of problems (empty = valid). */
 export function validateRecord(rec) {
@@ -256,7 +263,7 @@ export function validateRecord(rec) {
 
   if (rec.result === 'evaluated') {
     if (checkObject('candidate', rec.candidate, SPEC.candidate, p) && isObj(rec.candidate.placement)) {
-      checkObject('candidate.placement', rec.candidate.placement, SPEC.placement, p);
+      checkObject('candidate.placement', rec.candidate.placement, rec.schema === 'chaingate.check/4' ? SPEC.placement_4 : SPEC.placement, p);
     }
     if (!isObj(rec.finding)) p.push('finding must be an object');
     else {
