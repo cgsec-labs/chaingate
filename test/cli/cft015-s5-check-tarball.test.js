@@ -1,7 +1,8 @@
 // 0.1.5 tarball static checks, step 5 (design note §5 "chaingate check (CI)", pulled forward from 0.1.6 by the operator 2026-10-14):
 // `chaingate check <pkg>@<ver> --packument <file> --tarball <file>` reuses the walker (step 1), the checks (step 2) and MC offline over a
 // LOCAL tarball and REPORTS the rows in a `tarball` member of a `chaingate.check/4` record -- /3 plus exactly that optional member; a
-// check without --tarball still writes /3, byte for byte. The tarball rows never change `decision`, `effective` or the exit code in
+// check without --tarball still writes /3, byte for byte (against a 1.0 or 1.1 seed; a check against
+// a 1.2 seed always writes /4, whose placement enum adds new-family-cold-start). The tarball rows never change `decision`, `effective` or the exit code in
 // 0.1.5 (the CI consumer's invariant effective.action == decision.disposition holds; gating on `tarball.disposition` is a consumer's
 // choice and an operator ruling). Written failing-first against the step-3 tree. Nothing is installed or run.
 import test from 'node:test';
@@ -59,18 +60,24 @@ const TARBALL_DEF = {
   },
 };
 
-test('V4 /4 equals /3 plus exactly the documented delta: the schema const, an optional `tarball` member on the evaluated and refused shapes, and its definition', () => {
+test('V4 /4 equals /3 plus exactly the documented delta: the schema const, an optional `tarball` member on the evaluated and refused shapes, its definition, and the placement new-family-cold-start', () => {
   const want = read(S3); const got = read(S4);
   want.$id = 'https://chaingate.dev/schemas/chaingate-check-4.json';
   for (const shape of want.oneOf) { shape.properties.schema.const = 'chaingate.check/4'; if (shape.properties.result.const !== 'tool_error') shape.properties.tarball = { $ref: '#/$defs/tarball' }; }
   want.$defs.tarball = TARBALL_DEF;
+  // operator 2026-10-18: rl2 placement's new-family-cold-start (seed contract 1.2) is a /4 value, after new-major-cold-start
+  const addKind = (o) => { if (Array.isArray(o)) { const i = o.indexOf('new-major-cold-start'); if (i >= 0) o.splice(i + 1, 0, 'new-family-cold-start'); o.forEach(addKind); }
+    else if (o && typeof o === 'object') Object.values(o).forEach(addKind); };
+  addKind(want);
   want.title = got.title; want.description = got.description;   // prose may name /4; nothing else may differ
   assert.deepEqual(got, want);
   assert.equal(createHash('sha256').update(fs.readFileSync(S3)).digest('hex'), createHash('sha256').update(fs.readFileSync(S3)).digest('hex'), '/3 untouched (its own test pins the bytes)');
 });
 
-test('V4b the supported combinations: /4 carries exactly /3\'s versions; the explanation renderer and the CI consumer accept /4', () => {
-  assert.deepEqual(SUPPORTED_RECORDS['chaingate.check/4'], SUPPORTED_RECORDS['chaingate.check/3']);
+test('V4b the supported combinations: /4 carries /3\'s versions plus seed contract 1.2; the explanation renderer and the CI consumer accept /4', () => {
+  const { seed_contract_versions: c3, ...rest3 } = SUPPORTED_RECORDS['chaingate.check/3'];
+  const { seed_contract_versions: c4, ...rest4 } = SUPPORTED_RECORDS['chaingate.check/4'];
+  assert.deepEqual(rest4, rest3); assert.deepEqual(c4, [...c3, 'cft-seed-v3-contract-1.2']);
   assert.ok(Object.keys(SUPPORTED_RECORDS).includes('chaingate.check/4'));
 });
 
