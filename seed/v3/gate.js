@@ -67,6 +67,7 @@ import PK from './packument.js';
 import POL from './policy.js';
 import { emailDomain } from './normalize.js';
 import { resolvePublisherEmail } from './normalize-extra.js';
+import { RELEASE_FAMILY, HOLDING_DESCRIPTION, tagFamily } from './tag-family.js';
 
 const SEED_V3_GATE = 'seed-v3';
 const FROM_PACKUMENT = 'from-packument';
@@ -126,26 +127,6 @@ const CALVER_YEAR_MAX = 2027;
 
 const PLACEMENT_RULE_VERSION = 'rl2-placement-1.0';
 const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
-const RELEASE_FAMILY = 'release';
-// the npm holding text the forward stub predicate excludes (collector/stub_recognition.py HOLDING_DESCRIPTION; name-hold
-// texts are NOT excluded, as there)
-const HOLDING_DESCRIPTION = 'security holding package';
-// collector/drift_cooccurrence.py tag_family, pinned by lineage-tag-family-cases-0.2 (Python's `$` also matches before a
-// final newline, hence `\n?`)
-const HEX_ID_RE = /^[0-9a-f]{7,40}\n?$/;
-const FAMILY_RE = /^[A-Za-z]+/;
-
-/** The prerelease tag family: build metadata dropped; no "-" is release; a commit-hash or numeric-first tag is num. */
-function tagFamily(version) {
-  const v = String(version ?? '').split('+')[0];
-  const dash = v.indexOf('-');
-  if (dash < 0) return RELEASE_FAMILY;
-  const pre = v.slice(dash + 1);
-  const first = pre.split('.')[0];
-  if (HEX_ID_RE.test(first) && /[0-9]/.test(first)) return 'num';
-  const m = FAMILY_RE.exec(pre);
-  return m ? m[0].toLowerCase() : 'num';
-}
 
 const majorOf = (version) => (MAJOR_RE.exec(version || '')?.[1] ?? '0');
 const isStub = (version) => STUB_RE.test(version || '');

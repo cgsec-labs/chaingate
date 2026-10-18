@@ -1,6 +1,7 @@
 // 0.1.5 group 1 (T1.4) size-jump-provenance -- a NAMED gate in cft-policy-1.2: "a payload bundled into the tarball, published
 // from outside the repository's CI". The candidate's dist.unpackedSize at or above 5x its LINEAGE predecessor's
-// (gates/lineage-predecessor.js: the previous version in publish order within its release line, FU-2 FINAL) AND the
+// (gates/lineage-predecessor.js, FU-2 FINAL +pipekey1: the previous version in publish order within its release line, and
+// for a prerelease the previous version of its own tag there) AND the
 // candidate's provenance to the repository broke against that predecessor: its gitHead is absent where the predecessor had
 // one, or its repository URL differs.
 //
@@ -15,7 +16,7 @@
 // Reads only the served packument (`rawVersions`, `rawTimes`): history-independent, like the other Tier 1 gates.
 // Deterministic. Nothing here is a judgement of the code; a release that bundles its build output and moves its repository
 // in one version fires it, and `chaingate why` says exactly which two facts did.
-import { lineagePredecessorOf } from './lineage-predecessor.js';
+import { lineagePredecessorOf, noPredecessorReason } from './lineage-predecessor.js';
 
 export const RATIO = 5;
 const GATE = 'size-jump-provenance';
@@ -51,7 +52,7 @@ export default {
     const size = sizeOf(cand);
     if (size === null) return result('SKIP', 'not evaluable: no dist.unpackedSize for this version');
     const pred = lineagePredecessorOf(versions, input?.rawTimes, input?.version);
-    if (!pred) return result('SKIP', 'not evaluable: no earlier version in this release line');
+    if (!pred) return result('SKIP', `not evaluable: ${noPredecessorReason(input.version)}`);
     const psize = sizeOf(pred.manifest);
     if (psize === null) return result('SKIP', `not evaluable: the previous version of this release line (${pred.version}) has no size`);
     const ratio = size / psize;

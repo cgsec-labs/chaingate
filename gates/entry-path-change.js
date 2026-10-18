@@ -1,5 +1,6 @@
 // 0.1.5 T1.6 entry-path-change -- a CONTRIBUTING gate in cft-policy-1.2: what npm runs or links for a version changed against its
-// LINEAGE predecessor (gates/lineage-predecessor.js: the previous version in publish order within its release line, FU-2 FINAL).
+// LINEAGE predecessor (gates/lineage-predecessor.js, FU-2 FINAL +pipekey1: the previous version in publish order within its
+// release line, and for a prerelease the previous version of its own tag there).
 // Five components, the measurement's own definitions (chaingate-ops collector/npm_capture.py _lifecycle, _bin, _main; shared
 // fixture t16-predicates-1.2, tools/corpus/fixtures/t16-predicate-cases-1.2.json; ops collector/install_scripts.py since 8f0b0536):
 //   lifecycle_added    a non-install lifecycle script (LIFECYCLE_HOOKS; preinstall/install/postinstall are T1.1) absent before
@@ -15,7 +16,7 @@
 //
 // Reads only the served packument (`rawVersions`, `rawTimes`); the proxy always fetches the full document (npm 10/11/12 grounding
 // 2026-10-15). The detail is closed vocabulary: lifecycle names from the fixed list, bin commands as counts, never a path or text.
-import { lineagePredecessorOf } from './lineage-predecessor.js';
+import { lineagePredecessorOf, noPredecessorReason } from './lineage-predecessor.js';
 
 export const T16_PREDICATES_VERSION = 't16-predicates-1.2';
 export const LIFECYCLE_HOOKS = Object.freeze(['prepare', 'preprepare', 'postprepare', 'prepack', 'postpack', 'prepublish', 'prepublishOnly',
@@ -86,7 +87,7 @@ export default {
     const cand = versions?.[input?.version];
     if (!isObj(cand)) return result('SKIP', 'not evaluable: no manifest for this version');
     const pred = lineagePredecessorOf(versions, input?.rawTimes, input?.version);
-    if (!pred) return result('SKIP', 'not evaluable: no earlier version in this release line');
+    if (!pred) return result('SKIP', `not evaluable: ${noPredecessorReason(input.version)}`);
     const fired = components(cand, pred.manifest);
     if (!fired.length) return result('ALLOW', `lifecycle scripts, bin and main as in ${pred.version}`);
     const l = diff(lifecycleOf(cand), lifecycleOf(pred.manifest));

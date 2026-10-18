@@ -7,8 +7,8 @@
 // The fixtures are the seed side's, loaded UNCHANGED and sha-pinned:
 //   rl2-lineage-cases-1.0.json          tools/seedgen/fixtures, 15 history + 13 placement cases, sha256 aa4558c6...
 //   lineage-tag-family-cases-0.2.json   tools/corpus/fixtures, the tag-family definition the seed pins, sha256 f4be8bc5...
-// Not here (a separate change, with ops' re-measure and recon's fixture bump): gates/lineage-predecessor.js, which picks
-// the predecessor for the install-time gates T1.6 and size-jump-provenance.
+// Not here (step 2, test/gates/cft015-t16-entry-path-change.test.js P3): gates/lineage-predecessor.js, which picks the
+// predecessor for the install-time gates T1.6 and size-jump-provenance; it shares seed/v3/tag-family.js with placement.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
