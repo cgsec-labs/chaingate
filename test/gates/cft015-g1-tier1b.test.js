@@ -97,7 +97,7 @@ test('G1-7 lineage predecessor: publish order within the leading-integer major; 
   assert.equal(p.get('0.9.0'), 'v2-alpha' === p.get('0.9.0') ? 'v2-alpha' : null, '0.9.0 opens line 0 (v2-alpha is later)');
   assert.equal(p.get('0.9.1'), '0.9.0');
   assert.equal(majorOf('v2-alpha'), '0', 'a non-digit prefix is major 0 (E2 no-split, E6 fillna)');
-  assert.equal(p.get('v2-alpha'), '0.9.1', 'so it joins line 0');
+  assert.equal(p.get('v2-alpha'), null, 'so it joins line 0, as the first of its tag (alpha) there: +pipekey1');
   assert.equal(p.get('2.0.0'), null);
   assert.deepEqual(lineagePredecessorOf(doc.versions, doc.time, '1.2.0'), { version: '1.0.9', manifest: doc.versions['1.0.9'] });
   assert.equal(lineagePredecessorOf(doc.versions, doc.time, 'nope'), null);
@@ -109,7 +109,7 @@ test('G1-8 lineage predecessor: a contiguous CalVer tail of >= 2 decreasing year
   assert.equal(p.get('2024.1.0'), '1.1.0' === p.get('2024.1.0') ? '1.1.0' : null);
   // distinct majors in order: 1, 2024, 2025, 2026 -> the tail 2026, 2025, 2024 is a strictly decreasing CalVer run -> one line
   assert.equal(p.get('2025.1.0'), '2024.2.0');
-  assert.equal(p.get('2026.0.0-rc.1'), '2025.1.0', 'the prerelease of the next year is judged against the previous year');
+  assert.equal(p.get('2026.0.0-rc.1'), null, 'the first rc of the collapsed line has no earlier rc (+pipekey1)');
   assert.equal(p.get('2026.0.0'), '2026.0.0-rc.1');
   assert.equal(CALVER_KEY, '__CALVER__');
   const single = pk([['1.0.0', 0], ['2025.1.0', 10], ['2025.2.0', 20]]);
@@ -119,6 +119,21 @@ test('G1-8 lineage predecessor: a contiguous CalVer tail of >= 2 decreasing year
 });
 
 // ------------------------------------------------------------------------------------------------- T1.5 identity-break
+test('G1-8b +stubpred1: from 2026-10-13T22:00Z a holding-description version is no predecessor; size-jump-provenance skips over it', () => {
+  const T1 = Date.parse('2026-10-14T00:00:00Z'); const after = (h) => new Date(T1 + h * H).toISOString();
+  const rows = [['1.0.0', 0, man({ size: 1000 })], ['1.0.1', 10, { ...man({ size: 50, git: null, repo: null }), description: 'security holding package' }],
+    ['1.0.2', 20, man({ size: 6000, git: null })]];
+  const doc = { versions: Object.fromEntries(rows.map(([v, , m]) => [v, { name: 'x', version: v, ...m }])),
+    time: Object.fromEntries(rows.map(([v, h]) => [v, after(h)])) };
+  assert.equal(lineagePredecessorOf(doc.versions, doc.time, '1.0.2').version, '1.0.0');
+  const r = A(doc, '1.0.2');
+  assert.equal(r.result, 'WARN', 'vs 1.0.0: 6x and gitHead lost (against the holding version it would be 120x with nothing to lose)');
+  assert.match(r.detail, /unpackedSize 6000 vs 1000 of 1\.0\.0/);
+  // a holding version published before the instant keeps the legacy rule (only 0.0.N-security is excluded)
+  const early = pk(rows);
+  assert.equal(lineagePredecessorOf(early.versions, early.time, '1.0.2').version, '1.0.1');
+});
+
 test('G1-4 T1.5 fires when the publisher is new to the package and >= 2 identity facts break; one fact is not enough', () => {
   const doc = pk([
     ['1.0.0', 0, man({ size: 1000, npm: '11.0.0' })],
