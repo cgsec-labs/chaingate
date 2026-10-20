@@ -46,3 +46,9 @@ test('D5 the package is 0.1.5: package.json and both version fields of package-l
   assert.equal(lock.version, '0.1.5');
   assert.equal(lock.packages[''].version, '0.1.5');
 });
+
+test('D6 the README says which commands honour CHAINGATE_PORT (doctor, report, pin) and which use the default port 6173 (init, stop, status)', () => {
+  const r = words('README.md');
+  assert.match(r, /`chaingate doctor`, `chaingate report` and `chaingate pin` reach the proxy at `CHAINGATE_PORT` when it is set/);
+  assert.match(r, /`chaingate init`, `chaingate stop` and `chaingate status` always use port 6173/);
+});
