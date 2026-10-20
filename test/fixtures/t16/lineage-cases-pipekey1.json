@@ -1236,6 +1236,49 @@
     "1.0.1": null,
     "1.0.2": "1.0.1"
    }
+  },
+  {
+   "id": "two-stubs-published-before-observed-after",
+   "versions": [
+    {
+     "version": "1.0.0",
+     "published_at": "2026-10-13T19:00:00Z"
+    },
+    {
+     "version": "1.0.1",
+     "published_at": "2026-10-13T20:00:00Z",
+     "first_observed_at": "2026-10-14T03:00:00Z",
+     "description": "security holding package"
+    },
+    {
+     "version": "1.0.2",
+     "published_at": "2026-10-13T21:00:00Z",
+     "first_observed_at": "2026-10-14T03:00:00Z",
+     "description": "security holding package"
+    },
+    {
+     "version": "1.0.3",
+     "published_at": "2026-10-14T04:00:00Z"
+    }
+   ],
+   "family": {
+    "1.0.0": "release",
+    "1.0.1": "release",
+    "1.0.2": "release",
+    "1.0.3": "release"
+   },
+   "predecessor": {
+    "1.0.0": null,
+    "1.0.1": null,
+    "1.0.2": null,
+    "1.0.3": "1.0.0"
+   },
+   "predecessor_analysed_forward": {
+    "1.0.0": null,
+    "1.0.1": null,
+    "1.0.2": null,
+    "1.0.3": "1.0.2"
+   }
   }
  ]
 }
