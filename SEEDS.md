@@ -71,6 +71,10 @@ chaingate update-seed --seed <folder>/chaingate-seed-v3.db     # an existing ins
 chaingate init --seed <folder>/chaingate-seed-v3.db            # a new install
 ```
 
+With ChainGate 0.1.5 or later you can download `chaingate-seed-v3.db.gz` instead of the database, with the same
+`.sha256` and `.sig`, and pass `<folder>/chaingate-seed-v3.db.gz` to `--seed`. The `.sha256` and the signature are
+checked over the decompressed database.
+
 Do not add `--unsigned-development`. This seed is signed and never needs it; that option is only for unsigned
 engineering and test seeds.
 

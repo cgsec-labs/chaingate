@@ -8,7 +8,7 @@ import { installLegacySeed, readInstallMarker, downloadedSeed, reportLegacyInsta
   LegacyInstallRefused, seedVersionAt, storeCountsAt } from '../legacy-seed.js';
 import { assertIntegrity as defaultAssertIntegrity } from '../integrity-gate.js';
 import { EXIT } from '../constants.js';
-import { stageIncoming, finishStagedBundle, activateBundle, rollbackActivation, activeBundleId,
+import { stageIncomingSeed, finishStagedBundle, activateBundle, rollbackActivation, activeBundleId,
   previousBundleId, verifyBundleDir, seedsDir, withSeedMutation, ActivationRecoveryRefused } from '../seed-bundle.js';
 import { LockUnavailable } from '../seed-mutation-lock.js';
 import { readConfigStrict } from '../../config-store.js';
@@ -174,7 +174,7 @@ async function updateSeedLocked(opts, paths, deps, lock) {
     // PRIVATE STAGING FIRST (U-05 R2-2 (d)): the supplied file is opened once as a regular file, admitted for space and
     // copied; it is classified, verified and installed from the STAGED copy and never read again.
     let staged;
-    try { staged = stageIncoming(opts.seedPath, paths.base, { seam: deps.seam, hooks: deps.hooks, lock }); } catch (err) {
+    try { staged = await stageIncomingSeed(opts.seedPath, paths.base, { seam: deps.seam, hooks: deps.hooks, lock }); } catch (err) {
       console.error(fmt.fail(`The seed was not accepted: ${err.message}`));
       console.error('  Nothing was installed or activated; the active bundle is unchanged.');
       return EXIT.ERROR;

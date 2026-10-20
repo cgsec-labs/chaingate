@@ -417,6 +417,12 @@ npm test
 `chaingate-seed-v3.db`, `.sha256` and `.sig` assets into one folder (the database is about 2 GB) and pass
 the database with `--seed`. **ChainGate does not download it for you.** Before it uses the seed, ChainGate
 checks it against the `.sha256` file and verifies the signature against the key built into the runtime.
+
+Since 0.1.5, `--seed` also takes the compressed database, `chaingate-seed-v3.db.gz`. Download it with the
+database's `.sha256` and `.sig` into one folder and pass the `.gz` file. ChainGate decompresses it into its own
+staging copy (at most 8 GiB, with free space checked for the decompressed size first), then checks the `.sha256`
+and the signature over the decompressed database, exactly as for an uncompressed download. Seeds larger than
+GitHub's 2 GiB per-file limit, from seed v3.2 on, are published only as `.gz`.
 The release page lists the seed's exact identifiers and how to verify the download yourself.
 [SECURITY.md](SECURITY.md) describes the trust model. An unsigned seed, such as the v3.0-rc3 test
 seed described in [SEEDS.md](SEEDS.md), still needs `--unsigned-development`, and the tool then reports

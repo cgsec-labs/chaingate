@@ -11,7 +11,7 @@ import { installLegacySeed, readInstallMarker, downloadedSeed, reportLegacyInsta
 import { openWitnessDB } from '../../witness/db.js';
 import { assertIntegrity } from '../integrity-gate.js';
 import { DEFAULT_PORT, DEFAULT_HOST, DEFAULT_UPSTREAM, EXIT } from '../constants.js';
-import { stageIncoming, finishStagedBundle, activateBundle, resolveActiveBundle, activeBundleId, ActivationBroken,
+import { stageIncomingSeed, finishStagedBundle, activateBundle, resolveActiveBundle, activeBundleId, ActivationBroken,
   verifyBundleDir, withSeedMutation, ActivationRecoveryRefused } from '../seed-bundle.js';
 import { LockUnavailable } from '../seed-mutation-lock.js';
 import { reportSeedPrologue } from './update-seed.js';
@@ -54,7 +54,7 @@ async function installSeeds(opts, paths, deps, lock) {
   // copied; it is classified (SQLite opens only the staged copy), verified and installed from that copy.
   let staged = null; let legacyStaged = null;
   if (opts.seedPath) {
-    try { staged = stageIncoming(opts.seedPath, paths.base, { seam: deps.seam, hooks: deps.hooks, lock }); } catch (err) {
+    try { staged = await stageIncomingSeed(opts.seedPath, paths.base, { seam: deps.seam, hooks: deps.hooks, lock }); } catch (err) {
       console.error(fmt.fail(`The seed was not accepted: ${err.message}`));
       console.error('  Nothing was installed and .npmrc was not touched.');
       return { exit: EXIT.ERROR };

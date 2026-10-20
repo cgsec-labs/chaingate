@@ -36,8 +36,12 @@
 import { existsSync, mkdirSync, copyFileSync, writeFileSync, renameSync, rmSync,
   chmodSync, symlinkSync, readlinkSync, realpathSync, readdirSync, statSync,
   lstatSync, openSync, readSync, writeSync, fsyncSync, closeSync, rmdirSync, unlinkSync } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
+import { createGunzip } from 'node:zlib';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import Database from 'better-sqlite3';
 
 import { sha256File, openSeed, TRUST_AUTHENTICATED,
@@ -271,6 +275,122 @@ export function stageIncoming(seedPath, base, { sidecars, seam, hooks = {}, lock
     const owned = dir;
     return { dir, files, size, digest, sha256Bytes, sigBytes, info, warnings: adm.warnings, source: seedPath,
       discard: () => removeStaging(owned) };
+  } catch (e) {
+    if (dir) {
+      const left = removeStaging(dir);
+      if (left) e.message += `; the staging copy could not be removed: ${left}`;
+    }
+    throw e;
+  } finally { if (src) closeSync(src.fd); }
+}
+
+/** A gzip stream starts with these two bytes (RFC 1952 section 2.3.1). */
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+/** The independent limit on a decompressed seed: 8 GiB, 3.4x the first gz-primary database (seed v3.2, 2,359,566,336 B). */
+export const GZ_MAX_DB_BYTES = 8 * 1024 * 1024 * 1024;
+const TWO_32 = 2 ** 32;
+
+function readAt(fd, length, position) {
+  const b = Buffer.alloc(length);
+  let n = 0;
+  while (n < length) { const r = readSync(fd, b, n, length - n, position + n); if (r === 0) break; n += r; }
+  return b.subarray(0, n);
+}
+
+/**
+ * Stage a `--seed` the user supplied: a raw database (stageIncoming), or a gzip of one (0.1.5 #9, gz-primary). Which one is
+ * decided by the file's first two bytes, never by its name. Both return the same staged shape, describing the database.
+ */
+export async function stageIncomingSeed(seedPath, base, opts = {}) {
+  let head = null;
+  try { const f = openRegular(seedPath); try { head = readAt(f.fd, 2, 0); } finally { closeSync(f.fd); } }
+  catch { /* stageIncoming opens it again and states the refusal */ }
+  if (head && head.length === 2 && head.equals(GZIP_MAGIC)) return stageIncomingGz(seedPath, base, opts);
+  if (/\.gz$/i.test(seedPath) && head !== null) {
+    throw new StagingRefused(`${seedPath}: not a gzip file (a .gz seed must start with the gzip header)`, 'input');
+  }
+  return stageIncoming(seedPath, base, opts);
+}
+
+/**
+ * gz-primary staging (0.1.5 #9). As stageIncoming, with the copy replaced by a bounded decompression: the .gz is opened ONCE
+ * as a regular file and read only up to the size it had when opened; the database's own sidecars (`<db>.sha256`, `<db>.sig`,
+ * next to `<db>.gz`) are read once, bounded; space is admitted for the DECOMPRESSED size, estimated from the gzip trailer
+ * (ISIZE, the size modulo 2^32, raised by 2^32 until it is at least the compressed size); the output is limited to
+ * GZ_MAX_DB_BYTES whatever the trailer says, and zlib checks the stream's CRC-32 and length. Everything after this -- the
+ * digest, the classification, the .sha256 check and the signature -- describes the decompressed database.
+ */
+async function stageIncomingGz(seedPath, base, { sidecars, seam = {}, hooks = {}, lock } = {}) {
+  assertHeld(lock, base);
+  if (!/\.gz$/i.test(seedPath)) {
+    throw new StagingRefused(`${seedPath}: a compressed seed must be named <database>.gz, so that the database's .sha256 `
+      + 'and .sig next to it can be found', 'input');
+  }
+  const max = seam.gzMaxDbBytes ?? GZ_MAX_DB_BYTES;
+  let src;
+  try { src = openRegular(seedPath); } catch (e) {
+    throw new StagingRefused(e instanceof FileRefused ? `${seedPath}: ${e.why}` : `cannot open ${seedPath}: ${e.code || e.message}`, 'input');
+  }
+  let dir = null;
+  try {
+    const gzSize = src.size;
+    if (gzSize < 18) throw new StagingRefused(`${seedPath}: too short to be a gzip file (${gzSize} bytes)`, 'input');
+    const dbPath = seedPath.replace(/\.gz$/i, '');
+    const side = sidecars ?? { sha256Path: `${dbPath}.sha256`, sigPath: `${dbPath}.sig` };
+    let sha256Bytes; let sigBytes;
+    try {
+      sha256Bytes = side.sha256Path ? readBoundedIfPresent(side.sha256Path, CAPS.sidecar) : null;
+      sigBytes = side.sigPath ? readBoundedIfPresent(side.sigPath, CAPS.sidecar) : null;
+    } catch (e) { throw new StagingRefused(e instanceof FileRefused ? `${e.path}: ${e.why}` : e.message, 'input'); }
+
+    let estimate = readAt(src.fd, 4, gzSize - 4).readUInt32LE(0);
+    while (estimate < gzSize) estimate += TWO_32;
+    if (estimate > max) {
+      throw new StagingRefused(`${seedPath}: its gzip trailer implies a database of at least ${estimate} bytes, over the `
+        + `${max}-byte limit`, 'too-large');
+    }
+
+    mkdirSync(seedsDir(base), { recursive: true });
+    const adm = admit([{ dir: seedsDir(base), bytes: BigInt(estimate) + V3_SIDECARS, what: 'decompressing the seed' }], seam);
+    if (!adm.ok) throw new StagingRefused(adm.refusal, 'space');
+
+    dir = join(seedsDir(base), `.staging-${process.pid}-${Date.now()}`);
+    mkdirSync(dir, { mode: 0o700 });
+    const files = bundleFiles(dir);
+    let size = 0;
+    const limit = new Transform({
+      transform(chunk, _enc, cb) {
+        size += chunk.length;
+        if (size > max) return cb(new StagingRefused(`${seedPath}: it decompresses past the ${max}-byte limit`, 'too-large'));
+        return cb(null, chunk);
+      },
+    });
+    try {
+      await pipeline(createReadStream(null, { fd: src.fd, autoClose: false, start: 0, end: gzSize - 1 }),
+        createGunzip(), limit, createWriteStream(files.db, { flags: 'wx', mode: 0o600 }));
+    } catch (e) {
+      if (e instanceof StagingRefused) throw e;
+      const zlibError = typeof e?.code === 'string' && e.code.startsWith('Z_');
+      throw new StagingRefused(zlibError ? `${seedPath}: not a valid gzip stream (${e.message})`
+        : `decompressing ${seedPath} failed (${e.code || e.name}): ${e.message}`, zlibError ? 'input' : 'copy');
+    }
+    if (readAt(src.fd, 1, gzSize).length > 0) {
+      throw new StagingRefused(`${seedPath}: it grew past the ${gzSize} bytes it had when opened`, 'input');
+    }
+    closeSync(src.fd); src = null;                      // the source is not read again
+    { const fd = openSync(files.db, 'r+'); try { fsyncSync(fd); } finally { closeSync(fd); } }
+    hooks.afterStagingCopy?.();
+
+    const staged = openRegular(files.db);
+    let digest;
+    try {
+      if (staged.size !== size) throw new StagingRefused(`the staged copy is ${staged.size} bytes, not ${size}`, 'copy');
+      digest = hashRange(staged.fd, 0, size, files.db);
+    } finally { closeSync(staged.fd); }
+    const info = inspectSeed(files.db);
+    const owned = dir;
+    return { dir, files, size, digest, sha256Bytes, sigBytes, info, warnings: adm.warnings, source: seedPath,
+      compressed: { path: seedPath, size: gzSize }, discard: () => removeStaging(owned) };
   } catch (e) {
     if (dir) {
       const left = removeStaging(dir);
