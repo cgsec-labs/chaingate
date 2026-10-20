@@ -39,3 +39,10 @@ test('D4 README and SEEDS.md say --seed takes the compressed database', () => {
   assert.match(words('README.md'), /`--seed` also takes the compressed database, `chaingate-seed-v3\.db\.gz`/);
   assert.match(words('SEEDS.md'), /chaingate-seed-v3\.db\.gz/);
 });
+
+test('D5 the package is 0.1.5: package.json and both version fields of package-lock.json', () => {
+  assert.equal(JSON.parse(read('package.json')).version, '0.1.5');
+  const lock = JSON.parse(read('package-lock.json'));
+  assert.equal(lock.version, '0.1.5');
+  assert.equal(lock.packages[''].version, '0.1.5');
+});
