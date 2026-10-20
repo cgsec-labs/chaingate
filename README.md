@@ -121,10 +121,24 @@ those checks can make a warning:
     install scripts. Git, URL and file dependencies are not judged. It follows the counted rule: a range resolves to the
     highest matching version (npm may install the `latest` tag instead when it matches), a name in both `dependencies`
     and `optionalDependencies` is judged on its `dependencies` entry, and re-pointing an existing name is not "added";
-  - **MC**: the tarball's `package.json` declares install scripts that differ from its registry entry.
+  - **MC**: the tarball's `package.json` declares install scripts that differ from its registry entry;
+  - **size-jump-provenance** (0.1.5): the release's unpacked size is at least 5 times that of the version before it,
+    and its link to the repository broke: `gitHead` is missing where the version before it had one, or the repository
+    URL changed. npm prints "its tarball grew fivefold and its link to the repository broke". "The version before it"
+    is the previous version in the release's line; for a prerelease it is the previous version of its own tag (a
+    `-canary` is compared with the last canary). The first version of a new tag has none, and the rule says it is not
+    evaluable. A holding package npm publishes in place of removed malware is never used as the version before;
+  - the tarball static checks **S0** and **S5** (below).
 - **Contributing rows are detail.** These are publisher change, new dependency, provenance dropped, release age, scope
-  boundary, size jump of 2x or more, npm-version downgrade, the seed contract's loose rule, and the five tarball static
-  checks (below). They are listed in
+  boundary, size jump of 2x or more, npm-version downgrade, the seed contract's loose rule, the tarball static checks S1
+  to S4 (below), and two checks added in 0.1.5:
+  - **identity-break**: a publisher the package has never had, together with at least two other breaks against the
+    previous release (a different maintainer set, an older npm, a different repository URL, a missing `gitHead`);
+  - **entry-path-change**: what npm runs or links changed against the version before it (as size-jump-provenance
+    defines it): a lifecycle script other than the install hooks added or changed, a `bin` command added or pointed
+    elsewhere, or a different `main`.
+
+  They are listed in
   `chaingate why <pkg>@<ver>` (the recorded decision) and in `chaingate report --json`, and they never make a warning on
   their own.
 
@@ -169,6 +183,12 @@ rule did not arm records "not armed"; a file that is binary, over the cap, absen
 `package.json` is "not checked" and says so; a check that found no eligible file to read says "no eligible file in the
 tarball". A tarball whose download was armed is examined once: the outcome rides every
 later record of that version.
+
+**Holding a suspect download until it is checked (optional).** With the `static_withhold` setting on
+(`"static_withhold": true` in ChainGate's `config.json`), the proxy holds an armed download in memory, up to 8 MiB, while the static checks read it. If S0 or S5
+fires, npm receives HTTP 403 `withheld_by_static_check`, naming the check and `chaingate why <pkg>@<ver>`, and the
+package is not installed. The recorded decision stays WARN: withholding is a choice about serving, not a different
+verdict. A download over 8 MiB is served and recorded as it is without the switch. The switch is off by default.
 
 A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaingate why <pkg>@<ver>`). npm does not print
 it. The report counts a release as checked when another named rule (install-introduced or the seed's strict tier) gave
