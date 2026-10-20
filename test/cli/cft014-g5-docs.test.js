@@ -15,7 +15,7 @@ test('G5-1 (D-D1, D-D2) the README and SECURITY.md describe 0.1.4: commands, rec
   assert.match(readme, /Fourteen commands/);
   assert.match(readme, /chaingate\.check\/3/);
   assert.match(readme, /cft-policy-1\.2/);
-  assert.match(readme, /`chaingate check` \(the CI command\) evaluates the seed only in 0\.1\.4/);
+  assert.match(readme, /`chaingate check` \(the CI command\) evaluates the seed\. Install-introduced, N1h and MC are reported by the proxy/);
   for (const k of ['install-introduced', 'N1h', 'MC', 'chaingate report', 'chaingate accept', 'chaingate pin', 'chaingate unpin', 'no-store']) {
     assert.ok(readme.includes(k), k);
   }
@@ -51,6 +51,6 @@ test('G5-2 (D-D3) `chaingate why <pkg>@<ver>` with no mode shows the recorded de
 test('G5-3 (dated note 3) the README states the rules exactly as built', () => {
   const readme = read('README.md').replace(/\s+/g, ' ');               // the README wraps lines; compare its words
   for (const s of ['A package\'s first version is not judged', 'Git, URL and file dependencies are not judged', 'more than 10',
-    'npm caches', 'Other refusals', 'no 0.1.4 command displays it', 'chaingate why <pkg>@<ver>']) assert.ok(readme.includes(s), s);
+    'npm caches', 'Other refusals', 'no command displays it in 0.1.4 or 0.1.5', 'chaingate why <pkg>@<ver>']) assert.ok(readme.includes(s), s);
   assert.match(read('examples/ci/README.md'), /chaingate\.check\/3/);
 });
