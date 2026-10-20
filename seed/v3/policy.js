@@ -55,9 +55,10 @@ import K from './contract.js';
 
 const POLICY_CONTRACT_VERSION = 'cft-policy-1.2';
 const PIN_GATE = 'seed-v3:known-malicious-pin';
-// The seed contract whose pins are keyed by package name (reader.js SEED_CONTRACT_1_1). A literal here, not an import:
-// policy.js imports nothing from the detection path.
-const PIN_BY_NAME_SEED_CONTRACT = 'cft-seed-v3-contract-1.1';
+// The seed contracts whose pins are keyed by package name (reader.js SEED_CONTRACT_1_1 and SEED_CONTRACT_1_2; the reader
+// requires the name column and its index for both). Literals here, not an import: policy.js imports nothing from the
+// detection path.
+const PIN_BY_NAME_SEED_CONTRACTS = Object.freeze(['cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2']);
 const IMPLEMENTED_DETECTION_CONTRACT = K.CONTRACT_VERSION;
 
 const ALLOW = 'ALLOW';
@@ -399,10 +400,10 @@ function decide(finding, ctx = {}) {
 /** Look up a recorded advisory pin for one package and version. Read-only, and its own query so the
  *  detection path never has to know this table exists.
  *
- *  Seed contract 1.1 keys pins by NAME, so a pin is found whether or not the package is represented (D4: the 1.0
- *  join made a pin row without a `packages` row invisible). A 1.0 seed keeps the 1.0 join exactly. */
+ *  Seed contracts 1.1 and 1.2 key pins by NAME, so a pin is found whether or not the package is represented (D4: the
+ *  1.0 join made a pin row without a `packages` row invisible). A 1.0 seed keeps the 1.0 join exactly. */
 function pinFor(seed, packageName, version) {
-  const byName = seed.meta?.seed_contract_version === PIN_BY_NAME_SEED_CONTRACT;
+  const byName = PIN_BY_NAME_SEED_CONTRACTS.includes(seed.meta?.seed_contract_version);
   const row = seed.db.prepare(byName
     ? 'SELECT advisory_id, source FROM known_malicious_pins WHERE package_name = ? AND version = ? '
       + 'ORDER BY advisory_id LIMIT 1'
