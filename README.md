@@ -525,6 +525,11 @@ In those cases nothing is changed, the `.npmrc` block is left in place, the comm
 with code 1. A pid can be reused by another process in the milliseconds between the last check and the signal; signals
 cannot rule that out.
 
+**The proxy port.** `chaingate init`, `chaingate stop` and `chaingate status` always use port 6173 on 127.0.0.1:
+`init` starts the proxy there and points `.npmrc` at it, and `stop` and `status` look for it there.
+`chaingate doctor`, `chaingate report` and `chaingate pin` reach the proxy at `CHAINGATE_PORT` when it is set, and at
+6173 otherwise. A proxy you start yourself listens on `CHAINGATE_PORT` when it is set.
+
 While ChainGate's block is in your `.npmrc`, npm sends every request to the proxy. If the proxy is
 not running, for example after a restart, npm cannot install anything until you either run
 `chaingate init` again, which restarts the proxy on the active seed, or run `chaingate stop`, which
