@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
 import updateSeed from '../../cli/commands/update-seed.js';
@@ -157,7 +158,7 @@ test('GZ8 a file named .gz that is not gzip refuses, saying so; a raw --seed <db
 });
 
 test('GZ9 init and update-seed stage --seed through the one entry that accepts .gz (no command keeps the raw-only path)', () => {
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+  const root = fileURLToPath(new URL('../../', import.meta.url));   // not URL.pathname: /D:/... on Windows
   for (const f of ['cli/commands/init.js', 'cli/commands/update-seed.js']) {
     const src = fs.readFileSync(path.join(root, f), 'utf8');
     assert.match(src, /await stageIncomingSeed\(opts\.seedPath/, `${f} stages through stageIncomingSeed`);
