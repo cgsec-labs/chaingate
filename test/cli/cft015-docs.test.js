@@ -52,3 +52,13 @@ test('D6 the README says which commands honour CHAINGATE_PORT (doctor, report, p
   assert.match(r, /`chaingate doctor`, `chaingate report` and `chaingate pin` reach the proxy at `CHAINGATE_PORT` when it is set/);
   assert.match(r, /`chaingate init`, `chaingate stop` and `chaingate status` always use port 6173/);
 });
+
+test('D7 the 0.1.5 README points at seed-v3.2-full as a .gz, says it needs 0.1.5, and states the 0.1.5 test run', () => {
+  const r = words('README.md');
+  assert.match(r, /\[seed-v3\.2-full\]\(https:\/\/github\.com\/r-bedekar\/chaingate\/releases\/tag\/seed-v3\.2-full\)/);
+  assert.match(r, /seed-v3\.2-full needs ChainGate 0\.1\.5 or later/);
+  assert.doesNotMatch(r, /releases\/tag\/seed-v3\.1-full/, 'the published seed the README sends users to is v3.2');
+  assert.match(r, /\$ chaingate init --seed \.\/seed-v3\.2\/chaingate-seed-v3\.db\.gz/);
+  assert.match(r, /\*\*Tested platforms\.\*\* 0\.1\.5 ran its full test suite/);
+  assert.doesNotMatch(r, /In 0\.1\.4 it warns|evaluates the seed only in 0\.1\.4|In 0\.1\.4 `check`/, 'no current-behaviour sentence still says 0.1.4');
+});
