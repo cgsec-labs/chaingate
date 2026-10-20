@@ -390,7 +390,7 @@ cd "$(npm root -g)/@cgsec/chaingate" && npm rebuild better-sqlite3 --ignore-scri
 `package.json` applies only when developing ChainGate itself and grants nothing in your project. Do
 not enable every dependency's scripts to fix this.
 
-**Tested platforms.** 0.1.5 ran its full test suite on Linux x64 with Node.js 22.22.2: 1,531 tests, none failed. Its CI
+**Tested platforms.** 0.1.5 ran its full test suite on Linux x64 with Node.js 22.22.2: 1,532 tests, none failed. Its CI
 result is in the 0.1.5 release notes. For 0.1.4, CI on the release commit passed all 36 jobs: unit tests and install
 acceptance on Linux x64 (Ubuntu 24.04), macOS 15 on arm64 and x64, and Windows Server 2022, each on Node.js 22 and 24
 with npm bundled and latest, plus small-filesystem (disk-full) checks and a reduced measurement on Linux and macOS
