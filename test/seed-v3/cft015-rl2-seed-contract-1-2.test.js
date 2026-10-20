@@ -344,3 +344,28 @@ test('K2 a check against a 1.1 seed still writes chaingate.check/3', () => {
     assert.equal(r.schema, 'chaingate.check/3'); assert.deepEqual(recordCompatibility(r), []); assert.deepEqual(validateRecord(r), []);
   } finally { seed.close(); }
 });
+
+// ---- known-malicious pins (the D4 lookup by name, for 1.2 as for 1.1)
+test('PIN1 a 1.2 seed finds a pin by NAME: a pinned version of a package the seed does not represent BLOCKs, naming the advisory', () => {
+  // seed v3.2 carries pins for packages with no `packages` row (206 rows, 42 packages, in the real 1408e015 seed); the 1.0
+  // join made them invisible (D4). Package `u` has a pin and no `packages` row; `p` is represented and pinned too.
+  const dbPath = buildSeed([{ key: '2', family: 'release', rows: [['2.0.0', 1767225600]] }]);
+  const db = new Database(dbPath);
+  db.prepare('INSERT INTO known_malicious_pins VALUES (?,?,?,?,?)').run(9001, '1.0.0', 'ADV-U-100', 'synthetic-fixture', 'u');
+  db.prepare('INSERT INTO known_malicious_pins VALUES (?,?,?,?,?)').run(1, '2.0.1', 'ADV-P-201', 'synthetic-fixture', 'p');
+  db.close();
+  fs.writeFileSync(`${dbPath}.sha256`, `${R.sha256File(dbPath)}  chaingate-seed.db\n`);
+  const seed = R.openSeed(dbPath, DEV);
+  try {
+    assert.equal(seed.meta.seed_contract_version, 'cft-seed-v3-contract-1.2');
+    for (const config of [{ on_unusable_input: 'BLOCK', on_no_evidence: 'WARN' }, { on_unusable_input: 'WARN', on_no_evidence: 'WARN' }]) {
+      for (const [name, version, adv] of [['u', '1.0.0', 'ADV-U-100'], ['p', '2.0.1', 'ADV-P-201']]) {
+        const d = G.evaluateCandidate(seed, { config, domainVersionCount: 0 }, { packageName: name, version,
+          rawManifest: manifestFor(version, { name }), publishedAt: '2026-01-01T00:03:20.000Z' }).decision;
+        assert.equal(d.disposition, 'BLOCK', `${name}@${version} under ${config.on_unusable_input}`);
+        const pin = d.results.find((x) => x.gate === 'seed-v3:known-malicious-pin');
+        assert.ok(pin && JSON.stringify(pin).includes(adv), `${name}@${version} names ${adv}`);
+      }
+    }
+  } finally { seed.close(); }
+});
