@@ -350,13 +350,14 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
 // ---- the trigger (operator ruling 2026-10-13, design note §3) and the retry rule ----
 /**
  * Why a download's keep-list walk is armed, from the version's recorded rows: a NAMED WARN row (the runner's named gates, or a seed-v3
- * named row), the identity-break NOTE, or the seed's coverage WARN (nothing in the finding was evaluated: the brand-new-package case).
+ * named row), the identity-break NOTE, the entry-path-change NOTE (ruling R1 2026-10-21), or the seed's coverage WARN (nothing in the finding was evaluated: the brand-new-package case).
  * Any other contributing row, or nothing, returns null. Pure; never throws on a malformed list.
  */
 export function armedBy(results) {
   let cls; try { cls = classify(results); } catch { return null; }
   if (cls.named.length) return `named row${cls.named.length > 1 ? 's' : ''} ${cls.named.join(', ')}`;
   if (cls.contributing.includes('identity-break')) return 'identity-break';
+  if (cls.contributing.includes('entry-path-change')) return 'entry-path-change';      // operator ruling R1 2026-10-21
   if (cls.coverage.includes('seed-v3:coverage')) return 'seed coverage WARN (nothing in the finding was evaluated)';
   return null;
 }

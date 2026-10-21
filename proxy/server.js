@@ -1183,8 +1183,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         const current = state.applicable?.latest?.gates_fired?.some?.((g) => g && g.gate === 'install-introduced');
         const walkLatest = upstream.statusCode === 200 && state.tarballVersion != null && !state.override && witnessDb
           && current && !(state.c1 && !state.c1.ok) ? state.applicable.latest : null;
-        // 0.1.5 static checks (step 3; ruling 2026-10-13): the keep list is ARMED by a named WARN row, the identity-break NOTE or the
-        // seed's coverage WARN, from the registry manifest remembered with the hook map; a settled static outcome is never walked for
+        // 0.1.5 static checks (step 3; ruling 2026-10-13): the keep list is ARMED by a named WARN row, the identity-break NOTE, the
+        // entry-path-change NOTE (ruling R1 2026-10-21) or the seed's coverage WARN, from the registry manifest remembered with the hook map; a settled static outcome is never walked for
         // again (tarballs are immutable per version), a "not armed" / "no manifest" / ceiling outcome is retried when a later download
         // is armed. The walk stays on a copy of the stream; the download is never held.
         const armed = walkLatest ? armedBy(walkLatest.gates_fired) : null;
@@ -1217,7 +1217,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             ...(staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed })
               : staticWhy === 'no-manifest' ? noManifestRows(armed)
                 : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
-                  : unarmedRows('no named row, no identity-break, no coverage gap')).map(withRole)]);
+                  : unarmedRows('no named row, no identity-break, no entry-path-change, no coverage gap')).map(withRole)]);
           // 0.1.5 (#15): a held download is served or withheld only now, after the walk; withheld only for a named static WARN
           // the user has not accepted (while every check is contributing this never happens, and the held bytes are served)
           let staticHold = null;

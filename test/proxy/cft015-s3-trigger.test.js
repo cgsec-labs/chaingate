@@ -120,9 +120,9 @@ test('U4 "armed by" rides every row; staticSettled tells a final outcome from on
   const rows = S.staticRows({ manifest: { main: 'index.js' }, packageJson: { main: 'index.js' }, walk, armed: 'named row install-introduced' });
   for (const r of rows) assert.ok(r.detail.endsWith('; armed by named row install-introduced'), r.detail);
   assert.equal(S.staticSettled({ gates_fired: rows }), true);
-  const unarmed = S.unarmedRows('no named row, no identity-break, no coverage gap');
+  const unarmed = S.unarmedRows('no named row, no identity-break, no entry-path-change, no coverage gap');
   assert.deepEqual(unarmed.map((r) => r.gate), S.STATIC_GATES);
-  for (const r of unarmed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: not armed (no named row, no identity-break, no coverage gap)'); }
+  for (const r of unarmed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: not armed (no named row, no identity-break, no entry-path-change, no coverage gap)'); }
   assert.equal(S.staticSettled({ gates_fired: unarmed }), false);
   assert.equal(S.staticSettled({ gates_fired: S.unarmedRows('concurrency ceiling: 4 armed walks in flight') }), false);
   assert.equal(S.staticSettled({ gates_fired: S.noManifestRows('named row install-introduced') }), false);
@@ -162,7 +162,7 @@ test('E2 not armed: the MC-only walk records the five static rows as "not checke
   await withProxy(async ({ base, proxy }) => {
     await get(`${base}/p`); await get(`${base}/p/-/p-1.1.0.tgz`); await settle();
     const mc = rowsOf(proxy, 'p', '1.1.0').find((g) => g.gate === 'install-manifest-mismatch'); assert.equal(mc?.result, 'ALLOW');
-    for (const id of ['S0', 'S1', 'S2', 'S3', 'S4']) { const r = srow(proxy, 'p', '1.1.0', id); assert.equal(r?.result, 'SKIP', id); assert.equal(r.detail, 'not checked: not armed (no named row, no identity-break, no coverage gap)'); }
+    for (const id of ['S0', 'S1', 'S2', 'S3', 'S4']) { const r = srow(proxy, 'p', '1.1.0', id); assert.equal(r?.result, 'SKIP', id); assert.equal(r.detail, 'not checked: not armed (no named row, no identity-break, no entry-path-change, no coverage gap)'); }
     assert.equal(proxy.witnessDb.getLatestDecision('p', '1.1.0').disposition, 'ALLOW');
     const n = proxy.witnessDb.getDecisionHistory('p', '1.1.0').length;
     await get(`${base}/p/-/p-1.1.0.tgz`); await settle();
