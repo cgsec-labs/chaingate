@@ -26,15 +26,20 @@
 //   S4 wallet-swap-hook           a kept main/bin target that OVERRIDES XMLHttpRequest.prototype.send / window.fetch /
 //                                 window.ethereum.request AND carries >= 2 crypto-address regex families
 //   S5 oversized-hook-target      a hook target over the 1 MiB kept-file cap (size from the tar header; the body is not read)
-//   S6 network-only-beacon        a kept hook target with an API network sink (url-literal is not one) AND a host-identity source
-//                                 (os.hostname(), os.userInfo(), os.networkInterfaces(), env-dump, or USER, USERNAME, LOGNAME,
-//                                 HOSTNAME, COMPUTERNAME read from process.env; a bare process.env read is not one) AND no execution sink
-//   S7 entry-capability-delta     a kept main/bin target GAINS an API network sink, an execution sink, an obfuscation or decode marker
-//                                 or a credential source that the same-role files of the predecessor lacked; predecessor = the last
-//                                 version this proxy served (witness.db entry facts, R4); none = not applicable, a refused or unread
-//                                 file = not checked, never a clean delta
-// S6 and S7 run against the runtime's held copy of their vocabulary until recon hands over static-checks-1.4 (R5); the version
-// string stays static-checks-1.3 until then.
+//   S6 network-beacon-in-hook-target  a kept hook target with an API network sink (url-literal is not one) AND a host-identity source
+//                                 (os.hostname(), os.userInfo(), os.networkInterfaces() on os or require('os'), env-dump, or USER,
+//                                 USERNAME, LOGNAME, HOSTNAME, COMPUTERNAME read from process.env; a bare process.env read is not one)
+//                                 AND no execution sink in the same file
+//   S7 entry-capability-gain      main or bin GAINS a capability (net, exec, decode, obf, cred; url-literal never) that the predecessor's
+//                                 same-role files lacked (bin compared as the union); predecessor = the last version this proxy served
+//                                 (witness.db entry facts, R4); none = not applicable; a refused or unread file = not checked, never a
+//                                 clean delta; a role with no candidate file in an archive read in full is verified absent (review
+//                                 verdict 2026-10-21) and compares as empty
+// static-checks-1.4 (operator ruling R5 2026-10-21) is recon's tree v6.12 (chaingate-ops tools/recon/v6.12/static-checks.mjs) mirrored:
+// S0 1.4 reads the quoted argument of sh|bash|dash|zsh -c one level deep and counts a network tool given by absolute path by its
+// basename; S6 and S7 as above. Recon's constants, the S7 capability set and capabilityDelta are copied as they are; recon's
+// entryFactsSummary is applied to the proxy's stored entry facts (entrySummaryOf). S6 and S7 names are provisional until the
+// operator's naming ruling.
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -45,20 +50,20 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.3';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.4';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
   s2MinIdents: 20, s2MinCharCodes: 50, s2HexDensity: 0.15, s2MinNumericHex: 1000, s4MinAddressFamilies: 2, headBytes: 8000, detailChars: 400 });
 export const CHECKS = Object.freeze([
-  { id: 'S0', gate: 'static:S0-shell-fetch-in-hook', roles: null, notice: 'an install script downloads code to run or sends data to an outside host' },
-  { id: 'S1', gate: 'static:S1-loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
-  { id: 'S2', gate: 'static:S2-obfuscated-entry', roles: ['main', 'bin'], notice: 'its entry file is obfuscated code' },
-  { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
-  { id: 'S4', gate: 'static:S4-wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
-  { id: 'S5', gate: 'static:S5-oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' },
-  { id: 'S6', gate: 'static:S6-network-only-beacon', roles: ['hook'], notice: 'an install script sends this machine\'s identity to an outside host' },
-  { id: 'S7', gate: 'static:S7-entry-capability-delta', roles: ['main', 'bin'], notice: 'its entry file gained network, execution, decoding or credential access' },
+  { id: 'S0', gate: 'static:S0-shell-fetch-in-hook', cls: 'shell-fetch-in-hook', roles: null, notice: 'an install script downloads code to run or sends data to an outside host' },
+  { id: 'S1', gate: 'static:S1-loader-in-hook-target', cls: 'loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
+  { id: 'S2', gate: 'static:S2-obfuscated-entry', cls: 'obfuscated-entry', roles: ['main', 'bin'], notice: 'its entry file is obfuscated code' },
+  { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', cls: 'secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
+  { id: 'S4', gate: 'static:S4-wallet-swap-hook', cls: 'wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
+  { id: 'S5', gate: 'static:S5-oversized-hook-target', cls: 'oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' },
+  { id: 'S6', gate: 'static:S6-network-beacon-in-hook-target', cls: 'network-beacon-in-hook-target', roles: ['hook'], notice: 'an install script sends details about this machine to the network' },   // R2; name provisional until the naming ruling
+  { id: 'S7', gate: 'static:S7-entry-capability-gain', cls: 'entry-capability-gain', roles: ['main', 'bin'], notice: 'its entry file gained a capability its previous version did not have' },   // R3; name provisional until the naming ruling
 ]);
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
@@ -109,6 +114,8 @@ export const NET_SINKS = [
   ['websocket', /\bnew\s+WebSocket\s*\(/], ['xhr', /\bnew\s+XMLHttpRequest\s*\(/], ['axios', /\baxios(?:\.\w+)?\s*\(/],
   ['url-literal', /https?:\/\/[^\s'"`]{3,}/],
 ];
+/** 1.4 (R2, R3): the API network sinks, i.e. NET_SINKS without url-literal (a URL string in a comment or README is not a call). */
+export const API_NET_SINKS = NET_SINKS.filter(([n]) => n !== 'url-literal');
 export const EXEC_SINKS = [
   ['child_process', /child_process|\b(?:execSync|spawnSync|execFileSync|execFile|spawn|fork)\s*\(/],
   ['eval', /\beval\s*\(/], ['Function', /(?:^|[^\w$.])(?:new\s+)?Function\s*\(/], ['vm', /\bvm\.(?:runIn(?:New|This)?Context|Script)\s*\(/],
@@ -126,15 +133,20 @@ export const CRED_SOURCES = [
   ['env-dump', /JSON\.stringify\(\s*process\.env\s*\)|Object\.(?:keys|entries|values)\(\s*process\.env\s*\)|\.\.\.process\.env\b/],
   ['wallet-file', /wallet\.dat|Local Storage\/leveldb|\.config\/gcloud|\.kube\/config/],
 ];
-/** S6 (R2): host-identity sources. A bare process.env read is not one; env-dump is CRED_SOURCES' marker. */
-export const HOST_IDENTITY_SOURCES = [
-  ['os-hostname', /(?:\bos|\))\.hostname\s*\(/], ['os-userInfo', /(?:\bos|\))\.userInfo\s*\(/],
-  ['os-networkInterfaces', /(?:\bos|\))\.networkInterfaces\s*\(/],
-  ['env-dump', /JSON\.stringify\(\s*process\.env\s*\)|Object\.(?:keys|entries|values)\(\s*process\.env\s*\)|\.\.\.process\.env\b/],
-  ['identity-env', /process\.env(?:\.|\[\s*['"`])(?:USER|USERNAME|LOGNAME|HOSTNAME|COMPUTERNAME)\b/],
+/** 1.4 S6 (R2) host-identity sources: the os calls (receiver os or require('os')), the env-dump marker, the named identity variables.
+ *  A bare process.env read (NODE_ENV, npm_config_*) is not a source. */
+export const IDENTITY_ENV = Object.freeze(['USER', 'USERNAME', 'LOGNAME', 'HOSTNAME', 'COMPUTERNAME']);
+const OS_RECV = String.raw`(?:\bos|\brequire\(\s*['"\x60](?:node:)?os['"\x60]\s*\))\s*\.\s*`;
+const IDV = IDENTITY_ENV.join('|');
+export const HOST_IDENTITY = [
+  ['os.hostname', new RegExp(`${OS_RECV}hostname\\s*\\(`)], ['os.userInfo', new RegExp(`${OS_RECV}userInfo\\s*\\(`)],
+  ['os.networkInterfaces', new RegExp(`${OS_RECV}networkInterfaces\\s*\\(`)],
+  ['env-dump', CRED_SOURCES.find(([n]) => n === 'env-dump')[1]],
+  ['identity-env', new RegExp(`\\bprocess\\.env(?:\\.(?:${IDV})\\b|\\[\\s*(['"\\x60])(?:${IDV})\\1\\s*\\])`)],
 ];
-/** The API network sinks: NET_SINKS without url-literal (a string is not a request; R2, R3). */
-const apiNet = (F) => (Array.isArray(F?.net_sinks) ? F.net_sinks.filter((n) => n !== 'url-literal') : []);
+const apiNames = new Set(API_NET_SINKS.map(([n]) => n));
+/** The API network sinks one file's facts carry (url-literal is never one; R2, R3). */
+const apiNet = (F) => (Array.isArray(F?.net_sinks) ? F.net_sinks.filter((n) => apiNames.has(n)) : []);
 export const EXFIL_HOSTS = /discord(?:app)?\.com\/api\/webhooks|api\.telegram\.org|hooks\.slack\.com|webhook\.site|\.pipedream\.net|\.ngrok(?:-free)?\.(?:io|app|dev)|\binteract\.sh\b|\boast\.(?:pro|live|site|fun|me)\b|burpcollaborator\.net|requestbin|pastebin\.com|transfer\.sh|\.requestcatcher\.com|\.free\.beeceptor\.com|\.hookbin\.com|\.pipedream\.com/i;
 export const RAW_IP_URL = /\bhttps?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/;
 export const REGISTRY_HOSTS = Object.freeze(['registry.npmjs.org', 'registry.yarnpkg.com', 'registry.npmmirror.com', 'npmjs.com', 'www.npmjs.com', 'localhost', '127.0.0.1']);
@@ -155,7 +167,9 @@ export const ADDRESS_FAMILIES = [
 // ---- S0 over a hook command string ----
 /** 1.2 S0 network tools, matched only at a command position (string start, or after ; & | ( ` or $( , optionally behind sudo/env). */
 const CMD_POS = String.raw`(?:^|[;&|(\x60]|\$\()\s*(?:sudo\s+(?:-\S+\s+)*)?(?:env\s+(?:\w+=\S*\s+)*)?`;
-const tool = (re) => new RegExp(`${CMD_POS}(?:${re})(?:\\.exe)?(?=\\s|$|[;&|)])`, 'i');
+// 1.4 S0: an absolute path in front of the tool counts (/usr/bin/curl, by its basename); a relative one does not (./node_modules/.bin/curl)
+const ABS_PREFIX = String.raw`(?:(?:/[^\s/;&|()'"\x60]+)*/)?`;
+const tool = (re) => new RegExp(`${CMD_POS}${ABS_PREFIX}(?:${re})(?:\\.exe)?(?=\\s|$|[;&|)])`, 'i');
 export const NET_TOOLS = [['curl', tool('curl')], ['wget', tool('wget')], ['nc', tool('nc|ncat|netcat')], ['nslookup', tool('nslookup')],
   ['dig', tool('dig')], ['host', tool('host')], ['ping', tool('ping')]];
 /** 1.2 S0: the DNS tools count only with command substitution (the DNS-exfiltration shape). */
@@ -169,11 +183,16 @@ export const SEND_MARKERS = [
   ['exfil-host-url', { test: (s) => (s.match(ANY_URL) || []).some((u) => EXFIL_HOSTS.test(u)) }],
 ];
 const sendsOf = (s) => SEND_MARKERS.filter(([, re]) => re.test(s)).map(([n]) => n);
+/** 1.4 S0: the shells whose -c argument is read as a command (one level: the argument's own -c strings are not read again). */
+export const SHELLS = Object.freeze(['sh', 'bash', 'dash', 'zsh']);
+export const SHELL_C = new RegExp(`${CMD_POS}${ABS_PREFIX}(?:${SHELLS.join('|')})\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z]*c[a-zA-Z]*\\s+(?:'([^']*)'|"((?:[^"\\\\]|\\\\.)*)")`, 'g');
+/** The quoted -c arguments of shells at a command position in one hook command (each read as a command string of its own). */
+export function shellCArgs(s) { const out = []; if (typeof s !== 'string') return out; for (const m of s.matchAll(SHELL_C)) out.push(m[1] ?? m[2] ?? ''); return out; }
 /** { fetch, exec, net_tools, sends, exfil, fires } for one hook command; a non-string never throws and never fires. */
 export function hookFetchExec(cmd) {
   const s = typeof cmd === 'string' ? cmd : '';
   const fetch = names(FETCH_MARKERS, s); const exec = names(EXEC_MARKERS, s);
-  const net_tools = names(NET_TOOLS, s); const sends = sendsOf(s);
+  const net_tools = [...new Set([s, ...shellCArgs(s)].flatMap((x) => names(NET_TOOLS, x)))].sort((a, b) => NET_TOOLS.findIndex(([n]) => n === a) - NET_TOOLS.findIndex(([n]) => n === b)); const sends = sendsOf(s);   // 1.4: + the sh -c arguments
   // 1.2: hook-command exfiltration = a network tool at a command position AND a sends marker; the DNS tools only with command substitution
   const exfil = net_tools.some((t) => (DNS_TOOLS.includes(t) ? sends.includes('command-substitution') : sends.length > 0));
   return { fetch, exec, net_tools, sends, exfil, fires: (fetch.length > 0 && exec.length > 0) || exfil };
@@ -280,7 +299,7 @@ export function fileFacts(file) {
   if (foreign.length && POST_MARKER.test(s)) sinks.push('post-to-literal-host');
   return { ...base, binary: false, net_sinks: names(NET_SINKS, s), exec_sinks: names(EXEC_SINKS, s), obf_idents: idents.size, decode_markers: decode,
     hex_density: Number(hexDensity.toFixed(3)), numeric_hex: numericHex, cred_sources: names(CRED_SOURCES, s), sinks, overrides: names(OVERRIDES, s), address_families: names(ADDRESS_FAMILIES, s),
-    identity_sources: names(HOST_IDENTITY_SOURCES, s) };
+    host_identity: names(HOST_IDENTITY, s) };   // 1.4: host_identity (S6)
 }
 
 // ---- 0.1.5 entry facts (operator ruling R4 2026-10-21): the main and bin facts of EVERY download, stored once per served version ----
@@ -323,46 +342,118 @@ const platSuffix = (plats) => (plats.length ? `; not checked for ${plats.join(',
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const ALLOW_TEXT = { S1: (n) => `hook targets carry no loader (${plural(n, 'file')} read)`, S2: (n) => `entry files carry no obfuscation marker pair (${plural(n, 'file')} read)`,
   S3: (n) => `files carry no credential source with a sink (${plural(n, 'file')} read)`, S4: (n) => `entry files carry no override with address regexes (${plural(n, 'file')} read)`,
-  S6: (n) => `hook targets carry no network-only beacon (${plural(n, 'file')} read)` };
+  S6: (n) => `hook targets carry no network beacon (${plural(n, 'file')} read)` };
 const NONE_TEXT = { S1: 'no hook target to read', S2: 'no entry file to read', S3: 'no file to read', S4: 'no entry file to read', S6: 'no hook target to read' };
 
-// ---- S7 (R3): what an entry file can do, as capability names; url-literal excluded ----
-const CAP_KINDS = [['net', 'a network sink'], ['exec', 'an execution sink'], ['obf', 'an obfuscation or decode marker'], ['cred', 'a credential source']];
-function capsOf(F) {
-  if (!F || F.binary) return [];
-  const obf = [...(Array.isArray(F.decode_markers) ? F.decode_markers : []), ...(F.obf_idents >= LIMITS.s2MinIdents ? ['obf-idents'] : [])];
-  return [...apiNet(F).map((n) => `net:${n}`), ...(F.exec_sinks ?? []).map((n) => `exec:${n}`), ...obf.map((n) => `obf:${n}`),
-    ...(F.cred_sources ?? []).map((n) => `cred:${n}`)];
+// ---- S7 (R3), static-checks-1.4: recon's capability set and delta, copied; the summary built from the proxy's stored entry facts ----
+/** The capability classes S7 compares (R3), as class:name over fileFacts; url-literal is never one. */
+export const CAPABILITY_CLASSES = Object.freeze(['net', 'exec', 'decode', 'obf', 'cred']);
+const S7_ROLES = ['main', 'bin'];
+/** The capabilities one text file's facts carry: net:<API sink>, exec:<sink>, decode:<marker>, obf:_0x-idents (>= the S2 identifier count), cred:<source>. */
+export function capabilitiesOf(facts) {
+  if (!facts || facts.binary) return [];
+  return [...facts.net_sinks.filter((n) => apiNames.has(n)).map((n) => `net:${n}`), ...facts.exec_sinks.map((n) => `exec:${n}`), ...facts.decode_markers.map((n) => `decode:${n}`),
+    ...(facts.obf_idents >= LIMITS.s2MinIdents ? ['obf:_0x-idents'] : []), ...facts.cred_sources.map((n) => `cred:${n}`)];
 }
-const describeCaps = (caps) => CAP_KINDS.map(([k, w]) => [w, caps.filter((c) => c.startsWith(`${k}:`)).map((c) => c.slice(k.length + 1))])
-  .filter(([, xs]) => xs.length).map(([w, xs]) => `${w} (${list(xs)})`).join(' and ');
+const clip = (x, n = 200) => { const t = String(x ?? '').replace(UNSAFE, ''); return t.length > n ? `${t.slice(0, n)}…` : t; };
+/**
+ * Recon's entryFactsSummary over the proxy's stored entry facts (entryFactsOf, or a witness.db predecessorEntryFacts record): per role
+ * main/bin, READ (the files read and their capabilities, sorted, unique), NOT_CHECKED (a target not read, or binary) or ABSENT (no
+ * candidate on the keep list: none declared; or none of its candidates in the archive: verified absent, only on an archive read in full,
+ * review verdict 2026-10-21 condition 1). A refused archive has no summary. Pure.
+ */
+export function entrySummaryOf(entry, { archiveComplete = true } = {}) {
+  const rows = Array.isArray(entry?.files) ? entry.files : [];
+  const by_role = {};
+  for (const role of S7_ROLES) {
+    const caps = new Set(); const read = []; const nc = [];
+    const mine = rows.filter((f) => f && f.role === role);
+    for (const f of mine) {
+      const p = shownName(f.path ?? '?');
+      if (f.state === 'read' && f.facts && !f.facts.binary) { read.push(p); for (const c of capabilitiesOf(f.facts)) caps.add(c); continue; }
+      if (f.state === 'read') { nc.push({ path: p, reason: `binary (a NUL in the first ${LIMITS.headBytes} bytes): not read as code` }); continue; }
+      if (f.state === 'not-read') nc.push({ path: p, reason: clip(f.reason ?? 'not kept', 160) });
+    }
+    const candidate = mine.length > 0;
+    if (candidate && !read.length && !nc.length && archiveComplete !== true) nc.push({ path: shownName(mine[0].path ?? '?'), reason: 'archive not read in full: absence not verified' });
+    const absent = !read.length && !nc.length;
+    by_role[role] = { status: nc.length ? 'NOT_CHECKED' : absent ? 'ABSENT' : 'READ', caps: [...caps].sort(), files: read, not_checked: nc,
+      ...(absent ? { absent: candidate ? 'no candidate file in the tarball (verified absent)' : 'none declared (no candidate on the keep list)' } : {}) };
+  }
+  return { version: entry?.static_checks_version ?? STATIC_CHECKS_VERSION, archive_read_in_full: archiveComplete === true, by_role };
+}
+/**
+ * S7 (R3), pure, recon's capabilityDelta: predecessor = { version, basis, summary }, or { version: null, basis } (cold start:
+ * NOT_APPLICABLE), or { version, basis, status: 'NOT_CHECKED', reason } (checked first, so a NOT_CHECKED predecessor is never read as a
+ * cold start); current = a summary, or { status: 'NOT_CHECKED', reason }. Per role: a gain is a capability the current role has and the
+ * predecessor's same role lacked (a predecessor role ABSENT compares as empty). Outcome: any gain INDICATOR, else any role NOT_CHECKED
+ * NOT_CHECKED, else NONE; coverage counts a verified-absent role as checked (condition 3).
+ */
+export function capabilityDelta({ predecessor, current } = {}) {
+  const pred = predecessor && typeof predecessor === 'object' ? { version: predecessor.version ?? null, basis: predecessor.basis ?? null } : null;
+  const empty = () => Object.fromEntries(S7_ROLES.map((r) => [r, { status: 'NOT_CHECKED', gains: [] }]));
+  if (!pred) return { outcome: 'NOT_CHECKED', reason: 'no predecessor facts supplied', predecessor: null, by_role: empty() };
+  if (predecessor.status === 'NOT_CHECKED') return { outcome: 'NOT_CHECKED', reason: `predecessor ${pred.version ?? '(not determined)'}: ${clip(predecessor.reason ?? 'not checked', 300)}`, predecessor: pred, by_role: empty() };
+  if (pred.version === null) return { outcome: 'NOT_APPLICABLE', reason: clip(predecessor.reason ?? 'cold start: no predecessor', 200), predecessor: pred, by_role: empty() };
+  if (!predecessor.summary?.by_role) return { outcome: 'NOT_CHECKED', reason: `predecessor ${pred.version}: no facts summary`, predecessor: pred, by_role: empty() };
+  if (!current || current.status === 'NOT_CHECKED' || !current.by_role) return { outcome: 'NOT_CHECKED', reason: `current version: ${clip(current?.reason ?? 'no facts summary', 300)}`, predecessor: pred, by_role: empty() };
+  const by_role = {}; let gain = false; let nc = false;
+  for (const role of S7_ROLES) {
+    const p = predecessor.summary.by_role[role]; const c = current.by_role[role];
+    if (!c || c.status === 'ABSENT') { by_role[role] = { status: 'ABSENT', gains: [], note: `current ${role}: ${c?.absent ?? 'none'}`, ...(p?.status === 'ABSENT' ? { predecessor_note: `predecessor ${role}: ${p.absent}` } : {}) }; continue; }   // condition 2
+    if (!p || p.status === 'NOT_CHECKED') { by_role[role] = { status: 'NOT_CHECKED', gains: [], reason: 'the predecessor\'s same-role file was not read', not_checked: p?.not_checked ?? [] }; nc = true; continue; }
+    const had = new Set(p.status === 'ABSENT' ? [] : p.caps); const gains = c.caps.filter((x) => !had.has(x));
+    by_role[role] = { status: c.status === 'READ' ? 'CHECKED' : 'NOT_CHECKED', gains, ...(c.status !== 'READ' ? { not_checked: c.not_checked } : {}),
+      ...(p.status === 'ABSENT' ? { predecessor_role: 'absent', predecessor_note: `predecessor ${role}: ${p.absent}` } : {}) };   // condition 2
+    if (gains.length) gain = true; if (c.status !== 'READ') nc = true;
+  }
+  // condition 3: S7 counts a verified-absent role as checked, and says so beside the not-checked share
+  const st = S7_ROLES.map((r) => by_role[r].status);
+  const coverage = { roles: S7_ROLES.length, checked: st.filter((x) => x !== 'NOT_CHECKED').length, verified_absent: st.filter((x) => x === 'ABSENT').length, not_checked: st.filter((x) => x === 'NOT_CHECKED').length,
+    note: 'S7 counts a verified-absent role as checked (an archive read in full holds no candidate file for it); the S1-S5 rows count nothing read as NOT_CHECKED' };
+  return { outcome: gain ? 'INDICATOR' : nc ? 'NOT_CHECKED' : 'NONE', predecessor: pred, by_role, coverage };
+}
+/** R3 runtime basis: the predecessor is the last version this proxy served (witness.db entry facts, R4). */
+export const S7_BASIS = 'the version this proxy served before';
+/** The predecessor argument of capabilityDelta from a witness.db predecessorEntryFacts record (null: cold start; 'unreadable': a storage error). */
+function s7Predecessor(rec) {
+  if (rec === 'unreadable') return { version: null, basis: S7_BASIS, status: 'NOT_CHECKED', reason: 'the stored entry facts of earlier versions could not be read' };
+  if (!rec) return { version: null, basis: S7_BASIS, reason: 'no earlier version served by this proxy' };
+  const version = shownName(rec.version);
+  if (rec.walk !== 'read') return { version, basis: S7_BASIS, status: 'NOT_CHECKED', reason: `its archive was refused (${shownName(rec.reason ?? 'no reason stored')})` };
+  if (typeof rec.static_checks_version === 'string' && rec.static_checks_version !== STATIC_CHECKS_VERSION) {
+    return { version, basis: S7_BASIS, status: 'NOT_CHECKED', reason: `its facts were stored by ${shownName(rec.static_checks_version)}, not ${STATIC_CHECKS_VERSION}` };
+  }
+  return { version, basis: S7_BASIS, summary: entrySummaryOf(rec) };
+}
+/** The S7 row [result, detail] from capabilityDelta's result: the predecessor and its basis, the gains, the verified-absent notes (condition 2) and the coverage (condition 3). */
+function s7Row(d) {
+  if (d.outcome === 'NOT_APPLICABLE') return ['SKIP', `not applicable: ${d.reason}`];
+  if (d.reason) return ['SKIP', `not checked: ${d.reason}`];
+  const vs = `vs ${d.predecessor.version} (${d.predecessor.basis})`;
+  const R = S7_ROLES.map((r) => [r, d.by_role[r]]);
+  // condition 2: a role verified absent is said; the predecessor's note only when it differs from the current one (both none declared reads once)
+  const same = (x) => x.predecessor_note && x.predecessor_note.replace(/^predecessor /, '') === x.note.replace(/^current /, '');
+  const notes = R.flatMap(([, x]) => (x.status === 'ABSENT' ? [x.note, same(x) ? null : x.predecessor_note] : !x.gains.length && x.predecessor_note ? [`against an empty baseline: ${x.predecessor_note}`] : []).filter(Boolean));
+  const c = d.coverage; const cov = `roles checked ${c.checked} of ${c.roles} (${c.verified_absent} verified absent, counted as checked for S7), not checked ${c.not_checked}`;
+  const tail = [...notes, cov].join('; ');
+  if (d.outcome === 'INDICATOR') {
+    const g = R.filter(([, x]) => x.gains.length).map(([r, x]) => `${r} gained ${x.gains.join(', ')}${x.predecessor_role === 'absent' ? ` (against an empty baseline: ${x.predecessor_note})` : ''}`).join('; ');
+    return ['WARN', `${vs}: ${g}; ${tail}`];
+  }
+  if (d.outcome === 'NOT_CHECKED') {
+    const why = R.filter(([, x]) => x.status === 'NOT_CHECKED').map(([r, x]) => {
+      const side = x.reason ? 'predecessor' : 'current'; const n = (x.not_checked ?? [])[0];
+      return n ? `${side} ${r} ${n.path} was not read (${n.reason})` : `${side} ${r} was not read`;
+    });
+    return ['SKIP', `not checked: ${why.join('; ')}; ${vs}; ${tail}`];
+  }
+  return ['ALLOW', `no capability gained ${vs}; ${tail}`];
+}
 /** S7's outcome [result, detail] for a finished walk against the stored predecessor (witness.db predecessorEntryFacts, or null). */
 function s7Outcome({ manifest, packageJson, walk, predecessor }) {
-  if (predecessor === 'unreadable') return ['SKIP', 'not checked: the stored entry facts of earlier versions could not be read'];
-  if (!predecessor) return ['SKIP', 'not applicable: no earlier version served by this proxy'];
-  const pv = shownName(predecessor.version); const before = `${pv}, the version served before`;
-  if (predecessor.walk !== 'read') return ['SKIP', `not checked: the archive of ${before}, was refused (${shownName(predecessor.reason ?? 'no reason stored')})`];
-  if (typeof predecessor.static_checks_version === 'string' && predecessor.static_checks_version !== STATIC_CHECKS_VERSION) {
-    return ['SKIP', `not checked: the facts of ${pv} were stored by ${shownName(predecessor.static_checks_version)}, not ${STATIC_CHECKS_VERSION}`];
-  }
-  const cur = entryFactsOf({ manifest: manifest ?? packageJson, walk });
-  const pfiles = Array.isArray(predecessor.files) ? predecessor.files : [];
-  const gains = []; const unchecked = []; let compared = 0;
-  for (const f of cur.files) {
-    if (f.state === 'absent') continue;
-    if (f.state !== 'read') { unchecked.push(`${f.role} ${shownName(f.path)} was not read (${f.reason})`); continue; }
-    const same = pfiles.filter((x) => x && x.role === f.role);
-    const unread = same.find((x) => x.state === 'not-read');
-    if (unread) { unchecked.push(`${f.role} ${shownName(unread.path)} of ${pv} was not read (${unread.reason})`); continue; }
-    compared += 1;
-    const had = new Set(same.flatMap((x) => capsOf(x.facts)));
-    const gained = [...new Set(capsOf(f.facts))].filter((c) => !had.has(c));
-    if (gained.length) gains.push(`${f.role} ${shownName(f.path)} gains ${describeCaps(gained)}`);
-  }
-  const more = (xs) => (xs.length > 1 ? `; and ${xs.length - 1} more` : '');
-  if (gains.length) return ['WARN', `${gains[0]} against ${before}${gains.length > 1 ? `; and ${gains.length - 1} more file(s)` : ''}`];
-  if (unchecked.length) return ['SKIP', `not checked: ${unchecked[0]}${more(unchecked)}`];
-  return ['ALLOW', `entry files gain no capability against ${before} (${plural(compared, 'file')} compared)`];
+  const current = entrySummaryOf(entryFactsOf({ manifest: manifest ?? packageJson, walk }), { archiveComplete: Boolean(walk?.ok) });
+  return s7Row(capabilityDelta({ predecessor: s7Predecessor(predecessor), current }));
 }
 const list = (xs) => xs.join(', ');
 
@@ -436,7 +527,7 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null, p
       else if (c.id === 'S2' && F.obf_idents >= LIMITS.s2MinIdents && F.decode_markers.length) detail = `entry file ${x.shown} (${F.size} B) has ${F.obf_idents} _0x identifiers and a decode marker (${list(F.decode_markers)})`;
       else if (c.id === 'S3' && F.cred_sources.length && F.sinks.includes('exfil-host')) detail = `${x.shown} (${F.size} B) has a credential source (${list(F.cred_sources)}) and an outbound sink (${list(F.sinks)})`;
       else if (c.id === 'S4' && F.overrides.length && F.address_families.length >= LIMITS.s4MinAddressFamilies) detail = `entry file ${x.shown} (${F.size} B) has an override (${list(F.overrides)}) and ${F.address_families.length} address-regex families (${list(F.address_families)})`;
-      else if (c.id === 'S6' && apiNet(F).length && F.identity_sources.length && !F.exec_sinks.length) detail = `hook target ${x.shown} (${F.size} B) has a network sink (${list(apiNet(F))}) and a host-identity source (${list(F.identity_sources)}) and no execution sink`;
+      else if (c.id === 'S6' && apiNet(F).length && F.host_identity.length && !F.exec_sinks.length) detail = `hook target ${x.shown} (${F.size} B) has a network API sink (${list(apiNet(F))}) and a host-identity source (${list(F.host_identity)}) and no execution sink`;
       if (detail) hits.push({ detail, plats: x.plats });
     }
     const cand = read || hits.length || (skipped.length && !(skipped.length === unread.length && absentOnly(unread))) ? null : candidateOf(c);
@@ -476,4 +567,4 @@ export function staticSettled(latest) {
   return mine.every((r) => typeof r.detail === 'string' && !RETRY_PREFIXES.some((p) => r.detail.startsWith(p)));
 }
 
-export default { entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
+export default { entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
