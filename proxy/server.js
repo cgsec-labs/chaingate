@@ -36,13 +36,14 @@ import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cach
 import { createTarWalker } from './tar-walk.js';
 import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
 import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
-  withholdingChecks } from './static-checks.js';
+  withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
 /** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
 function parsedPackageJson(walk) {
   if (!walk?.ok || !walk.packageJson) return null;
   try { const pj = JSON.parse(walk.packageJson.toString('utf8').replace(/^\uFEFF/, '')); return pj !== null && typeof pj === 'object' && !Array.isArray(pj) ? pj : null; } catch { return null; }
 }
+let factsWalks = 0;                                         // 0.1.5 (R4): entry-facts-only walks in flight (ceiling MAX_FACTS_WALKS)
 let armedWalks = 0;                                        // 0.1.5: armed keep-list walks in flight (process-wide ceiling MAX_ARMED_WALKS)
 // 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
@@ -1184,9 +1185,10 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         const walkLatest = upstream.statusCode === 200 && state.tarballVersion != null && !state.override && witnessDb
           && current && !(state.c1 && !state.c1.ok) ? state.applicable.latest : null;
         // 0.1.5 static checks (step 3; ruling 2026-10-13): the keep list is ARMED by a named WARN row, the identity-break NOTE, the
-        // entry-path-change NOTE (ruling R1 2026-10-21) or the seed's coverage WARN, from the registry manifest remembered with the hook map; a settled static outcome is never walked for
-        // again (tarballs are immutable per version), a "not armed" / "no manifest" / ceiling outcome is retried when a later download
-        // is armed. The walk stays on a copy of the stream; the download is never held.
+        // entry-path-change NOTE (ruling R1 2026-10-21) or the seed's coverage WARN, from the registry manifest remembered with the
+        // hook map; a settled static outcome is never walked for again (tarballs are immutable per version), a "not armed" / "no
+        // manifest" / ceiling outcome is retried when a later download is armed. The walk stays on a copy of the stream; the download
+        // is never held.
         const armed = walkLatest ? armedBy(walkLatest.gates_fired) : null;
         const staticDue = Boolean(walkLatest && armed && !staticSettled(walkLatest));
         let keepOpts = {}; let staticWhy = null; let armedSlot = false; let staticManifest;
@@ -1196,7 +1198,25 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           else if (armedWalks >= MAX_ARMED_WALKS) staticWhy = 'ceiling';
           else { armedWalks += 1; armedSlot = true; staticWhy = 'armed'; keepOpts = { keep: keepListFor(staticManifest).paths }; }
         }
-        const walker = walkLatest && (!mcDeterminate(walkLatest) || staticDue) ? createTarWalker(keepOpts) : null;
+        const mcWalk = Boolean(walkLatest && (!mcDeterminate(walkLatest) || staticDue));
+        // 0.1.5 entry facts (operator ruling R4 2026-10-21): EVERY served version, armed or not, has its main and bin facts stored
+        // once (witness.db entry_facts), for S7's predecessor. An armed walk keeps them already; any other walk keeps only them,
+        // under its own ceiling (MAX_FACTS_WALKS); past it, or on a storage error, the version is tried again at its next download.
+        let factsDue = false; let factsSlot = false; let factsManifest;
+        try {
+          factsDue = Boolean(upstream.statusCode === 200 && state.tarballVersion != null && witnessDb
+            && !witnessDb.hasEntryFacts(canonicalName, state.tarballVersion));
+        } catch (err) { log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: not readable (${err.message}); not stored`); }
+        if (factsDue) {
+          factsManifest = staticWhy === 'armed' ? staticManifest : manifestEntryFor(canonicalName, state.tarballVersion);
+          if (staticWhy === 'armed') factsSlot = false;              // the armed keep list holds main and bin already
+          else if (factsWalks >= MAX_FACTS_WALKS) factsDue = false;
+          else {
+            factsWalks += 1; factsSlot = true;
+            keepOpts = { keep: factsManifest === undefined ? (pj) => entryKeepFor(pj) : entryKeepFor(factsManifest) };
+          }
+        }
+        const walker = mcWalk || factsDue ? createTarWalker(keepOpts) : null;
         const headerFn = notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null;
         const tap = walker ? (c) => walker.write(c) : null;
         let held = null;
@@ -1207,11 +1227,24 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           } else await streamUpstream(res, upstream, upstream.statusCode, headerFn, tap);
         } catch (err) {
           if (armedSlot) { armedWalks -= 1; armedSlot = false; }            // the slot is freed on every exit, or the ceiling would stick
+          if (factsSlot) { factsWalks -= 1; factsSlot = false; }
           throw err;
         }
-        if (walker) {
-          const walk = await walker.end();
-          if (armedSlot) { armedWalks -= 1; armedSlot = false; }
+        const walk = walker ? await walker.end() : null;
+        if (armedSlot) { armedWalks -= 1; armedSlot = false; }
+        if (factsSlot) { factsWalks -= 1; factsSlot = false; }
+        // a complete walk is the tarball's facts; a refused archive is stored as refused only once the whole download was served
+        // (an aborted one, or a walk that fell behind, says nothing about the archive and is tried again)
+        if (walk && factsDue && (walk.ok || (res.writableFinished && !/fell behind/.test(String(walk.reason))))) {
+          try {
+            const ef = entryFactsOf({ manifest: factsManifest ?? null, packageJson: walk.ok ? parsedPackageJson(walk) : null, walk });
+            witnessDb.recordEntryFacts({ package_name: canonicalName, version: state.tarballVersion,
+              static_checks_version: STATIC_CHECKS_VERSION, ...ef });
+          } catch (err) {
+            log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: not stored (${err.message})`);
+          }
+        }
+        if (walk && mcWalk) {
           let lateRows = null;                                  // MC's row and the five static rows (1.2 roles), computed once
           const rowsOfWalk = () => lateRows ?? (lateRows = [mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion)),
             ...(staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed })

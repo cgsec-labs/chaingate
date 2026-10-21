@@ -163,6 +163,36 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_u BEFORE UPDATE ON adjudi
 CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudications
   BEGIN SELECT RAISE(ABORT, 'adjudications are append-only'); END;
 
+-- 0.1.5 (operator ruling R4 2026-10-21): the entry facts of each version this proxy served, written once per version on its
+-- first download (tarballs are immutable per version): the main and bin targets the registry manifest names, each read (size,
+-- sha256, the closed-vocabulary fileFacts summary) or not read (its reason). walk = 'refused' when the archive itself was refused
+-- (no files). S7 compares a version with the last one served before it. Retention: the newest 3 served versions per package and at
+-- most 200,000 in all (recordEntryFacts).
+CREATE TABLE IF NOT EXISTS entry_fact_versions (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_name          TEXT NOT NULL,
+    version               TEXT NOT NULL,
+    served_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    walk                  TEXT NOT NULL CHECK (walk IN ('read','refused')),
+    reason                TEXT,
+    static_checks_version TEXT NOT NULL,
+    UNIQUE (package_name, version)
+);
+CREATE TABLE IF NOT EXISTS entry_facts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id INTEGER NOT NULL REFERENCES entry_fact_versions(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('main','bin')),
+    path       TEXT NOT NULL,
+    state      TEXT NOT NULL CHECK (state IN ('read','not-read','absent')),
+    size_bytes INTEGER,
+    sha256     TEXT,
+    facts      TEXT,
+    reason     TEXT,
+    UNIQUE (version_id, role, path)
+);
+CREATE INDEX IF NOT EXISTS idx_efv_pkg_order ON entry_fact_versions(package_name, id DESC);
+CREATE INDEX IF NOT EXISTS idx_ef_version    ON entry_facts(version_id);
+
 CREATE INDEX IF NOT EXISTS idx_versions_pkg      ON versions(package_id);
 CREATE INDEX IF NOT EXISTS idx_versions_pub_at   ON versions(package_id, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_vfiles_ver        ON version_files(version_id);
@@ -500,6 +530,61 @@ export class WitnessDB {
     if (!st) throw new Error('the acceptances table does not exist (applySchema was not run on this handle)');
     return st.upsert.run({ package_name: a.package_name, version: a.version, named: JSON.stringify(a.named ?? []),
       decision_id: a.decision_id ?? null, policy_version: a.policy_version ?? null }).changes;
+  }
+
+  _entryFactStmts() {
+    if (!this._tableStmts('entry_facts', () => ({}))) return null;
+    return this._tableStmts('entry_fact_versions', () => ({
+      has: this.db.prepare('SELECT 1 FROM entry_fact_versions WHERE package_name = ? AND version = ?'),
+      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version)
+        VALUES (@package_name, @version, @walk, @reason, @static_checks_version)`),
+      insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
+        VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
+      prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = ? AND version <> ? ORDER BY id DESC LIMIT 1`),
+      files: this.db.prepare('SELECT role, path, state, size_bytes, sha256, facts, reason FROM entry_facts WHERE version_id = ? ORDER BY id'),
+      prunePkg: this.db.prepare(`DELETE FROM entry_fact_versions WHERE package_name = @package_name AND id NOT IN
+        (SELECT id FROM entry_fact_versions WHERE package_name = @package_name ORDER BY id DESC LIMIT @keep)`),
+      count: this.db.prepare('SELECT COUNT(*) AS c FROM entry_fact_versions'),
+      pruneAll: this.db.prepare(`DELETE FROM entry_fact_versions WHERE id IN (SELECT id FROM entry_fact_versions ORDER BY id LIMIT ?)`),
+    }));
+  }
+
+  /** 0.1.5 (R4): whether the entry facts of this version are stored (false on a database without the tables). */
+  hasEntryFacts(packageName, version) {
+    const st = this._entryFactStmts();
+    return Boolean(st && st.has.get(packageName, version));
+  }
+
+  /**
+   * 0.1.5 (R4): store one served version's entry facts, once: 'wrote', or 'exists' (nothing changed). Serving order is the row id
+   * (first download). Prunes to the newest `keepPerPackage` versions of the package and `maxVersions` in all, oldest served first.
+   */
+  recordEntryFacts(r, { keepPerPackage = 3, maxVersions = 200_000 } = {}) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return this.db.transaction(() => {
+      const ins = st.insV.run({ package_name: r.package_name, version: r.version, walk: r.walk, reason: r.reason ?? null,
+        static_checks_version: r.static_checks_version });
+      if (!ins.changes) return 'exists';
+      const versionId = Number(ins.lastInsertRowid);
+      for (const f of Array.isArray(r.files) ? r.files : []) {
+        st.insF.run({ version_id: versionId, role: f.role, path: f.path, state: f.state, size_bytes: f.size_bytes ?? null,
+          sha256: f.sha256 ?? null, facts: f.facts == null ? null : JSON.stringify(f.facts), reason: f.reason ?? null });
+      }
+      st.prunePkg.run({ package_name: r.package_name, keep: keepPerPackage });
+      const over = st.count.get().c - maxVersions;
+      if (over > 0) st.pruneAll.run(over);
+      return 'wrote';
+    })();
+  }
+
+  /** 0.1.5 (R3): the last version of the package this proxy served before `version`, with its files; null on a cold start. */
+  predecessorEntryFacts(packageName, version) {
+    const st = this._entryFactStmts();
+    const v = st ? st.prev.get(packageName, version) : null;
+    if (!v) return null;
+    const files = st.files.all(v.id).map((f) => decodeJsonField(f, 'facts', null));
+    return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, files };
   }
 
   deleteAcceptance(packageName, version) {

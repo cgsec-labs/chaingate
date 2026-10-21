@@ -29,6 +29,7 @@
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
+import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { pyTruthy } from '../seed/v3/packument.js';
 import { DEFAULTS as WALK } from './tar-walk.js';
@@ -51,6 +52,9 @@ export const CHECKS = Object.freeze([
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
 export const MAX_ARMED_WALKS = 4;
+/** 0.1.5 (R4): walks that keep only the main and bin bodies for the entry facts, at once (at most 6 x 1 MiB each); beyond it the
+ *  version's facts are stored at a later download. */
+export const MAX_FACTS_WALKS = 8;
 /** 0.1.5 (#15): with the per-user `static_withhold` switch on, an armed download is held in memory up to this many bytes while the
  *  static checks read it (design note section 8 item 2); past it the download is served and recorded as today. With the ceiling
  *  above, at most MAX_ARMED_WALKS x 8 MiB are held at once. */
@@ -258,6 +262,40 @@ export function fileFacts(file) {
     hex_density: Number(hexDensity.toFixed(3)), numeric_hex: numericHex, cred_sources: names(CRED_SOURCES, s), sinks, overrides: names(OVERRIDES, s), address_families: names(ADDRESS_FAMILIES, s) };
 }
 
+// ---- 0.1.5 entry facts (operator ruling R4 2026-10-21): the main and bin facts of EVERY download, stored once per served version ----
+const ENTRY_ROLES = Object.freeze(['main', 'bin']);
+const entryTargets = (man) => keepListFor(man).targets.filter((t) => ENTRY_ROLES.includes(t.role));
+/** The paths a download's walk keeps for the entry facts: the main target (node-resolution variants) and up to 4 bin targets. */
+export function entryKeepFor(man) {
+  return [...new Set(entryTargets(man).flatMap((t) => t.variants))];
+}
+/**
+ * The entry facts of one finished walk, for witness.db: { walk: 'read' | 'refused', reason, files: [{ role, path, state, size_bytes,
+ * sha256, facts, reason }] }. A target is 'read' (its kept body: size, sha256, the fileFacts summary without path or size), 'not-read'
+ * (the walker's reason, the header size when known) or 'absent' (no variant in the archive). The manifest is the registry's when at
+ * hand, else the tarball package.json. Never throws on a hostile manifest.
+ */
+export function entryFactsOf({ manifest, packageJson = null, walk }) {
+  if (!walk || !walk.ok) return { walk: 'refused', reason: walk?.reason ?? 'the tarball was not walked', files: [] };
+  const kept = new Map((Array.isArray(walk.files) ? walk.files : []).map((f) => [f.path, f]));
+  const notKept = Array.isArray(walk.notKept) ? walk.notKept : [];
+  const files = [];
+  for (const t of entryTargets(manifest ?? packageJson)) {
+    const hit = t.variants.map((v) => kept.get(v)).find(Boolean);
+    if (hit) {
+      const buf = Buffer.isBuffer(hit.buf) ? hit.buf : Buffer.alloc(0);
+      const { path: _p, size: _s, ...facts } = fileFacts(hit);
+      files.push({ role: t.role, path: hit.path, state: 'read', size_bytes: buf.length, sha256: createHash('sha256').update(buf).digest('hex'), facts, reason: null });
+      continue;
+    }
+    const miss = notKept.find((x) => x && t.variants.includes(x.path) && !/^not in the archive/.test(String(x.reason)));
+    if (!Array.isArray(walk.files)) files.push({ role: t.role, path: t.path, state: 'not-read', size_bytes: null, sha256: null, facts: null, reason: 'the walk kept no entry file' });
+    else if (miss) files.push({ role: t.role, path: t.path, state: 'not-read', size_bytes: Number.isFinite(miss.size) ? miss.size : null, sha256: null, facts: null, reason: String(miss.reason) });
+    else files.push({ role: t.role, path: t.path, state: 'absent', size_bytes: null, sha256: null, facts: null, reason: null });
+  }
+  return { walk: 'read', reason: null, files };
+}
+
 // ---- the rows ----
 const hookDictOf = (man) => { const out = {}; const s = isObj(man) ? man.scripts : null; if (!isObj(s)) return out; for (const k of INSTALL_HOOKS) if (pyTruthy(s[k])) out[k] = s[k]; return out; };
 const platSuffix = (plats) => (plats.length ? `; not checked for ${plats.join(', ')} (another entry installs there)` : '');
@@ -375,4 +413,4 @@ export function staticSettled(latest) {
   return mine.every((r) => typeof r.detail === 'string' && !RETRY_PREFIXES.some((p) => r.detail.startsWith(p)));
 }
 
-export default { STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
+export default { entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
