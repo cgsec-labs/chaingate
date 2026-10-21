@@ -44,3 +44,19 @@ ruling live in the private ops repository (chaingate-ops, branch `g10-c2-pin-adm
   Never two independent wordings.
 - The WIP merge: after the main merge, before the bump, so one commit touches the proxy rows and the `--tarball` rows together.
 - The policy identity stays `cft-policy-1.2` (role tables change, not the arithmetic).
+
+## Operator rulings 2026-10-21 (relayed; the ops section 12 follows when ops is reactivated)
+
+R1 Trigger: entry-path-change arms the keep-list walk, beside the named WARN rows, identity-break and the brand-new-package case; "armed by: entry-path-change" in the row detail.
+
+R2 S6 network-only beacon: a hook target with an API network sink (http-request, fetch, net-connect, websocket, xhr, axios), a host-identity source (os.hostname(), os.userInfo(), os.networkInterfaces(), the env-dump marker, or the identity variables USER, USERNAME, LOGNAME, HOSTNAME, COMPUTERNAME) and no execution sink in the same file; url-literal is not a sink, a bare process.env read is not a source. Gate static:S6-network-only-beacon, CONTRIBUTING first.
+
+R3 S7 entry capability delta: main or bin gains an API network sink, an execution sink, an obfuscation or decode marker, or a credential source that the predecessor's same-role file lacked; url-literal excluded. Predecessor at runtime = the last version this proxy served; cold start NOT_APPLICABLE; a refused predecessor or current archive is NOT_CHECKED, never a clean delta; the row names the predecessor version. Gate static:S7-entry-capability-delta, CONTRIBUTING first.
+
+R4 Predecessor facts: option (a): the proxy computes the fileFacts summary for main/bin on every download (not only armed ones) and stores it per served version in the witness store; retention and cold start stated. Its added cost per download is measured by ops; the 50 ms bar applies.
+
+R5 Tree: the proxy mirrors recon's static-checks-1.4 from v6.12 byte for byte when recon hands over the constants; the version string stays held until then.
+
+R6 Release commit: 3973224 is retired; Stage A reruns on the final commit; v3.2 waits and changes nothing.
+
+Build now, tests first: the trigger addition (R1); the per-version facts store (R4); S7's runtime path and S6's plumbing against the held copy of the vocabulary, to be aligned to recon's 1.4 constants when they arrive. Naming edits only after the operator's naming ruling on the re-measure.
