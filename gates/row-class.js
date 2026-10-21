@@ -25,6 +25,8 @@ export const CONTRIBUTING_GATES = Object.freeze(new Set([
   // static-checks-1.2 (operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joined as a sixth static check, CONTRIBUTING first.
   // Naming (operator ruling 2026-10-15, ops handover 11.1/11.4): S0 and S5 are NAMED runner gates and left this list; S1-S4 stay.
   'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook',
+  // operator rulings R2 and R3 2026-10-21: S6 network-only-beacon and S7 entry-capability-delta, CONTRIBUTING first
+  'static:S6-network-only-beacon', 'static:S7-entry-capability-delta',
 ]));
 
 /** A runner row with the 1.2 role applied: a contributing gate's WARN becomes NOTE. Everything else unchanged. */

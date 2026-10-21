@@ -1,4 +1,4 @@
-// 0.1.5 tarball static checks S0–S5 (design note §4, §5). Pure functions over the registry manifest, the tarball package.json and the
+// 0.1.5 tarball static checks S0-S7 (design note §4, §5; S6 and S7 by operator rulings R2 and R3 2026-10-21). Pure functions over the registry manifest, the tarball package.json and the
 // walker's kept bodies (tar-walk.js `keep`, step 1). Each check is a CONJUNCTION of two facts about ONE file (or one hook command),
 // stated so a reviewer can confirm it by opening the tarball. A row is { gate, result: ALLOW | SKIP | WARN, detail }, the shape every
 // gate writes; its detail is built from a closed vocabulary -- the marker NAMES that matched (never file content, never a host, never
@@ -26,6 +26,15 @@
 //   S4 wallet-swap-hook           a kept main/bin target that OVERRIDES XMLHttpRequest.prototype.send / window.fetch /
 //                                 window.ethereum.request AND carries >= 2 crypto-address regex families
 //   S5 oversized-hook-target      a hook target over the 1 MiB kept-file cap (size from the tar header; the body is not read)
+//   S6 network-only-beacon        a kept hook target with an API network sink (url-literal is not one) AND a host-identity source
+//                                 (os.hostname(), os.userInfo(), os.networkInterfaces(), env-dump, or USER, USERNAME, LOGNAME,
+//                                 HOSTNAME, COMPUTERNAME read from process.env; a bare process.env read is not one) AND no execution sink
+//   S7 entry-capability-delta     a kept main/bin target GAINS an API network sink, an execution sink, an obfuscation or decode marker
+//                                 or a credential source that the same-role files of the predecessor lacked; predecessor = the last
+//                                 version this proxy served (witness.db entry facts, R4); none = not applicable, a refused or unread
+//                                 file = not checked, never a clean delta
+// S6 and S7 run against the runtime's held copy of their vocabulary until recon hands over static-checks-1.4 (R5); the version
+// string stays static-checks-1.3 until then.
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -48,6 +57,8 @@ export const CHECKS = Object.freeze([
   { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
   { id: 'S4', gate: 'static:S4-wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
   { id: 'S5', gate: 'static:S5-oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' },
+  { id: 'S6', gate: 'static:S6-network-only-beacon', roles: ['hook'], notice: 'an install script sends this machine\'s identity to an outside host' },
+  { id: 'S7', gate: 'static:S7-entry-capability-delta', roles: ['main', 'bin'], notice: 'its entry file gained network, execution, decoding or credential access' },
 ]);
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
@@ -115,6 +126,15 @@ export const CRED_SOURCES = [
   ['env-dump', /JSON\.stringify\(\s*process\.env\s*\)|Object\.(?:keys|entries|values)\(\s*process\.env\s*\)|\.\.\.process\.env\b/],
   ['wallet-file', /wallet\.dat|Local Storage\/leveldb|\.config\/gcloud|\.kube\/config/],
 ];
+/** S6 (R2): host-identity sources. A bare process.env read is not one; env-dump is CRED_SOURCES' marker. */
+export const HOST_IDENTITY_SOURCES = [
+  ['os-hostname', /(?:\bos|\))\.hostname\s*\(/], ['os-userInfo', /(?:\bos|\))\.userInfo\s*\(/],
+  ['os-networkInterfaces', /(?:\bos|\))\.networkInterfaces\s*\(/],
+  ['env-dump', /JSON\.stringify\(\s*process\.env\s*\)|Object\.(?:keys|entries|values)\(\s*process\.env\s*\)|\.\.\.process\.env\b/],
+  ['identity-env', /process\.env(?:\.|\[\s*['"`])(?:USER|USERNAME|LOGNAME|HOSTNAME|COMPUTERNAME)\b/],
+];
+/** The API network sinks: NET_SINKS without url-literal (a string is not a request; R2, R3). */
+const apiNet = (F) => (Array.isArray(F?.net_sinks) ? F.net_sinks.filter((n) => n !== 'url-literal') : []);
 export const EXFIL_HOSTS = /discord(?:app)?\.com\/api\/webhooks|api\.telegram\.org|hooks\.slack\.com|webhook\.site|\.pipedream\.net|\.ngrok(?:-free)?\.(?:io|app|dev)|\binteract\.sh\b|\boast\.(?:pro|live|site|fun|me)\b|burpcollaborator\.net|requestbin|pastebin\.com|transfer\.sh|\.requestcatcher\.com|\.free\.beeceptor\.com|\.hookbin\.com|\.pipedream\.com/i;
 export const RAW_IP_URL = /\bhttps?:\/\/(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/;
 export const REGISTRY_HOSTS = Object.freeze(['registry.npmjs.org', 'registry.yarnpkg.com', 'registry.npmmirror.com', 'npmjs.com', 'www.npmjs.com', 'localhost', '127.0.0.1']);
@@ -259,7 +279,8 @@ export function fileFacts(file) {
   const foreign = [...hosts].filter((h) => !REGISTRY_HOSTS.includes(h) && !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(h));
   if (foreign.length && POST_MARKER.test(s)) sinks.push('post-to-literal-host');
   return { ...base, binary: false, net_sinks: names(NET_SINKS, s), exec_sinks: names(EXEC_SINKS, s), obf_idents: idents.size, decode_markers: decode,
-    hex_density: Number(hexDensity.toFixed(3)), numeric_hex: numericHex, cred_sources: names(CRED_SOURCES, s), sinks, overrides: names(OVERRIDES, s), address_families: names(ADDRESS_FAMILIES, s) };
+    hex_density: Number(hexDensity.toFixed(3)), numeric_hex: numericHex, cred_sources: names(CRED_SOURCES, s), sinks, overrides: names(OVERRIDES, s), address_families: names(ADDRESS_FAMILIES, s),
+    identity_sources: names(HOST_IDENTITY_SOURCES, s) };
 }
 
 // ---- 0.1.5 entry facts (operator ruling R4 2026-10-21): the main and bin facts of EVERY download, stored once per served version ----
@@ -301,16 +322,56 @@ const hookDictOf = (man) => { const out = {}; const s = isObj(man) ? man.scripts
 const platSuffix = (plats) => (plats.length ? `; not checked for ${plats.join(', ')} (another entry installs there)` : '');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const ALLOW_TEXT = { S1: (n) => `hook targets carry no loader (${plural(n, 'file')} read)`, S2: (n) => `entry files carry no obfuscation marker pair (${plural(n, 'file')} read)`,
-  S3: (n) => `files carry no credential source with a sink (${plural(n, 'file')} read)`, S4: (n) => `entry files carry no override with address regexes (${plural(n, 'file')} read)` };
-const NONE_TEXT = { S1: 'no hook target to read', S2: 'no entry file to read', S3: 'no file to read', S4: 'no entry file to read' };
+  S3: (n) => `files carry no credential source with a sink (${plural(n, 'file')} read)`, S4: (n) => `entry files carry no override with address regexes (${plural(n, 'file')} read)`,
+  S6: (n) => `hook targets carry no network-only beacon (${plural(n, 'file')} read)` };
+const NONE_TEXT = { S1: 'no hook target to read', S2: 'no entry file to read', S3: 'no file to read', S4: 'no entry file to read', S6: 'no hook target to read' };
+
+// ---- S7 (R3): what an entry file can do, as capability names; url-literal excluded ----
+const CAP_KINDS = [['net', 'a network sink'], ['exec', 'an execution sink'], ['obf', 'an obfuscation or decode marker'], ['cred', 'a credential source']];
+function capsOf(F) {
+  if (!F || F.binary) return [];
+  const obf = [...(Array.isArray(F.decode_markers) ? F.decode_markers : []), ...(F.obf_idents >= LIMITS.s2MinIdents ? ['obf-idents'] : [])];
+  return [...apiNet(F).map((n) => `net:${n}`), ...(F.exec_sinks ?? []).map((n) => `exec:${n}`), ...obf.map((n) => `obf:${n}`),
+    ...(F.cred_sources ?? []).map((n) => `cred:${n}`)];
+}
+const describeCaps = (caps) => CAP_KINDS.map(([k, w]) => [w, caps.filter((c) => c.startsWith(`${k}:`)).map((c) => c.slice(k.length + 1))])
+  .filter(([, xs]) => xs.length).map(([w, xs]) => `${w} (${list(xs)})`).join(' and ');
+/** S7's outcome [result, detail] for a finished walk against the stored predecessor (witness.db predecessorEntryFacts, or null). */
+function s7Outcome({ manifest, packageJson, walk, predecessor }) {
+  if (predecessor === 'unreadable') return ['SKIP', 'not checked: the stored entry facts of earlier versions could not be read'];
+  if (!predecessor) return ['SKIP', 'not applicable: no earlier version served by this proxy'];
+  const pv = shownName(predecessor.version); const before = `${pv}, the version served before`;
+  if (predecessor.walk !== 'read') return ['SKIP', `not checked: the archive of ${before}, was refused (${shownName(predecessor.reason ?? 'no reason stored')})`];
+  if (typeof predecessor.static_checks_version === 'string' && predecessor.static_checks_version !== STATIC_CHECKS_VERSION) {
+    return ['SKIP', `not checked: the facts of ${pv} were stored by ${shownName(predecessor.static_checks_version)}, not ${STATIC_CHECKS_VERSION}`];
+  }
+  const cur = entryFactsOf({ manifest: manifest ?? packageJson, walk });
+  const pfiles = Array.isArray(predecessor.files) ? predecessor.files : [];
+  const gains = []; const unchecked = []; let compared = 0;
+  for (const f of cur.files) {
+    if (f.state === 'absent') continue;
+    if (f.state !== 'read') { unchecked.push(`${f.role} ${shownName(f.path)} was not read (${f.reason})`); continue; }
+    const same = pfiles.filter((x) => x && x.role === f.role);
+    const unread = same.find((x) => x.state === 'not-read');
+    if (unread) { unchecked.push(`${f.role} ${shownName(unread.path)} of ${pv} was not read (${unread.reason})`); continue; }
+    compared += 1;
+    const had = new Set(same.flatMap((x) => capsOf(x.facts)));
+    const gained = [...new Set(capsOf(f.facts))].filter((c) => !had.has(c));
+    if (gained.length) gains.push(`${f.role} ${shownName(f.path)} gains ${describeCaps(gained)}`);
+  }
+  const more = (xs) => (xs.length > 1 ? `; and ${xs.length - 1} more` : '');
+  if (gains.length) return ['WARN', `${gains[0]} against ${before}${gains.length > 1 ? `; and ${gains.length - 1} more file(s)` : ''}`];
+  if (unchecked.length) return ['SKIP', `not checked: ${unchecked[0]}${more(unchecked)}`];
+  return ['ALLOW', `entry files gain no capability against ${before} (${plural(compared, 'file')} compared)`];
+}
 const list = (xs) => xs.join(', ');
 
 /**
- * The six rows for a finished walk. `manifest`: the registry version manifest (what npm acts on; the keep list's source);
+ * The eight rows (S0-S7) for a finished walk. `manifest`: the registry version manifest (what npm acts on; the keep list's source);
  * `packageJson`: the tarball's root package.json, parsed (Linux view), or null; `walk`: the walker result (step 1: `files`, `notKept`).
- * Every row is { gate, result, detail }; the detail never carries publisher text beyond a sanitised path and fixed hook names.
+ * `predecessor`: S7's stored predecessor (witness.db predecessorEntryFacts), null on a cold start. Every row is { gate, result, detail }; the detail never carries publisher text beyond a sanitised path and fixed hook names.
  */
-export function staticRows({ manifest, packageJson = null, walk, armed = null }) {
+export function staticRows({ manifest, packageJson = null, walk, armed = null, predecessor = null }) {
   const suffix = typeof armed === 'string' && armed ? `; armed by ${armed}` : '';
   const row = (c, result, detail) => ({ gate: c.gate, result, detail: clipDetail(`${detail}${suffix}`) });
   if (!walk || !walk.ok) return CHECKS.map((c) => row(c, 'SKIP', `not checked: ${walk?.reason ?? 'the tarball was not walked'}`));
@@ -350,6 +411,7 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
     const unread = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r)));
     const skipped = unread.map((x) => `${shownName(x.path)} ${x.reason}`);
     const hits = []; const platsRead = new Set(); let read = 0;
+    if (c.id === 'S7') { const [r, d] = s7Outcome({ manifest, packageJson, walk, predecessor }); rows.push(row(c, r, d)); continue; }
     if (c.id === 'S5') {
       // S5 (1.2): one fact, a hook target's size: a kept body by its length (binary or not), a target not kept by its tar-header size;
       // over the 1 MiB kept-file cap fires; a target with no size (absent, or named only by the tarball package.json) is not checked
@@ -374,6 +436,7 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null })
       else if (c.id === 'S2' && F.obf_idents >= LIMITS.s2MinIdents && F.decode_markers.length) detail = `entry file ${x.shown} (${F.size} B) has ${F.obf_idents} _0x identifiers and a decode marker (${list(F.decode_markers)})`;
       else if (c.id === 'S3' && F.cred_sources.length && F.sinks.includes('exfil-host')) detail = `${x.shown} (${F.size} B) has a credential source (${list(F.cred_sources)}) and an outbound sink (${list(F.sinks)})`;
       else if (c.id === 'S4' && F.overrides.length && F.address_families.length >= LIMITS.s4MinAddressFamilies) detail = `entry file ${x.shown} (${F.size} B) has an override (${list(F.overrides)}) and ${F.address_families.length} address-regex families (${list(F.address_families)})`;
+      else if (c.id === 'S6' && apiNet(F).length && F.identity_sources.length && !F.exec_sinks.length) detail = `hook target ${x.shown} (${F.size} B) has a network sink (${list(apiNet(F))}) and a host-identity source (${list(F.identity_sources)}) and no execution sink`;
       if (detail) hits.push({ detail, plats: x.plats });
     }
     const cand = read || hits.length || (skipped.length && !(skipped.length === unread.length && absentOnly(unread))) ? null : candidateOf(c);
@@ -400,11 +463,11 @@ export function armedBy(results) {
   return null;
 }
 const RETRY_PREFIXES = ['not checked: not armed', 'not checked: no registry manifest at hand'];
-/** The six rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
+/** The eight rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
 export const unarmedRows = (why) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: not armed (${why})`) }));
-/** The six rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
+/** The eight rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
 export const noManifestRows = (armed) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: no registry manifest at hand; armed by ${armed}`) }));
-/** Whether the record's static rows are FINAL: all five present and none a retryable "not checked". A walked outcome, WARN, ALLOW or a
+/** Whether the record's static rows are FINAL: all eight present and none a retryable "not checked". A walked outcome, WARN, ALLOW or a
  *  SKIP for the tarball's own shape, is final: tarballs are immutable per version. */
 export function staticSettled(latest) {
   const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];

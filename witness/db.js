@@ -540,7 +540,8 @@ export class WitnessDB {
         VALUES (@package_name, @version, @walk, @reason, @static_checks_version)`),
       insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
         VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
-      prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = ? AND version <> ? ORDER BY id DESC LIMIT 1`),
+      prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = @p AND version <> @v AND id <
+        COALESCE((SELECT id FROM entry_fact_versions WHERE package_name = @p AND version = @v), 9223372036854775807) ORDER BY id DESC LIMIT 1`),
       files: this.db.prepare('SELECT role, path, state, size_bytes, sha256, facts, reason FROM entry_facts WHERE version_id = ? ORDER BY id'),
       prunePkg: this.db.prepare(`DELETE FROM entry_fact_versions WHERE package_name = @package_name AND id NOT IN
         (SELECT id FROM entry_fact_versions WHERE package_name = @package_name ORDER BY id DESC LIMIT @keep)`),
@@ -578,10 +579,13 @@ export class WitnessDB {
     })();
   }
 
-  /** 0.1.5 (R3): the last version of the package this proxy served before `version`, with its files; null on a cold start. */
+  /**
+   * 0.1.5 (R3): the last version of the package this proxy served BEFORE `version` (before its first download when it is stored,
+   * else the last one served), with its files; null on a cold start.
+   */
   predecessorEntryFacts(packageName, version) {
     const st = this._entryFactStmts();
-    const v = st ? st.prev.get(packageName, version) : null;
+    const v = st ? st.prev.get({ p: packageName, v: version }) : null;
     if (!v) return null;
     const files = st.files.all(v.id).map((f) => decodeJsonField(f, 'facts', null));
     return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, files };

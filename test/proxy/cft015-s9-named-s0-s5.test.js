@@ -97,6 +97,9 @@ test('A1 identity: static-checks-1.3, a wording-only bump of 1.2: only S0\'s not
     { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
     { id: 'S4', gate: 'static:S4-wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
     { id: 'S5', gate: S5G, roles: ['hook'], notice: S5_TEXT },
+    // rulings R2 and R3 2026-10-21 (cft015-s6-s7): two checks added under the held version string, contributing first
+    { id: 'S6', gate: 'static:S6-network-only-beacon', roles: ['hook'], notice: 'an install script sends this machine\'s identity to an outside host' },
+    { id: 'S7', gate: 'static:S7-entry-capability-delta', roles: ['main', 'bin'], notice: 'its entry file gained network, execution, decoding or credential access' },
   ]);
 });
 
