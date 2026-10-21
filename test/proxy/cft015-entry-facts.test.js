@@ -17,6 +17,7 @@ import { createProxyServer } from '../../proxy/server.js';
 import { resetDependencyCache } from '../../gates/dependency-cache.js';
 import { forgetManifestHooks } from '../../proxy/manifest-check.js';
 import { openWitnessDB } from '../../witness/db.js';
+import { walkerStats } from '../../proxy/tar-walk.js';
 
 const SC = () => import('../../proxy/static-checks.js');
 
@@ -38,7 +39,10 @@ const FACT_KEYS = ['binary', 'net_sinks', 'exec_sinks', 'obf_idents', 'decode_ma
 // g: two plain versions, nothing named or contributing -> NOT armed; main index.js, one bin
 const G = { name: 'g', 'dist-tags': { latest: '1.1.0' }, time: { '1.0.0': at(0), '1.1.0': at(48) },
   versions: { '1.0.0': { name: 'g', version: '1.0.0', main: 'index.js', bin: { g: 'cli.js' } }, '1.1.0': { name: 'g', version: '1.1.0', main: 'index.js', bin: { g: 'cli.js' } } } };
-const DOCS = { '/g': G };
+// k: one plain version served slowly, for the timing of the facts pass
+const K = { name: 'k', 'dist-tags': { latest: '1.0.0' }, time: { '1.0.0': at(0) }, versions: { '1.0.0': { name: 'k', version: '1.0.0', main: 'index.js' } } };
+const DOCS = { '/g': G, '/k': K };
+const SLOW = { '/k/-/k-1.0.0.tgz': tgz({ 'package.json': JSON.stringify(K.versions['1.0.0']), 'index.js': BENIGN, 'pad.txt': crypto.randomBytes(64 * 1024).toString('hex') }) };
 const TARBALLS = {
   '/g/-/g-1.0.0.tgz': tgz({ 'package.json': JSON.stringify(G.versions['1.0.0']), 'index.js': BENIGN, 'cli.js': BENIGN }),
   '/g/-/g-1.1.0.tgz': tgz({ 'package.json': JSON.stringify(G.versions['1.1.0']), 'index.js': NETTY, 'cli.js': BENIGN }),
@@ -48,6 +52,10 @@ async function withProxy(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-ef-'));
   const upstream = http.createServer((req, res) => {
     const u = decodeURIComponent(req.url.split('?')[0]);
+    if (SLOW[u]) {                                            // half now, the rest 300 ms later: the client sees the download in flight
+      const b = SLOW[u]; const h = Math.floor(b.length / 2);
+      res.writeHead(200, { 'content-type': 'application/octet-stream' }); res.write(b.subarray(0, h)); setTimeout(() => res.end(b.subarray(h)), 300); return;
+    }
     if (TARBALLS[u]) { res.writeHead(200, { 'content-type': 'application/octet-stream' }); res.end(TARBALLS[u]); return; }
     if (DOCS[u]) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(DOCS[u])); return; }
     res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}');
@@ -166,5 +174,25 @@ test('EF-E1 an UNARMED download stores its entry facts once; the next version fi
       await get(`${base}/g/-/g-1.0.0.tgz`); await settle();
       assert.equal(n.prepare('SELECT COUNT(*) AS c FROM entry_facts').get().c, before, 'a version is written once');
     } finally { n.close(); }
+  });
+});
+
+// The first download of a version walks in-stream for MC (0.1.4, unchanged) and its facts ride that walk. A walk for the facts ALONE
+// (MC already settled, no facts stored: a witness.db from before R4) runs after the response (review verdict 2026-10-21, M6).
+test('EF-E2 a facts-only walk runs AFTER the response: no walker while the bytes are in flight; the facts are stored after', async () => {
+  await withProxy(async ({ base, proxy }) => {
+    await get(`${base}/k`); await get(`${base}/k/-/k-1.0.0.tgz`); await settle();
+    assert.equal(proxy.witnessDb.hasEntryFacts('k', '1.0.0'), true, 'the first download stores them from the MC walk');
+    proxy.witnessDb.db.prepare('DELETE FROM entry_fact_versions').run();       // as on a witness.db written before R4
+    const before = walkerStats().created; let during = null;
+    const body = await new Promise((resolve, reject) => http.get(`${base}/k/-/k-1.0.0.tgz`, { agent: false }, (res) => {
+      const chunks = []; res.on('data', (x) => { if (during === null) during = walkerStats().created; chunks.push(x); });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject));
+    assert.ok(body.equals(SLOW['/k/-/k-1.0.0.tgz']), 'served as is');
+    assert.equal(during, before, 'no walk started while the download was in flight');
+    await settle();
+    assert.equal(proxy.witnessDb.hasEntryFacts('k', '1.0.0'), true, 'the facts are stored once the response has finished');
+    assert.equal(proxy.witnessDb.predecessorEntryFacts('k', '9.9.9').files.find((f) => f.role === 'main').state, 'read');
   });
 });
