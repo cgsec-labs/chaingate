@@ -33,7 +33,7 @@ import { createPinSet, withheldBy } from '../witness/pins.js';
 import { judgeAtTarball } from './dependency-judge.js';
 import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cache.js';
 // 0.1.4 group 3c (D-M2..D-M4): MC while the tarball streams
-import { createTarWalker } from './tar-walk.js';
+import { createTarWalker, DEFAULTS as WALK_LIMITS } from './tar-walk.js';
 import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
 import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
   withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION } from './static-checks.js';
@@ -1216,9 +1216,16 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             keepOpts = { keep: factsManifest === undefined ? (pj) => entryKeepFor(pj) : entryKeepFor(factsManifest) };
           }
         }
-        const walker = mcWalk || factsDue ? createTarWalker(keepOpts) : null;
+        // a walk for the facts ALONE never runs on the download's path (review verdict 2026-10-21, M6): the chunks are kept by reference
+        // (npm gets each one unchanged and undelayed) and walked once the response has finished; the walker's own caps still apply
+        const walker = mcWalk ? createTarWalker(keepOpts) : null;
+        const deferred = !mcWalk && factsDue ? { chunks: [], bytes: 0, over: false } : null;
         const headerFn = notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null;
-        const tap = walker ? (c) => walker.write(c) : null;
+        const tap = walker ? (c) => walker.write(c) : deferred ? (c) => {
+          if (deferred.over) return;
+          deferred.bytes += c.length;
+          if (deferred.bytes > WALK_LIMITS.maxCompressed) { deferred.over = true; deferred.chunks = []; } else deferred.chunks.push(c);
+        } : null;
         let held = null;
         try {
           // 0.1.5 (#15): with the user's static_withhold switch on, an ARMED download is held (up to 8 MiB) while the checks read it
@@ -1230,7 +1237,16 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           if (factsSlot) { factsWalks -= 1; factsSlot = false; }
           throw err;
         }
-        const walk = walker ? await walker.end() : null;
+        let walk = walker ? await walker.end() : null;
+        if (deferred && res.writableFinished) {
+          if (deferred.over) walk = { ok: false, reason: `over the compressed cap (${WALK_LIMITS.maxCompressed} bytes)` };
+          else {
+            const late = createTarWalker({ ...keepOpts, maxBehind: Infinity });   // the bytes are all here: nothing to fall behind
+            for (const c of deferred.chunks) late.write(c);
+            deferred.chunks = [];
+            walk = await late.end();
+          }
+        }
         if (armedSlot) { armedWalks -= 1; armedSlot = false; }
         if (factsSlot) { factsWalks -= 1; factsSlot = false; }
         // a complete walk is the tarball's facts; a refused archive is stored as refused only once the whole download was served
