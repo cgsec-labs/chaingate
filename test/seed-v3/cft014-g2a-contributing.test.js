@@ -183,11 +183,11 @@ test('G2a-9 the 1.2 role tables equal r3 §18.7/§18.15/§18.18, and an unlisted
   // static-checks-1.2 (deliberate, operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joins as a sixth, CONTRIBUTING first
   // static checks naming (deliberate, operator ruling 2026-10-15, handover 11.1/11.4): S0 and S5 NAMED, S1-S4 stay contributing
   // 0.1.5 T1.6 (deliberate, operator 2026-10-15, orchestrator verdict 20:25Z): entry-path-change joins as contributing
-  // 0.1.5 S6 and S7 (deliberate, operator rulings R2 and R3 2026-10-21): network-only-beacon and entry-capability-delta, CONTRIBUTING first
+  // 0.1.5 S6 and S7 (deliberate, operator rulings R2 and R3 2026-10-21): network-beacon-in-hook-target and entry-capability-gain, CONTRIBUTING first
   assert.deepEqual([...RC.CONTRIBUTING_GATES].sort(),
     ['dep-structure', 'entry-path-change', 'identity-break', 'provenance-continuity', 'publish-tool-change', 'publisher-identity', 'release-age',
       'scope-boundary', 'size-jump', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry',
-      'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S6-network-only-beacon', 'static:S7-entry-capability-delta']);
+      'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);
   assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target']);   // G3 D-N6; 0.1.5 T1.4; 0.1.5 S0+S5 named
   assert.deepEqual([...POL.NAMED_ROWS].sort(), [SURFACE, 'seed-v3:channel-a:critical'].sort());
   assert.deepEqual([...POL.CONTRIBUTING_ROWS], [ANY]);

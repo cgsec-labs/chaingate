@@ -194,7 +194,7 @@ test('G3a-8 (D-T3) V6 and K: a release checked only by the install-hook rule is 
 test('G3a-9 (D-T6) the 1.2 role tables', () => {
   assert.deepEqual([...CONTRIBUTING_GATES].sort(), ['dep-structure', 'entry-path-change', 'identity-break', 'provenance-continuity', 'publish-tool-change', 'publisher-identity',
     'release-age', 'scope-boundary', 'size-jump', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry',
-    'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S6-network-only-beacon', 'static:S7-entry-capability-delta']);   // 0.1.5 group 1: T1.5 contributing; 0.1.5 static checks: S1–S4 contributing, S0+S5 named 2026-10-15; T1.6 entry-path-change contributing; S6+S7 contributing (R2, R3 2026-10-21) (deliberate)
+    'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);   // 0.1.5 group 1: T1.5 contributing; 0.1.5 static checks: S1–S4 contributing, S0+S5 named 2026-10-15; T1.6 entry-path-change contributing; S6+S7 contributing (R2, R3 2026-10-21) (deliberate)
   assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target']);   // 3b (D-N6); 0.1.5 T1.4; 0.1.5 S0+S5 named
 });
 
