@@ -1237,9 +1237,12 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         // (an aborted one, or a walk that fell behind, says nothing about the archive and is tried again)
         if (walk && factsDue && (walk.ok || (res.writableFinished && !/fell behind/.test(String(walk.reason))))) {
           try {
+            // R8 (2026-10-22): the proxy's own facts time for this download, stored with the facts (the first-week confirming measure)
+            const t0 = performance.now();
             const ef = entryFactsOf({ manifest: factsManifest ?? null, packageJson: walk.ok ? parsedPackageJson(walk) : null, walk });
+            const factsMs = Number((performance.now() - t0).toFixed(3));
             witnessDb.recordEntryFacts({ package_name: canonicalName, version: state.tarballVersion,
-              static_checks_version: STATIC_CHECKS_VERSION, ...ef });
+              static_checks_version: STATIC_CHECKS_VERSION, facts_ms: factsMs, ...ef });
           } catch (err) {
             log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: not stored (${err.message})`);
           }

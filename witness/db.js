@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS entry_fact_versions (
     walk                  TEXT NOT NULL CHECK (walk IN ('read','refused')),
     reason                TEXT,
     static_checks_version TEXT NOT NULL,
+    facts_ms              REAL,
     UNIQUE (package_name, version)
 );
 CREATE TABLE IF NOT EXISTS entry_facts (
@@ -267,6 +268,9 @@ export class WitnessDB {
       );
     }
     this.db.exec(SCHEMA_SQL);
+    // 0.1.5 (R8 2026-10-22): facts_ms joined entry_fact_versions after the table; a table created before it gains the column
+    const efv = this.db.prepare("SELECT name FROM pragma_table_info('entry_fact_versions')").all().map((c) => c.name);
+    if (efv.length && !efv.includes('facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN facts_ms REAL');
     this._prepare();
     return this;
   }
@@ -536,8 +540,8 @@ export class WitnessDB {
     if (!this._tableStmts('entry_facts', () => ({}))) return null;
     return this._tableStmts('entry_fact_versions', () => ({
       has: this.db.prepare('SELECT 1 FROM entry_fact_versions WHERE package_name = ? AND version = ?'),
-      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version)
-        VALUES (@package_name, @version, @walk, @reason, @static_checks_version)`),
+      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms)
+        VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms)`),
       insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
         VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
       prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = @p AND version <> @v AND id <
@@ -565,7 +569,7 @@ export class WitnessDB {
     if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
     return this.db.transaction(() => {
       const ins = st.insV.run({ package_name: r.package_name, version: r.version, walk: r.walk, reason: r.reason ?? null,
-        static_checks_version: r.static_checks_version });
+        static_checks_version: r.static_checks_version, facts_ms: Number.isFinite(r.facts_ms) ? r.facts_ms : null });
       if (!ins.changes) return 'exists';
       const versionId = Number(ins.lastInsertRowid);
       for (const f of Array.isArray(r.files) ? r.files : []) {
@@ -588,7 +592,7 @@ export class WitnessDB {
     const v = st ? st.prev.get({ p: packageName, v: version }) : null;
     if (!v) return null;
     const files = st.files.all(v.id).map((f) => decodeJsonField(f, 'facts', null));
-    return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, files };
+    return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, facts_ms: v.facts_ms ?? null, files };
   }
 
   deleteAcceptance(packageName, version) {
