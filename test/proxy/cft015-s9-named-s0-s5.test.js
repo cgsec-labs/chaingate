@@ -87,9 +87,9 @@ async function rowEventually(proxy, pkg, v, gate, ms = 5000) {
 const settle = () => new Promise((r) => setTimeout(r, 250));
 
 // ------------------------------------------------------------------ (A) identity
-test('A1 identity: static-checks-1.4 (recon\'s tree mirrored, R5); S0-S5 gates, roles and texts as 1.3; S6, S7 recon\'s provisional names', async () => {
+test('A1 identity: static-checks-1.5 (recon\'s tree mirrored, R5, R9); S0-S5 gates, roles and texts as 1.3; S6, S7 with recon\'s names', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.4');
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.5');
   assert.deepEqual(S.CHECKS.map(({ cls: _c, ...c }) => c), [
     { id: 'S0', gate: S0G, roles: null, notice: S0_TEXT },
     { id: 'S1', gate: 'static:S1-loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
@@ -97,7 +97,7 @@ test('A1 identity: static-checks-1.4 (recon\'s tree mirrored, R5); S0-S5 gates, 
     { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
     { id: 'S4', gate: 'static:S4-wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
     { id: 'S5', gate: S5G, roles: ['hook'], notice: S5_TEXT },
-    // rulings R2 and R3 2026-10-21 (cft015-s6-s7), contributing first; recon's static-checks-1.4 names (R5), provisional until the naming ruling
+    // rulings R2 and R3 2026-10-21 (cft015-s6-s7), contributing first; recon's names (1.4, unchanged in 1.5); named R7, R9 2026-10-22
     { id: 'S6', gate: 'static:S6-network-beacon-in-hook-target', roles: ['hook'], notice: 'an install script sends details about this machine to the network' },
     { id: 'S7', gate: 'static:S7-entry-capability-gain', roles: ['main', 'bin'], notice: 'its entry file gained a capability its previous version did not have' },
   ]);

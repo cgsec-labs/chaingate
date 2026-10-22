@@ -1,12 +1,14 @@
-// 0.1.5 static-checks-1.4: the runtime mirror of the recon tool's static-checks-1.4 (operator ruling R5 2026-10-21: mirror recon's tree
-// when handed over). The constants below are copied from the hand-off file (sha256 2c57daef..., recon tree de8f33b) and compared with
-// the module's exports by regex source and flags, so a marker that drifts on either side fails here. Failing first: written before the code.
+// 0.1.5 static checks: the runtime mirror of the recon tool's constants (operator ruling R5 2026-10-21: mirror recon's tree when handed
+// over). static-checks-1.4 came from the hand-off 2c57daef (recon tree de8f33b); static-checks-1.5 (operator rulings R7, R9, R9a, R9b
+// 2026-10-22) from d78fa156 (recon v6.13 7b4eda4): every 1.4 marker, limit, gate, class, role and notice unchanged, plus S7's named
+// condition and recon's 16 test vectors for it. The constants below are copied from the hand-off and compared with the module's exports
+// by regex source and flags, so a marker that drifts on either side fails here. Failing first: written before the code.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const SC = () => import('../../proxy/static-checks.js');
 const R14 = {
- "version": "static-checks-1.4",
+ "version": "static-checks-1.5",
  "checks": [
   {
    "id": "S0",
@@ -317,13 +319,191 @@ const R14 = {
   "s4MinAddressFamilies": 2,
   "headBytes": 8000,
   "pathChars": 200
+ },
+ "s7_named": {
+  "arms": [
+   "decode-obf",
+   "net+exec"
+  ],
+  "decode_obf_excluded": [
+   "decode:Function"
+  ],
+  "exec_excluded": [
+   "exec:Function"
+  ],
+  "test_vectors": [
+   {
+    "gains": [
+     "decode:eval",
+     "exec:eval",
+     "net:xhr"
+    ],
+    "arms": [
+     "decode-obf",
+     "net+exec"
+    ],
+    "named": [
+     "decode:eval",
+     "exec:eval",
+     "net:xhr"
+    ]
+   },
+   {
+    "gains": [
+     "decode:atob"
+    ],
+    "arms": [
+     "decode-obf"
+    ],
+    "named": [
+     "decode:atob"
+    ]
+   },
+   {
+    "gains": [
+     "decode:numeric-hex",
+     "obf:_0x-idents"
+    ],
+    "arms": [
+     "decode-obf"
+    ],
+    "named": [
+     "decode:numeric-hex",
+     "obf:_0x-idents"
+    ]
+   },
+   {
+    "gains": [
+     "exec:child_process",
+     "net:http-request"
+    ],
+    "arms": [
+     "net+exec"
+    ],
+    "named": [
+     "exec:child_process",
+     "net:http-request"
+    ]
+   },
+   {
+    "gains": [
+     "decode:later-class"
+    ],
+    "arms": [
+     "decode-obf"
+    ],
+    "named": [
+     "decode:later-class"
+    ]
+   },
+   {
+    "gains": [
+     "decode:Function",
+     "exec:Function"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "decode:Function",
+     "exec:Function",
+     "net:websocket"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "exec:Function",
+     "net:fetch"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "net:fetch"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "exec:child_process"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "net:url-literal",
+     "exec:child_process"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "cred:npmrc",
+     "cred:env-dump"
+    ],
+    "arms": [],
+    "named": []
+   },
+   {
+    "gains": [
+     "cred:npmrc",
+     "exec:child_process",
+     "net:fetch"
+    ],
+    "arms": [
+     "net+exec"
+    ],
+    "named": [
+     "exec:child_process",
+     "net:fetch"
+    ]
+   },
+   {
+    "gains": [
+     "net:fetch",
+     "exec:Function",
+     "exec:eval"
+    ],
+    "arms": [
+     "net+exec"
+    ],
+    "named": [
+     "exec:eval",
+     "net:fetch"
+    ]
+   },
+   {
+    "gains": [
+     "decode:Function",
+     "decode:eval"
+    ],
+    "arms": [
+     "decode-obf"
+    ],
+    "named": [
+     "decode:eval"
+    ]
+   },
+   {
+    "gains": [],
+    "arms": [],
+    "named": []
+   }
+  ]
  }
 };
 
 const pairs = (list) => list.map(([name, re]) => ({ name, regex: re.source, flags: re.flags }));
 const want = (list) => list.map((x) => ({ name: x.name, regex: x.regex, flags: x.flags ?? '' }));
 
-test('P14-1 the version string and the eight checks (id, gate, class, roles, notice) are recon\'s static-checks-1.4', async () => {
+test('P14-1 the version string and the eight checks (id, gate, class, roles, notice) are recon\'s (static-checks-1.5)', async () => {
   const S = await SC();
   assert.equal(S.STATIC_CHECKS_VERSION, R14.version);
   assert.deepEqual(S.CHECKS.map(({ id, gate, cls, roles, notice }) => ({ id, gate, cls, roles, notice })), R14.checks);
@@ -354,4 +534,17 @@ test('P14-4 the limits are recon\'s (keep 6 x 1 MiB, 4 bin, 3 hook targets, the 
   assert.deepEqual([S.LIMITS.maxKeep, S.LIMITS.maxKeepBytes, S.LIMITS.maxBin, S.LIMITS.maxHookTargets, S.LIMITS.s1MaxBytes, S.LIMITS.s2MinIdents, S.LIMITS.s2MinCharCodes,
     S.LIMITS.s2HexDensity, S.LIMITS.s2MinNumericHex, S.LIMITS.s4MinAddressFamilies, S.LIMITS.headBytes],
   [L.keepFiles, L.keepBytes, L.maxBin, L.maxHookTargets, L.s1MaxBytes, L.s2MinIdents, L.s2MinCharCodes, L.s2HexDensity, L.s2MinNumericHex, L.s4MinAddressFamilies, L.headBytes]);
+});
+
+test('P15-1 S7 named condition (R9, R9a, R9b): the arms, decode:Function out of the decode-obf arm, exec:Function out of the net+exec arm', async () => {
+  const S = await SC();
+  assert.deepEqual([...S.S7_NAMED_ARMS], R14.s7_named.arms);
+  assert.deepEqual([...S.S7_DECODE_OBF_EXCLUDED], R14.s7_named.decode_obf_excluded);
+  assert.deepEqual([...S.S7_EXEC_EXCLUDED], R14.s7_named.exec_excluded);
+});
+
+test('P15-2 s7Named gives recon\'s arms and named gains on all 16 of recon\'s test vectors', async () => {
+  const S = await SC();
+  assert.equal(R14.s7_named.test_vectors.length, 16);
+  for (const v of R14.s7_named.test_vectors) assert.deepEqual(S.s7Named(v.gains), { arms: v.arms, named: v.named }, JSON.stringify(v.gains));
 });

