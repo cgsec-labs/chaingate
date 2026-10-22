@@ -168,3 +168,45 @@ test('EF-E1 an UNARMED download stores its entry facts once; the next version fi
     } finally { n.close(); }
   });
 });
+
+// ------------------------------------------------------------------ R8 (operator 2026-10-22): the proxy's own facts time, readable from the store
+// entry_fact_versions.facts_ms: the milliseconds the proxy spent computing one served version's entry facts after its download (the
+// summary R4 adds; the walk itself is MC's), so the first-week confirming measure is one SQL read with no code change.
+test('EF-U8 recordEntryFacts stores facts_ms (null when not given); predecessorEntryFacts returns it', () => withDb((db) => {
+  db.recordEntryFacts(rec('1.0.0', undefined, { facts_ms: 1.25 }));
+  db.recordEntryFacts(rec('1.1.0'));
+  const n = new Database(db.db.name, { readonly: true });
+  try {
+    assert.deepEqual(n.prepare('SELECT version, facts_ms FROM entry_fact_versions ORDER BY id').all(), [{ version: '1.0.0', facts_ms: 1.25 }, { version: '1.1.0', facts_ms: null }]);
+  } finally { n.close(); }
+  assert.equal(db.predecessorEntryFacts('a', '1.1.0').facts_ms, 1.25);
+}));
+
+test('EF-U9 a witness.db whose entry_fact_versions predates facts_ms gains the column on applySchema, its rows kept', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-efmig-'));
+  try {
+    const p = path.join(dir, 'w.db'); const raw = new Database(p);
+    raw.exec(`CREATE TABLE entry_fact_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, package_name TEXT NOT NULL, version TEXT NOT NULL,
+      served_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), walk TEXT NOT NULL CHECK (walk IN ('read','refused')), reason TEXT,
+      static_checks_version TEXT NOT NULL, UNIQUE (package_name, version));
+      INSERT INTO entry_fact_versions (package_name, version, walk, static_checks_version) VALUES ('a', '0.9.0', 'read', 'static-checks-1.4');`);
+    raw.close();
+    const db = openWitnessDB(p); db.applySchema();
+    try {
+      assert.equal(db.recordEntryFacts(rec('1.0.0', undefined, { facts_ms: 0.5 })), 'wrote');
+      const n = new Database(p, { readonly: true });
+      try { assert.deepEqual(n.prepare('SELECT version, facts_ms FROM entry_fact_versions ORDER BY id').all(), [{ version: '0.9.0', facts_ms: null }, { version: '1.0.0', facts_ms: 0.5 }]); } finally { n.close(); }
+    } finally { db.close(); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('EF-E2 a served version\'s facts time is stored: facts_ms is a finite number of milliseconds, one SQL read away', async () => {
+  await withProxy(async ({ base, proxy }) => {
+    await get(`${base}/g`); await get(`${base}/g/-/g-1.0.0.tgz`); await settle();
+    const n = new Database(proxy.witnessDb.db.name, { readonly: true });
+    try {
+      const r = n.prepare("SELECT facts_ms FROM entry_fact_versions WHERE package_name = 'g' AND version = '1.0.0'").get();
+      assert.ok(Number.isFinite(r?.facts_ms) && r.facts_ms >= 0, JSON.stringify(r));
+    } finally { n.close(); }
+  });
+});
