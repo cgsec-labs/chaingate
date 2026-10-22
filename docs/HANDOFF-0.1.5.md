@@ -76,3 +76,39 @@ R9b (operator "Yes proceed with your lean" to ops, 2026-10-22, on ops' check at 
 R10 Disk (14 GB free against the 50 GB floor). Order: the DataDog sample zips first, each zip's sha256 and size in the inventory before it goes (re-downloadable and verifiable); the measurement work dirs (work-mi-1.3, work-cl-r3, the B2 stream work) stay until R9's hit-row verification is done, and before they go, work/index.jsonl, work/pred-facts.jsonl, the per-row results of the three runs and the repacked tarballs of the 145 S7 hit rows are copied to a kept directory npm cannot resolve (no package.json above it, no node_modules path), sizes recorded. Inventory first; every deletion on the operator's go, per the 11.5 rule. The merge of tarball-scan-1.3 to main is the operator's act; it carries no live-service change.
 
 Build now, tests first (0.1.5 owner): nothing until recon hands over the static-checks-1.5 constants; then the mirror, then the six naming edits (S6, S7) in one commit, then the full suite on a non-root host and the release checks on the final commit. Recon lane: v6.13 after R9a, hit-row verification with ops' stored rows, swap only after both.
+
+## Built state at 5e2b5bc (2026-10-22; candidate final commit)
+
+5e2b5bc is the candidate final code commit for 0.1.5: no code change is planned after it. Under R6, Stage A and the v3.2
+re-qualification run against the final commit. The README and release notes still land after 5e2b5bc, and README.md ships in the
+package, so the release commit that carries them is named here, with its tarball sha256, before the release checks start.
+
+- Reverts (`84733e6`, `d7508fc`): the deferred facts-only walk (`a23ae45`, `8a341b7`) is reverted; the tree matched `4d5675b` after
+  them. The first download walks in-stream; up to 6 main/bin bodies are kept under the 1 MiB cap; the facts summary and the witness
+  write run after the response; a file over 1 MiB or a refused archive makes the next S7 NOT_CHECKED; a facts-only walk that falls
+  behind is recorded as not read and retried.
+- static-checks-1.4 (`2492ca3` tests, `3c64c30` mirror): recon's v6.12 tree mirrored under R5. Superseded by 1.5 below.
+- static-checks-1.5 (`dbafc80` tests, `1b56f36` mirror): recon's v6.13 mirrored under R9, R9a and R9b with the identical version
+  string `static-checks-1.5`. The hand-off file is `static-checks-1.5-constants.json`, sha256
+  `d78fa156630f220c3f711676944520215c3a07e1f7872a431464a6cb1537de83`. `test/proxy/cft015-static-checks-parity.test.js` pins the
+  version string, the constant tables, CHECKS and the 16 S7 vectors against it. S7's named condition is `s7Named`: the role READ and
+  non-empty on both sides, and a gain that is a decode:* or obf:* class other than decode:Function, or an API network sink together
+  with an execution sink other than exec:Function. The full gain set, the predecessor version and the basis ("the version this proxy
+  served before") stay on the row as facts, Function included.
+- Naming (`a961274` tests, `0c97c05`): S6 and S7 added to `seed/v3/policy.js` NAMED_RUNNER_GATES, both notice labels added in
+  `proxy/notice.js`, both removed from CONTRIBUTING_GATES in `gates/row-class.js`. S6 is named as INDICATOR. The policy identity stays
+  `cft-policy-1.2`. `5e2b5bc` updates two remaining test pins that still treated S6 and S7 as contributing.
+- R8 facts time (`c906e78` tests, `c016fe5`): the proxy times `entryFactsOf` (the fileFacts summary over the kept entry files, the
+  driver's facts basis) and stores it in milliseconds as `facts_ms` on `entry_fact_versions`, one row per served version. An existing
+  witness store gains the column on open (a guarded ALTER TABLE); rows written before it read NULL. To read the first-week numbers
+  from the proxy's witness store (default `~/.chaingate/witness.db`, or `CHAINGATE_WITNESS_DB`):
+
+      sqlite3 ~/.chaingate/witness.db "SELECT package_name, version, served_at, walk, facts_ms
+        FROM entry_fact_versions WHERE facts_ms IS NOT NULL ORDER BY served_at"
+
+  The p99 is read over `facts_ms` from those rows; the 50 ms bar applies (R4, R8).
+- Full suite at 5e2b5bc on a non-root host: 1,571 tests, 1,530 pass, 0 fail, 41 skipped; protected paths unchanged. All commits
+  signed.
+
+Next, on the operator's word: recon's v6.13 swap, then the README and release notes, then the release checks on the final commit,
+then the final commit and its tarball sha256 go once to the v3.2 session, which re-issues against them (R6).
