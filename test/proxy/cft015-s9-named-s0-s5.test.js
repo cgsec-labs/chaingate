@@ -106,9 +106,11 @@ test('A1 identity: static-checks-1.5 (recon\'s tree mirrored, R5, R9); S0-S5 gat
 // ------------------------------------------------------------------ (R) roles and labels
 test('R1 roles: S0 and S5 are named runner gates and out of the contributing list; S1-S4 stay contributing; a named static WARN stays WARN', async () => {
   const R = await RC(); const POL = (await POLM()).default; const S = await SC();
-  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', S0G, S5G]);
+  // declared 2026-10-22 (rulings R7, R9; cft015-named-s6-s7): S6 and S7 are named after S0 and S5
+  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', S0G, S5G,
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);
   for (const g of [S0G, S5G]) { assert.ok(!R.CONTRIBUTING_GATES.has(g), g); assert.equal(R.withRole({ gate: g, result: 'WARN', detail: 'd' }).result, 'WARN'); }
-  for (const g of S.STATIC_GATES.filter((x) => x !== S0G && x !== S5G)) {
+  for (const g of S.STATIC_GATES.filter((x) => ![S0G, S5G, 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain'].includes(x))) {
     assert.ok(R.CONTRIBUTING_GATES.has(g), g); assert.ok(!POL.NAMED_RUNNER_GATES.includes(g), g);
     assert.equal(R.withRole({ gate: g, result: 'WARN', detail: 'd' }).result, 'NOTE');
   }
@@ -120,7 +122,7 @@ test('R1 roles: S0 and S5 are named runner gates and out of the contributing lis
 test('R2 notice labels: S0 and S5 carry the CHECKS text byte for byte (one wording); S1-S4 have no label', async () => {
   const N = await NOT(); const S = await SC();
   assert.equal(N.labelFor(S0G), S0_TEXT); assert.equal(N.labelFor(S5G), S5_TEXT);
-  for (const c of S.CHECKS) if (c.id !== 'S0' && c.id !== 'S5') assert.equal(N.labelFor(c.gate), null, c.gate);
+  for (const c of S.CHECKS) if (['S1', 'S2', 'S3', 'S4'].includes(c.id)) assert.equal(N.labelFor(c.gate), null, c.gate);   // S6, S7 labelled since R7, R9 (cft015-named-s6-s7)
   assert.equal(N.buildNotice({ kind: 'WARNING', pkg: 'z', version: '1.1.0', labels: [S5G] }),
     `chaingate: WARNING z@1.1.0: ${S5_TEXT}. Details: chaingate why z@1.1.0`);
 });

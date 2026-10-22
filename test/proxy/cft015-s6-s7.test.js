@@ -62,12 +62,12 @@ const readEntry = (role, p, facts) => ({ role, path: p, state: 'read', size_byte
 const NOFACTS = { binary: false, net_sinks: [], exec_sinks: [], obf_idents: 0, decode_markers: [], hex_density: 0, numeric_hex: 0, cred_sources: [], sinks: [], overrides: [], address_families: [], host_identity: [] };
 
 // ------------------------------------------------------------------ the check list and the roles
-test('S67-U1 eight static checks S0-S7; S6 and S7 are contributing (their WARN is recorded as NOTE); "not armed" covers all eight', async () => {
+test('S67-U1 eight static checks S0-S7; S6 and S7 are named since rulings R7, R9 2026-10-22 (their WARN stays WARN; were contributing); "not armed" covers all eight', async () => {
   const S = await SC();
   assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
   assert.ok(S.STATIC_GATES.includes(S6) && S.STATIC_GATES.includes(S7));
-  assert.equal(withRole({ gate: S6, result: 'WARN', detail: 'x' }).result, 'NOTE');
-  assert.equal(withRole({ gate: S7, result: 'WARN', detail: 'x' }).result, 'NOTE');
+  assert.equal(withRole({ gate: S6, result: 'WARN', detail: 'x' }).result, 'WARN');
+  assert.equal(withRole({ gate: S7, result: 'WARN', detail: 'x' }).result, 'WARN');
   assert.equal(S.unarmedRows('why').length, 8);
   const six = S.CHECKS.slice(0, 6).map((c) => ({ gate: c.gate, result: 'ALLOW', detail: 'x' }));
   assert.equal(S.staticSettled({ gates_fired: six }), false, 'a record from before S6 and S7 is retried when a later download is armed');
@@ -245,13 +245,13 @@ const get = (u) => new Promise((resolve, reject) => http.get(u, { agent: false }
 }).on('error', reject));
 const settle = () => new Promise((r) => setTimeout(r, 200));
 
-test('S67-E1 S7 end to end: 1.7.0 served first, then 1.8.0 (armed by entry-path-change) records S7 as NOTE against 1.7.0', async () => {
+test('S67-E1 S7 end to end: 1.7.0 served first, then 1.8.0 (armed by entry-path-change) records S7 as a named WARN against 1.7.0 (NOTE before R9)', async () => {
   await withProxy(async ({ base, proxy }) => {
     await get(`${base}/e`); await get(`${base}/e`);
     await get(`${base}/e/-/e-1.7.0.tgz`); await settle();
     await get(`${base}/e/-/e-1.8.0.tgz`); await settle();
     const r = proxy.witnessDb.getLatestDecision('e', '1.8.0').gates_fired.find((g) => g.gate === S7);
-    assert.equal(r?.result, 'NOTE', JSON.stringify(r));
+    assert.equal(r?.result, 'WARN', JSON.stringify(r));
     assert.equal(r.detail, `vs 1.7.0 (${BASIS}): main gained exec:child_process, net:fetch (net+exec: exec:child_process, net:fetch); ${NOBIN}; ${COV(2, 1, 0)}; armed by entry-path-change`);
   });
 });
