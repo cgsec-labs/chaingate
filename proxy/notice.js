@@ -27,6 +27,9 @@ const LABELS = Object.freeze({
   // 0.1.5 static checks named 2026-10-15: the static-checks-1.3 CHECKS notice text, byte for byte (one wording)
   'static:S0-shell-fetch-in-hook': 'an install script downloads code to run or sends data to an outside host',
   'static:S5-oversized-hook-target': 'an install script runs a file too large to read',
+  // named 2026-10-22 (rulings R7, R9): the static-checks-1.5 CHECKS notice text, byte for byte
+  'static:S6-network-beacon-in-hook-target': 'an install script sends details about this machine to the network',
+  'static:S7-entry-capability-gain': 'its entry file gained a capability its previous version did not have',
 });
 
 const printable = (s) => String(s).replace(/[^\x20-\x7e]/g, '');

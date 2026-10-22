@@ -25,8 +25,8 @@ export const CONTRIBUTING_GATES = Object.freeze(new Set([
   // static-checks-1.2 (operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joined as a sixth static check, CONTRIBUTING first.
   // Naming (operator ruling 2026-10-15, ops handover 11.1/11.4): S0 and S5 are NAMED runner gates and left this list; S1-S4 stay.
   'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook',
-  // operator rulings R2 and R3 2026-10-21: S6 network-beacon-in-hook-target and S7 entry-capability-gain (static-checks-1.4 names, provisional until the naming ruling), CONTRIBUTING first
-  'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain',
+  // operator rulings R2 and R3 2026-10-21: S6 and S7 joined CONTRIBUTING first; named 2026-10-22 (R7, R9: S6 as INDICATOR, S7 on the
+  // static-checks-1.5 condition), so they left this list for policy.NAMED_RUNNER_GATES and proxy/notice.js
 ]));
 
 /** A runner row with the 1.2 role applied: a contributing gate's WARN becomes NOTE. Everything else unchanged. */
