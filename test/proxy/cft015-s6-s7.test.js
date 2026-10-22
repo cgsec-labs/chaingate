@@ -151,7 +151,7 @@ test('S67-U4 S7 cold start: no earlier version served by this proxy is NOT_APPLI
   assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not applicable: no earlier version served by this proxy; armed by entry-path-change');
 });
 
-const NOT_NAMED = 'no decode or obf class other than decode:Function, and no API network sink with an execution sink other than exec:Function';
+const NOT_NAMED = 'no decode/obf gain other than decode:Function, no net+exec pair other than exec:Function';   // the row's short form of recon's reason (detail cap)
 test('S67-U5 S7 fires (1.5) when main, read and non-empty before, gains an API network sink with an execution sink; the row names the predecessor, its basis, the arm and the named gains beside the full gain set', async () => {
   const S = await SC();
   const p = pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)]);

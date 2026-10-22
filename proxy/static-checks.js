@@ -38,8 +38,11 @@
 // static-checks-1.4 (operator ruling R5 2026-10-21) is recon's tree v6.12 (chaingate-ops tools/recon/v6.12/static-checks.mjs) mirrored:
 // S0 1.4 reads the quoted argument of sh|bash|dash|zsh -c one level deep and counts a network tool given by absolute path by its
 // basename; S6 and S7 as above. Recon's constants, the S7 capability set and capabilityDelta are copied as they are; recon's
-// entryFactsSummary is applied to the proxy's stored entry facts (entrySummaryOf). S6 and S7 names are provisional until the
-// operator's naming ruling.
+// entryFactsSummary is applied to the proxy's stored entry facts (entrySummaryOf).
+// static-checks-1.5 (operator rulings R7, R9, R9a, R9b 2026-10-22) is recon's v6.13 mirrored: every 1.4 marker unchanged; S7 is an
+// INDICATOR only when a role READ and non-empty on the predecessor and READ now gains a decode:* or obf:* class other than
+// decode:Function, or an API network sink with an execution sink other than exec:Function (s7Named); every other gain is NONE and stays
+// on the row as a fact with why it was not named.
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -50,7 +53,7 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.4';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.5';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -62,8 +65,8 @@ export const CHECKS = Object.freeze([
   { id: 'S3', gate: 'static:S3-secret-harvest-with-sink', cls: 'secret-harvest-with-sink', roles: ['main', 'bin', 'hook'], notice: 'its code reads credentials and sends them to an outside host' },
   { id: 'S4', gate: 'static:S4-wallet-swap-hook', cls: 'wallet-swap-hook', roles: ['main', 'bin'], notice: 'its code rewrites wallet addresses in web traffic' },
   { id: 'S5', gate: 'static:S5-oversized-hook-target', cls: 'oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' },
-  { id: 'S6', gate: 'static:S6-network-beacon-in-hook-target', cls: 'network-beacon-in-hook-target', roles: ['hook'], notice: 'an install script sends details about this machine to the network' },   // R2; name provisional until the naming ruling
-  { id: 'S7', gate: 'static:S7-entry-capability-gain', cls: 'entry-capability-gain', roles: ['main', 'bin'], notice: 'its entry file gained a capability its previous version did not have' },   // R3; name provisional until the naming ruling
+  { id: 'S6', gate: 'static:S6-network-beacon-in-hook-target', cls: 'network-beacon-in-hook-target', roles: ['hook'], notice: 'an install script sends details about this machine to the network' },   // R2; named as INDICATOR (R7 2026-10-22)
+  { id: 'S7', gate: 'static:S7-entry-capability-gain', cls: 'entry-capability-gain', roles: ['main', 'bin'], notice: 'its entry file gained a capability its previous version did not have' },   // R3; named on the 1.5 condition (R9 2026-10-22)
 ]);
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
@@ -349,6 +352,18 @@ const NONE_TEXT = { S1: 'no hook target to read', S2: 'no entry file to read', S
 /** The capability classes S7 compares (R3), as class:name over fileFacts; url-literal is never one. */
 export const CAPABILITY_CLASSES = Object.freeze(['net', 'exec', 'decode', 'obf', 'cred']);
 const S7_ROLES = ['main', 'bin'];
+/** 1.5: the arms of S7's named condition (R9) and the class each one does not count (R9a, R9b). */
+export const S7_NAMED_ARMS = Object.freeze(['decode-obf', 'net+exec']);
+export const S7_DECODE_OBF_EXCLUDED = Object.freeze(['decode:Function']);   // R9a: the decode half of the Function pair a bundler adds
+export const S7_EXEC_EXCLUDED = Object.freeze(['exec:Function']);           // R9b: not the execution sink of the net+exec arm
+/** The gains of one role that meet the named condition (R9): { arms, named } (named sorted, unique). Pure; the caller checks the role is READ on both sides. */
+export function s7Named(gains) {
+  const g = Array.isArray(gains) ? gains.filter((x) => typeof x === 'string') : [];
+  const dob = g.filter((x) => /^(?:decode|obf):/.test(x) && !S7_DECODE_OBF_EXCLUDED.includes(x));
+  const net = g.filter((x) => x.startsWith('net:') && apiNames.has(x.slice(4))); const exec = g.filter((x) => x.startsWith('exec:') && !S7_EXEC_EXCLUDED.includes(x));
+  const ne = net.length && exec.length ? [...net, ...exec] : [];
+  return { arms: [...(dob.length ? ['decode-obf'] : []), ...(ne.length ? ['net+exec'] : [])], named: [...new Set([...dob, ...ne])].sort() };
+}
 /** The capabilities one text file's facts carry: net:<API sink>, exec:<sink>, decode:<marker>, obf:_0x-idents (>= the S2 identifier count), cred:<source>. */
 export function capabilitiesOf(facts) {
   if (!facts || facts.binary) return [];
@@ -386,8 +401,9 @@ export function entrySummaryOf(entry, { archiveComplete = true } = {}) {
  * S7 (R3), pure, recon's capabilityDelta: predecessor = { version, basis, summary }, or { version: null, basis } (cold start:
  * NOT_APPLICABLE), or { version, basis, status: 'NOT_CHECKED', reason } (checked first, so a NOT_CHECKED predecessor is never read as a
  * cold start); current = a summary, or { status: 'NOT_CHECKED', reason }. Per role: a gain is a capability the current role has and the
- * predecessor's same role lacked (a predecessor role ABSENT compares as empty). Outcome: any gain INDICATOR, else any role NOT_CHECKED
- * NOT_CHECKED, else NONE; coverage counts a verified-absent role as checked (condition 3).
+ * predecessor's same role lacked (a predecessor role ABSENT compares as empty). 1.5 (R9): a role's gains are named only when its
+ * predecessor role was READ (predecessor_nonempty) and the current role is READ, by s7Named. Outcome: any named role INDICATOR, else any
+ * role NOT_CHECKED NOT_CHECKED, else NONE; a gain not named stays on the row; coverage counts a verified-absent role as checked (condition 3).
  */
 export function capabilityDelta({ predecessor, current } = {}) {
   const pred = predecessor && typeof predecessor === 'object' ? { version: predecessor.version ?? null, basis: predecessor.basis ?? null } : null;
@@ -397,21 +413,25 @@ export function capabilityDelta({ predecessor, current } = {}) {
   if (pred.version === null) return { outcome: 'NOT_APPLICABLE', reason: clip(predecessor.reason ?? 'cold start: no predecessor', 200), predecessor: pred, by_role: empty() };
   if (!predecessor.summary?.by_role) return { outcome: 'NOT_CHECKED', reason: `predecessor ${pred.version}: no facts summary`, predecessor: pred, by_role: empty() };
   if (!current || current.status === 'NOT_CHECKED' || !current.by_role) return { outcome: 'NOT_CHECKED', reason: `current version: ${clip(current?.reason ?? 'no facts summary', 300)}`, predecessor: pred, by_role: empty() };
-  const by_role = {}; let gain = false; let nc = false;
+  const by_role = {}; let named = false; let nc = false;
   for (const role of S7_ROLES) {
     const p = predecessor.summary.by_role[role]; const c = current.by_role[role];
-    if (!c || c.status === 'ABSENT') { by_role[role] = { status: 'ABSENT', gains: [], note: `current ${role}: ${c?.absent ?? 'none'}`, ...(p?.status === 'ABSENT' ? { predecessor_note: `predecessor ${role}: ${p.absent}` } : {}) }; continue; }   // condition 2
-    if (!p || p.status === 'NOT_CHECKED') { by_role[role] = { status: 'NOT_CHECKED', gains: [], reason: 'the predecessor\'s same-role file was not read', not_checked: p?.not_checked ?? [] }; nc = true; continue; }
+    if (!c || c.status === 'ABSENT') { by_role[role] = { status: 'ABSENT', gains: [], predecessor_nonempty: p?.status === 'READ', arms: [], named: [], note: `current ${role}: ${c?.absent ?? 'none'}`, ...(p?.status === 'ABSENT' ? { predecessor_note: `predecessor ${role}: ${p.absent}` } : {}) }; continue; }   // condition 2
+    if (!p || p.status === 'NOT_CHECKED') { by_role[role] = { status: 'NOT_CHECKED', gains: [], predecessor_nonempty: false, arms: [], named: [], reason: 'the predecessor\'s same-role file was not read', not_checked: p?.not_checked ?? [] }; nc = true; continue; }
     const had = new Set(p.status === 'ABSENT' ? [] : p.caps); const gains = c.caps.filter((x) => !had.has(x));
-    by_role[role] = { status: c.status === 'READ' ? 'CHECKED' : 'NOT_CHECKED', gains, ...(c.status !== 'READ' ? { not_checked: c.not_checked } : {}),
+    const nonempty = p.status === 'READ'; const s = nonempty && c.status === 'READ' ? s7Named(gains) : { arms: [], named: [] };   // 1.5 (R9)
+    const notNamed = !nonempty ? `predecessor ${role} was not read and non-empty (${p.status === 'ABSENT' ? 'verified absent' : 'not read'}): a gain against it is a fact, not the named condition`
+      : c.status !== 'READ' ? `current ${role} not read in full: no gain is named` : 'no decode or obf class other than decode:Function, and no API network sink with an execution sink other than exec:Function';
+    by_role[role] = { status: c.status === 'READ' ? 'CHECKED' : 'NOT_CHECKED', gains, predecessor_nonempty: nonempty, arms: s.arms, named: s.named,
+      ...(gains.length && !s.named.length ? { not_named: notNamed } : {}), ...(c.status !== 'READ' ? { not_checked: c.not_checked } : {}),
       ...(p.status === 'ABSENT' ? { predecessor_role: 'absent', predecessor_note: `predecessor ${role}: ${p.absent}` } : {}) };   // condition 2
-    if (gains.length) gain = true; if (c.status !== 'READ') nc = true;
+    if (s.named.length) named = true; if (c.status !== 'READ') nc = true;
   }
   // condition 3: S7 counts a verified-absent role as checked, and says so beside the not-checked share
   const st = S7_ROLES.map((r) => by_role[r].status);
   const coverage = { roles: S7_ROLES.length, checked: st.filter((x) => x !== 'NOT_CHECKED').length, verified_absent: st.filter((x) => x === 'ABSENT').length, not_checked: st.filter((x) => x === 'NOT_CHECKED').length,
     note: 'S7 counts a verified-absent role as checked (an archive read in full holds no candidate file for it); the S1-S5 rows count nothing read as NOT_CHECKED' };
-  return { outcome: gain ? 'INDICATOR' : nc ? 'NOT_CHECKED' : 'NONE', predecessor: pred, by_role, coverage };
+  return { outcome: named ? 'INDICATOR' : nc ? 'NOT_CHECKED' : 'NONE', predecessor: pred, by_role, coverage };
 }
 /** R3 runtime basis: the predecessor is the last version this proxy served (witness.db entry facts, R4). */
 export const S7_BASIS = 'the version this proxy served before';
@@ -426,19 +446,24 @@ function s7Predecessor(rec) {
   }
   return { version, basis: S7_BASIS, summary: entrySummaryOf(rec) };
 }
-/** The S7 row [result, detail] from capabilityDelta's result: the predecessor and its basis, the gains, the verified-absent notes (condition 2) and the coverage (condition 3). */
+/** The S7 row [result, detail] from capabilityDelta's result: the predecessor and its basis, the named gains with their arm (1.5), every
+ *  other gain as a fact with why it was not named, the verified-absent notes (condition 2) and the coverage (condition 3). */
 function s7Row(d) {
   if (d.outcome === 'NOT_APPLICABLE') return ['SKIP', `not applicable: ${d.reason}`];
   if (d.reason) return ['SKIP', `not checked: ${d.reason}`];
   const vs = `vs ${d.predecessor.version} (${d.predecessor.basis})`;
   const R = S7_ROLES.map((r) => [r, d.by_role[r]]);
-  // condition 2: a role verified absent is said; the predecessor's note only when it differs from the current one (both none declared reads once)
+  // condition 2: a role verified absent is said; the predecessor's note only when it differs from the current one (both none declared reads
+  // once); an empty baseline with no gain is said here, one with gains is said in the gain's not-named reason
   const same = (x) => x.predecessor_note && x.predecessor_note.replace(/^predecessor /, '') === x.note.replace(/^current /, '');
   const notes = R.flatMap(([, x]) => (x.status === 'ABSENT' ? [x.note, same(x) ? null : x.predecessor_note] : !x.gains.length && x.predecessor_note ? [`against an empty baseline: ${x.predecessor_note}`] : []).filter(Boolean));
+  // the row detail is capped (LIMITS.detailChars): the common not-named reason is said in short; capabilityDelta keeps recon's full text
+  const why = (t) => (/^no decode or obf class other than/.test(t) ? 'no decode/obf gain other than decode:Function, no net+exec pair other than exec:Function' : t);
+  const facts = R.filter(([, x]) => x.gains.length && !x.named.length).map(([r, x]) => `${r} gained ${x.gains.join(', ')} (not named: ${why(x.not_named)})`);
   const c = d.coverage; const cov = `roles checked ${c.checked} of ${c.roles} (${c.verified_absent} verified absent, counted as checked for S7), not checked ${c.not_checked}`;
-  const tail = [...notes, cov].join('; ');
+  const tail = [...facts, ...notes, cov].join('; ');
   if (d.outcome === 'INDICATOR') {
-    const g = R.filter(([, x]) => x.gains.length).map(([r, x]) => `${r} gained ${x.gains.join(', ')}${x.predecessor_role === 'absent' ? ` (against an empty baseline: ${x.predecessor_note})` : ''}`).join('; ');
+    const g = R.filter(([, x]) => x.named.length).map(([r, x]) => `${r} gained ${x.gains.join(', ')} (${x.arms.join(', ')}: ${x.named.join(', ')})`).join('; ');
     return ['WARN', `${vs}: ${g}; ${tail}`];
   }
   if (d.outcome === 'NOT_CHECKED') {
@@ -448,7 +473,7 @@ function s7Row(d) {
     });
     return ['SKIP', `not checked: ${why.join('; ')}; ${vs}; ${tail}`];
   }
-  return ['ALLOW', `no capability gained ${vs}; ${tail}`];
+  return ['ALLOW', `${facts.length ? 'no gain named' : 'no capability gained'} ${vs}; ${tail}`];
 }
 /** S7's outcome [result, detail] for a finished walk against the stored predecessor (witness.db predecessorEntryFacts, or null). */
 function s7Outcome({ manifest, packageJson, walk, predecessor }) {
@@ -567,4 +592,4 @@ export function staticSettled(latest) {
   return mine.every((r) => typeof r.detail === 'string' && !RETRY_PREFIXES.some((p) => r.detail.startsWith(p)));
 }
 
-export default { entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
+export default { entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, s7Named, S7_NAMED_ARMS, S7_DECODE_OBF_EXCLUDED, S7_EXEC_EXCLUDED, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
