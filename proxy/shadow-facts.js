@@ -23,7 +23,7 @@ export const MAX_PACKAGES = 500;
 const memo = new Map();
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // publisher text: control and bidi characters stripped, capped at 80 characters (as manifest-check's entry names)
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f؜​-‏‪-‮⁠-⁩﻿]/g;
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
 const shown = (n) => { const x = String(n ?? '').replace(UNSAFE, ''); return x.length > 80 ? `${x.slice(0, 80)}...` : x; };
 const emailKey = (e) => (typeof e === 'string' && e.trim() ? e.trim().toLowerCase() : null);
 const nameKey = (n) => (typeof n === 'string' && n.trim() ? `name:${n.trim()}` : null);
