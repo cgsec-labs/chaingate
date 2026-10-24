@@ -112,3 +112,10 @@ package, so the release commit that carries them is named here, with its tarball
 
 Next, on the operator's word: recon's v6.13 swap, then the README and release notes, then the release checks on the final commit,
 then the final commit and its tarball sha256 go once to the v3.2 session, which re-issues against them (R6).
+
+## After 0.1.5 (backlog; nothing of it goes into 0.1.5)
+
+- Triage noise-reduction consult (operator routing 2026-10-24): chaingate-ops `g10-c2-pin-admission-1.1` @af922e7,
+  `docs/design/triage-noise-rules-20261023.md`, section B. Static-check wording changes (rules 6, 7, 8a, 8d, 8h) arrive only as a
+  recon bump mirrored byte for byte; the packument-side tiering (rule 3, rule 5 transition half, rule 8 known owner, 8b) is the
+  owner's to design under the section 6 bars, measurement first.
