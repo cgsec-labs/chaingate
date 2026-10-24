@@ -162,11 +162,12 @@ const walkOf = async (buf, opts) => { const w = createTarWalker(opts); w.write(b
 const plainOf = (r) => JSON.parse(JSON.stringify(r, (k, v) => (v && v.type === 'Buffer' ? `buf:${v.data.length}` : v)));
 
 test('SF-8 the walker calls onFile(path, size) for each regular file on the Linux view; without it the result is unchanged key for key', async () => {
-  const buf = tgz({ 'package.json': '{"name":"p","version":"1.0.0"}', 'README.md': 'x'.repeat(300), 'lib/index.js': 'module.exports = 1;\n' });
+  const PJ = '{"name":"p","version":"1.0.0"}';
+  const buf = tgz({ 'package.json': PJ, 'README.md': 'x'.repeat(300), 'lib/index.js': 'module.exports = 1;\n' });
   const seen = [];
   const a = await walkOf(buf, { onFile: (p, n) => seen.push([p, n]) });
   const b = await walkOf(buf, {});
-  assert.deepEqual(seen, [['package.json', 31], ['README.md', 300], ['lib/index.js', 20]]);
+  assert.deepEqual(seen, [['package.json', Buffer.byteLength(PJ)], ['README.md', 300], ['lib/index.js', 20]]);
   assert.deepEqual(plainOf(a), plainOf(b));
   const k = []; await walkOf(buf, { keep: ['lib/index.js'], onFile: (p, n) => k.push(p) });
   assert.deepEqual(k, ['package.json', 'README.md', 'lib/index.js'], 'with a keep list too');
