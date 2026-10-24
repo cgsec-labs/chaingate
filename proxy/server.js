@@ -38,6 +38,7 @@ import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recor
 import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
   withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
+import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf } from './shadow-facts.js';
 /** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
 function parsedPackageJson(walk) {
   if (!walk?.ok || !walk.packageJson) return null;
@@ -312,6 +313,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
     parsed = JSON.parse(raw.toString('utf8'));
     if (parsed && typeof parsed === 'object') {
       rememberManifestHooks(packageName, parsed.versions);   // 3c (D-M3)
+      rememberPackumentFacts(packageName, parsed);            // 0.1.5 shadow facts (R11): dist-tags, maintainers, publishers
       setDependencyDoc(packageName, parsed);                 // release audit R4: N1h judges from what npm already fetched
     }
   } catch (err) {
@@ -907,6 +909,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
       parsed = JSON.parse(Buffer.from(await upstream.body.arrayBuffer()).toString('utf8'));
       if (parsed && typeof parsed === 'object') {
         rememberManifestHooks(canonicalName, parsed.versions);   // 3c (D-M3)
+        rememberPackumentFacts(canonicalName, parsed);            // 0.1.5 shadow facts (R11)
         setDependencyDoc(canonicalName, parsed);                 // release audit R4
       }
     } catch (err) {
@@ -1216,6 +1219,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             keepOpts = { keep: factsManifest === undefined ? (pj) => entryKeepFor(pj) : entryKeepFor(factsManifest) };
           }
         }
+        // 0.1.5 shadow facts (R11, 8b): the facts walk also tallies every file's size by class, for the next version's size change
+        const shapeTally = factsDue ? createShapeTally() : null;
+        if (shapeTally) keepOpts = { ...keepOpts, onFile: shapeTally.onFile };
         const walker = mcWalk || factsDue ? createTarWalker(keepOpts) : null;
         const headerFn = notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null;
         const tap = walker ? (c) => walker.write(c) : null;
@@ -1235,14 +1241,16 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         if (factsSlot) { factsWalks -= 1; factsSlot = false; }
         // a complete walk is the tarball's facts; a refused archive is stored as refused only once the whole download was served
         // (an aborted one, or a walk that fell behind, says nothing about the archive and is tried again)
+        let factsWrote = false; let factsShape = null;
         if (walk && factsDue && (walk.ok || (res.writableFinished && !/fell behind/.test(String(walk.reason))))) {
           try {
             // R8 (2026-10-22): the proxy's own facts time for this download, stored with the facts (the first-week confirming measure)
             const t0 = performance.now();
             const ef = entryFactsOf({ manifest: factsManifest ?? null, packageJson: walk.ok ? parsedPackageJson(walk) : null, walk });
             const factsMs = Number((performance.now() - t0).toFixed(3));
-            witnessDb.recordEntryFacts({ package_name: canonicalName, version: state.tarballVersion,
-              static_checks_version: STATIC_CHECKS_VERSION, facts_ms: factsMs, ...ef });
+            factsShape = walk.ok && shapeTally ? shapeTally.result() : null;
+            factsWrote = witnessDb.recordEntryFacts({ package_name: canonicalName, version: state.tarballVersion,
+              static_checks_version: STATIC_CHECKS_VERSION, facts_ms: factsMs, shape: factsShape, ...ef }) === 'wrote';
           } catch (err) {
             log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: not stored (${err.message})`);
           }
@@ -1319,6 +1327,25 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             } catch (err) {
               log?.warn?.(`[mc] ${canonicalName}@${state.tarballVersion}: not recorded (${err.message})`);
             }
+          }
+        }
+        // 0.1.5 shadow facts (operator ruling R11 2026-10-24): rules 3, 5 (transition), 8 (known owner) and 8b, computed once per served
+        // version after its first download's rows are final, stored beside its entry facts and shown in `why` and `report` (a later
+        // download reads them back). Record only: nothing here is a runner row, so no verdict, tier or notice depends on it.
+        if (upstream.statusCode === 200 && state.tarballVersion != null && witnessDb) {
+          try {
+            let facts = witnessDb.shadowFactsFor(canonicalName, state.tarballVersion);
+            if (!facts && factsWrote) {
+              const named = (v) => { const r = witnessDb.getLatestDecision(canonicalName, v); return r ? classifyRows(r.gates_fired).named : null; };
+              const pred = witnessDb.predecessorEntryFacts(canonicalName, state.tarballVersion);
+              facts = shadowFactsOf({ memo: packumentFactsFor(canonicalName), version: state.tarballVersion, shape: factsShape,
+                predecessor: pred ? { version: pred.version, shape: pred.shape, named: named(pred.version) } : null,
+                named: named(state.tarballVersion) ?? [] });
+              witnessDb.recordShadowFacts(canonicalName, state.tarballVersion, facts);
+            }
+            if (facts) noteInstall(req, { kind: 'facts', package: canonicalName, version: state.tarballVersion, facts });
+          } catch (err) {
+            log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: shadow facts not recorded (${err.message})`);
           }
         }
       }

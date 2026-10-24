@@ -15,6 +15,7 @@ import { explain } from '../../seed/v3/explain.js';
 import { CHECK_SCHEMA_IDS, EXIT_TOOL_ERROR, recordCompatibility } from '../check-record.js';
 import { runCheck, parseTarget } from './check.js';
 import { decisionSnapshot, adjudicate } from '../adjudicate.js';
+import { shadowLines, SHADOW_NOTE } from '../../proxy/shadow-facts.js';
 
 export const UNBOUND_LABEL = 'CACHED — UNBOUND: produced without recorded seed/rule/policy identities; '
   + 'not a current evaluation';
@@ -91,9 +92,11 @@ function showCached(parsed, opts) {
     try { applicable = row ? db.getApplicableDecision(parsed.name, parsed.version) : null; } catch { applicable = null; }
     const applies = applicable ? { disposition: applicable.disposition, block_row: applicable.block?.id ?? null,
       pending: applicable.pending, override: applicable.override } : null;
+    // 0.1.5 shadow facts (operator ruling R11 2026-10-24): recorded once per served version; record only, no verdict reads them
+    const shadow = db.shadowFactsFor(parsed.name, parsed.version);
     if (opts.json) {
       console.log(JSON.stringify({ label: 'CACHED-UNBOUND', note: UNBOUND_LABEL,
-        package: parsed.name, version: parsed.version, cached: row || null, applicable: applies }, null, 2));
+        package: parsed.name, version: parsed.version, cached: row || null, applicable: applies, shadow_facts: shadow }, null, 2));
     } else {
       console.log(fmt.yellow ? fmt.yellow(UNBOUND_LABEL) : UNBOUND_LABEL);
       if (!row) {
@@ -105,6 +108,12 @@ function showCached(parsed, opts) {
           console.log(`  applies: ${applies.disposition} -- stored BLOCK #${applies.block_row} is not definitively cleared `
             + `(${applies.pending.join(', ')})`);
         }
+      }
+      if (shadow) {
+        let lines = [];
+        try { lines = shadowLines(shadow); } catch { lines = ['not readable']; }
+        console.log(`  Recorded facts (${shadow.version ?? 'unknown'}; ${SHADOW_NOTE}):`);
+        for (const l of lines) console.log(`    ${l}`);
       }
       console.log(`  For a current evaluation: chaingate check ${parsed.name}@${parsed.version} --packument <file>`);
       // 0.1.4 (G4 D-D3): the conclusion for the proxy's named warnings -- what moved, the baseline, what to do

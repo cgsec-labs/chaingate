@@ -26,6 +26,8 @@
 // that preceded it are stated as not kept). The result then carries `files` [{ path, buf, name, platformsNotChecked }] and `notKept`
 // [{ path, reason, size? }] (size: the header size of a target not kept for a cap, static-checks-1.2 S5); without `keep` the result is unchanged, key for key. Where macOS or Windows would install ANOTHER entry at a
 // kept path (a case alias, a backslash separator), that platform is listed in platformsNotChecked: the body read is the Linux one.
+// 0.1.5 shadow facts (R11, 8b): an optional `onFile(path, size)` is called for each regular file on the Linux view, its header size;
+// the result is unchanged, key for key.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
 
@@ -135,6 +137,7 @@ export function createTarWalker(opts = {}) {
   const approx = []; let approxBytes = 0;
   // 0.1.5 keep list: targets (normalised Linux-view paths), kept bodies (last entry wins, as node-tar overwrites), what was not kept
   const keepOpt = o.keep; const keepGiven = keepOpt !== undefined;
+  const onFile = typeof o.onFile === 'function' ? o.onFile : null;
   let keepTargets = Array.isArray(keepOpt) ? null : (typeof keepOpt === 'function' ? null : new Set());
   const keepOrder = []; const kept = new Map(); const notKept = []; const aliases = new Map();
   const seenBefore = new Set(); let seenOverflow = false;
@@ -273,6 +276,8 @@ export function createTarWalker(opts = {}) {
     ex = null;                                               // a pending extended header applies to this entry only
     collect = null;
     if (type === '0' || type === '7') {                      // pacote installs File / OldFile / ContiguousFile
+      // 0.1.5 shadow facts (R11, 8b): every regular file's Linux-view path and header size, to the caller's tally (constant memory)
+      if (onFile) { const lx = writtenRel(entryPath, false); if (lx != null) try { onFile(lx, size); } catch { /* a tally never fails the walk */ } }
       const tg = installTargets(entryPath);
       if (tg.exact.length || tg.approx.length) {
         if (size > o.maxPackageJson) throw new BadHeader(`package.json over ${o.maxPackageJson} bytes`);

@@ -168,6 +168,8 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudi
 -- sha256, the closed-vocabulary fileFacts summary) or not read (its reason). walk = 'refused' when the archive itself was refused
 -- (no files). S7 compares a version with the last one served before it. Retention: the newest 3 served versions per package and at
 -- most 200,000 in all (recordEntryFacts).
+-- 0.1.5 (R11 2026-10-24): shape = the version's file sizes by class (proxy/shadow-facts.js, 8b), written with the entry facts; shadow =
+-- its shadow facts (rules 3, 5, 8, 8b), written once after its first download's rows are final. Record only: no verdict reads them.
 CREATE TABLE IF NOT EXISTS entry_fact_versions (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     package_name          TEXT NOT NULL,
@@ -177,6 +179,8 @@ CREATE TABLE IF NOT EXISTS entry_fact_versions (
     reason                TEXT,
     static_checks_version TEXT NOT NULL,
     facts_ms              REAL,
+    shape                 TEXT,
+    shadow                TEXT,
     UNIQUE (package_name, version)
 );
 CREATE TABLE IF NOT EXISTS entry_facts (
@@ -271,6 +275,8 @@ export class WitnessDB {
     // 0.1.5 (R8 2026-10-22): facts_ms joined entry_fact_versions after the table; a table created before it gains the column
     const efv = this.db.prepare("SELECT name FROM pragma_table_info('entry_fact_versions')").all().map((c) => c.name);
     if (efv.length && !efv.includes('facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN facts_ms REAL');
+    // 0.1.5 (R11 2026-10-24): shape and shadow likewise
+    for (const c of ['shape', 'shadow']) if (efv.length && !efv.includes(c)) this.db.exec(`ALTER TABLE entry_fact_versions ADD COLUMN ${c} TEXT`);
     this._prepare();
     return this;
   }
@@ -540,8 +546,9 @@ export class WitnessDB {
     if (!this._tableStmts('entry_facts', () => ({}))) return null;
     return this._tableStmts('entry_fact_versions', () => ({
       has: this.db.prepare('SELECT 1 FROM entry_fact_versions WHERE package_name = ? AND version = ?'),
-      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms)
-        VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms)`),
+      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms, shape)
+        VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms, @shape)`),
+      shadowSet: this.db.prepare('UPDATE entry_fact_versions SET shadow = @shadow WHERE package_name = @p AND version = @v AND shadow IS NULL'),
       insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
         VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
       prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = @p AND version <> @v AND id <
@@ -569,7 +576,8 @@ export class WitnessDB {
     if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
     return this.db.transaction(() => {
       const ins = st.insV.run({ package_name: r.package_name, version: r.version, walk: r.walk, reason: r.reason ?? null,
-        static_checks_version: r.static_checks_version, facts_ms: Number.isFinite(r.facts_ms) ? r.facts_ms : null });
+        static_checks_version: r.static_checks_version, facts_ms: Number.isFinite(r.facts_ms) ? r.facts_ms : null,
+        shape: r.shape == null ? null : JSON.stringify(r.shape) });
       if (!ins.changes) return 'exists';
       const versionId = Number(ins.lastInsertRowid);
       for (const f of Array.isArray(r.files) ? r.files : []) {
@@ -592,7 +600,23 @@ export class WitnessDB {
     const v = st ? st.prev.get({ p: packageName, v: version }) : null;
     if (!v) return null;
     const files = st.files.all(v.id).map((f) => decodeJsonField(f, 'facts', null));
-    return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, facts_ms: v.facts_ms ?? null, files };
+    return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, facts_ms: v.facts_ms ?? null,
+      shape: decodeJsonField(v, 'shape', null).shape ?? null, files };
+  }
+
+  /** 0.1.5 (R11): store a served version's shadow facts, once; 1 when written, 0 when already stored or no entry facts row exists. */
+  recordShadowFacts(packageName, version, facts) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return st.shadowSet.run({ p: packageName, v: version, shadow: JSON.stringify(facts) }).changes;
+  }
+
+  /** 0.1.5 (R11): a version's stored shadow facts, or null (none, a database without the column, or not readable). Never throws. */
+  shadowFactsFor(packageName, version) {
+    try {
+      const r = this.db.prepare('SELECT shadow FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
+      return r && typeof r.shadow === 'string' ? JSON.parse(r.shadow) : null;
+    } catch { return null; }
   }
 
   deleteAcceptance(packageName, version) {

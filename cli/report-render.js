@@ -7,6 +7,7 @@
 // and bidi/format controls, and capped; copyable commands are printed only for identities notice.js validates (dated
 // notes 6.10, 7.14).
 import { identity, labelFor } from '../proxy/notice.js';
+import { shadowLines, notable, SHADOW_NOTE } from '../proxy/shadow-facts.js';
 
 // C0, DEL, C1, and the bidi/format controls (U+061C, U+200B-U+200F, U+202A-U+202E, U+2060-U+2069, U+FEFF)
 export const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
@@ -215,6 +216,20 @@ function renderInstall(inst, cutoff) {
   if (overrides.length) {
     out.push(`${overrides.length} version(s) were served under your exact-version overrides (chaingate allow): `
       + `${overrides.slice(0, 20).join(', ')}${overrides.length > 20 ? ', …' : ''}`);
+  }
+  // 0.1.5 shadow facts (operator ruling R11 2026-10-24): record only, never counted and never in the exit code; the versions whose
+  // facts would have spoken on a triage card (not the latest tag, not a known owner, a named sign not new, a size change all docs),
+  // the newest facts event per version. Every facts event is in --json.
+  const factsBy = new Map();
+  for (const e of events) if (e.kind === 'facts' && e.facts && typeof e.facts === 'object') factsBy.set(idOf(e), e);
+  const factLines = [];
+  for (const e of factsBy.values()) {
+    try { if (notable(e.facts)) factLines.push(`  ${shownId(e.package, e.version)}: ${shadowLines(e.facts).map((l) => clean(l, 400)).join('; ')}`); } catch { /* malformed: not shown */ }
+  }
+  if (factLines.length) {
+    out.push('', `Recorded facts (${clean([...factsBy.values()][0].facts.version ?? 'unknown', 40)}; ${SHADOW_NOTE}), `
+      + `${factLines.length} version(s) with a notable fact:`, ...factLines.slice(0, 20));
+    if (factLines.length > 20) out.push(`  ... and ${factLines.length - 20} more (chaingate report --json)`);
   }
   if (inst.evicted_earlier) {
     out.push(`Earlier events of this install were evicted (more than ${MAX_INSTALLS_HELD} installs were active); this report is incomplete.`);
