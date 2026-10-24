@@ -126,3 +126,26 @@ Division (each session carries its own task):
 - (d) v3.2: nothing until the new final code commit is named; then the R6 re-issue against it.
 
 Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in parallel -> the 1.6 mirror -> the final code commit named -> README and release notes -> release checks -> v3.2 re-issue. No deadline (operator).
+
+## R11 part (b) built (2026-10-25, 0.1.5 owner; operator confirmed R11 and the defaults directly)
+
+- Tests first `219fecc` (one miscounted fixture size corrected in `7210dae`); code `ca67eef`, `f6088ce` (the publisher-text filter
+  written with escapes, G4-5); `b3bfb0d` updates G2c-9 deliberately (a facts event follows its first download's walk, so it is
+  compared as a set).
+- `proxy/shadow-facts.js`, `shadow-facts-1.0`, outside `proxy/static-checks.js`. Per served version, once, after its first
+  download's rows are final, stored in `entry_fact_versions.shadow` (and the file sizes by class in `entry_fact_versions.shape`):
+  rule 3 (the registry's dist-tags: latest or not, which tags point at it); rule 5 transition half (each named sign on this version,
+  new or "not new since" the version this proxy served before; the named list is `classify()` over the stored rows); rule 8
+  packument half (known owner = a listed maintainer in the packument `maintainers`, an earlier publisher by e-mail, else by name, or
+  more than half of the earlier versions' publisher; the fourth form, other packages in scope, is not computed); 8b (the size change
+  vs the version served before by class: docs, source maps, declarations, a second module format only when this version ships both a
+  CommonJS and an ES module form, other files; the root package.json not counted; "all attributed" when other files are unchanged).
+- Shown: `why <pkg>@<ver>` prints "Recorded facts" under the rows (`--json`: `shadow_facts`); `report --json` carries a `facts` event
+  per served version; the report text lists only versions with a notable fact. Not a runner row, nothing added to NAMED_RUNNER_GATES
+  or CONTRIBUTING_GATES, no exit code changes; `cft-policy-1.2` unchanged.
+- Retention as the entry facts (the newest 3 served versions per package). First-week frequencies from witness.db:
+
+      sqlite3 ~/.chaingate/witness.db "SELECT package_name, version, shadow FROM entry_fact_versions WHERE shadow IS NOT NULL"
+
+- Full suite at `b3bfb0d` on a non-root host, Node 22.23.4: 1,585 tests, 1,544 pass, 0 fail, 41 skipped; protected paths unchanged.
+- Next: the static-checks-1.6 mirror when recon hands over the constants; then the final code commit is named here.
