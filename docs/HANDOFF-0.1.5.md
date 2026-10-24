@@ -113,9 +113,16 @@ package, so the release commit that carries them is named here, with its tarball
 Next, on the operator's word: recon's v6.13 swap, then the README and release notes, then the release checks on the final commit,
 then the final commit and its tarball sha256 go once to the v3.2 session, which re-issues against them (R6).
 
-## After 0.1.5 (backlog; nothing of it goes into 0.1.5)
+## Operator ruling 2026-10-24 (R11; relayed by the review session: "Yes I want in 0.1.5", form "Shadow first")
 
-- Triage noise-reduction consult (operator routing 2026-10-24): chaingate-ops `g10-c2-pin-admission-1.1` @af922e7,
-  `docs/design/triage-noise-rules-20261023.md`, section B. Static-check wording changes (rules 6, 7, 8a, 8d, 8h) arrive only as a
-  recon bump mirrored byte for byte; the packument-side tiering (rule 3, rule 5 transition half, rule 8 known owner, 8b) is the
-  owner's to design under the section 6 bars, measurement first.
+The "After 0.1.5" backlog line of c69a252 is superseded by this ruling.
+
+R11 The triage chat's noise-reduction rules (chaingate-ops `g10-c2-pin-admission-1.1` @af922e7, `docs/design/triage-noise-rules-20261023.md`, section B's static-checks list) enter 0.1.5 as SHADOW FACTS: each rule is computed and recorded on the row, visible in `why` and `report`, and changes no verdict, no tier and no notice in 0.1.5. Re-tiering on any of them is a later ruling, after the first weeks live and ops' lead-time replay against the 141 takeover packages (section D), which is the recall gate the document itself names. Consequences: 5e2b5bc is no longer the final code commit; the final code commit is named after this work; the v3.2 re-issue (R6) waits for it; `cft-policy-1.2` is unchanged (no arithmetic change); the section 6 bars do not apply to a fact that changes no outcome, but each fact's benign frequency is read from the witness store in the first weeks, beside the R8 numbers.
+
+Division (each session carries its own task):
+- (a) Recon lane: static-checks-1.6, a facts-only bump, S0-S7 outcomes identical by construction. Facts: rule 6 (per base64/hex run: distinct-character count, and the magic of the decoded first bytes: `\0asm`, PNG, gzip, woff); rule 7 (an S5 target: base64 share of the file and the decoded magic); 8a (P2/P9-type hits under `test/`, `__tests__/`, `fixtures/`, `vendor/`, `node_modules/` counted separately from the rest); 8d (a hook or module that writes under `~/.claude`, `~/.cursor`, `~/.codex`, `~/.config/<agent>`: a named capability fact); 8h (a tarball with zero network, filesystem, process, env, exec or encoding tokens: "no I/O surface"). After the v6.13 swap, recon first; outcome identity shown by drift 0 on ops' stored rows and on the frozen 28; the proxy mirror second, byte for byte, identical version string.
+- (b) 0.1.5 owner: runtime facts computed outside `proxy/static-checks.js` (the mirror stays byte for byte), tests first. Facts: rule 3 (the served version is not the `latest` dist-tag, and which tag it is); rule 5 transition half (a named sign on this version was already present on the version this proxy served before: "not new since <version>", from the witness store); rule 8 packument half (the publisher is a known owner: a listed maintainer, the same email as a prior publisher, or the majority historical publisher; the token-delta half is S7's gain set, already on the row); 8b (the size change attributed to docs, source maps, declaration files or a second module format). Shown in `why` and `report` as facts; nothing added to NAMED_RUNNER_GATES or CONTRIBUTING_GATES; then the 1.6 mirror when recon hands over the constants; then the new final code commit is named here.
+- (c) Ops: the 1.6 drift check against 1.5 on the stored rows (S0-S7 identical, the new fact fields listed); the section D replay unchanged, as the recall gate for any later re-tier; the facts' first-week frequencies read beside R8.
+- (d) v3.2: nothing until the new final code commit is named; then the R6 re-issue against it.
+
+Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in parallel -> the 1.6 mirror -> the final code commit named -> README and release notes -> release checks -> v3.2 re-issue. No deadline (operator).
