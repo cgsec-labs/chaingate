@@ -149,3 +149,39 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
 
 - Full suite at `b3bfb0d` on a non-root host, Node 22.23.4: 1,585 tests, 1,544 pass, 0 fail, 41 skipped; protected paths unchanged.
 - Next: the static-checks-1.6 mirror when recon hands over the constants; then the final code commit is named here.
+
+## static-checks-1.6 mirrored (2026-10-25, 0.1.5 owner; R11 (a) handed over by recon, (b) the walk input)
+
+- Hand-off: recon v6.14 (branch `g10-c2-recon-v6.14` @90c2303, tree `tools/recon/v6.14`, `static-checks.mjs` 812cf94b), constants file
+  sha256 c4c1e0c0 (65,128 bytes), committed byte for byte as `test/fixtures/cft015/static-checks-1.6-constants.json`. Ops' R11 (c)(1)
+  drift check of 1.6 against 1.5 passed on 10-25 (handover 12.4).
+- Tests first `95aa226`: the file's constants against the module's exports (regex source and flags), every 1.5 section unchanged, recon's
+  41 vectors (10 encoded runs, 4 base64 shares at chunk sizes 1, 7 and 401, 17 member facts, 5 package blocks, 5 agent writes), the
+  walker input, the store, `why` and `report`. The 1.5 version pins in six earlier test files move to 1.6 deliberately. Code `1966cd6`
+  (it also narrows E2's plain-ASCII check to the facts block: other `why` lines predate it).
+- `proxy/static-checks.js`: `STATIC_CHECKS_VERSION` is `static-checks-1.6`; recon's facts code is copied as written (`FACTS_LIMITS`,
+  `FACTS_NOTE`, `DECODED_MAGIC`, `encodedRuns`, `makeBase64Share`, `EXCLUDED_PATH`, `DYNAMIC_CODE`, the agent dirs and write markers,
+  `IO_CLASSES`, `IO_TOKENS`, `memberFacts`, `staticFacts`). Checked in code: the copy equals recon's block except that paths go through
+  recon's clip with the proxy's control and bidi characters removed, and the 8000-byte head is read from `LIMITS`.
+- The proxy's half (owner's choices, stated here for review):
+  - Facts are read on an ARMED walk only, the walk whose static rows are computed (recon reads them on the flagged archive).
+  - `proxy/tar-walk.js` gains `onMember(path, size, window)` (every regular file on the Linux view, its first 2 MiB; the caller keeps the
+    last duplicate in the place of the first, as recon's tar reader) and `shareOf()` (a keep-list target over the 1 MiB cap is streamed
+    whole through recon's base64 counter, its result on that not-kept entry). Without them the walk result is unchanged key for key.
+  - `staticFactsOf` gives `{ facts, s5 }`: recon's block (hooks as S0 reads them, roles from the registry keep list, members only from a
+    walk read in full) and, for each hook target over the cap, recon's S5 entry fields (`base64_share`, `base64_magic`, or the nulls and
+    `base64_note`). They are stored once in `entry_fact_versions.static_facts` when the walk's rows are recorded. No row carries them: the
+    S5 row text is unchanged.
+  - At most 20,000 member records per walk (`MAX_FACTS_MEMBERS`; recon refuses an archive over 100,000 files); past it the block is
+    NOT_CHECKED "more than 20000 archive members: member facts not kept".
+- Shown: `why` prints "Static check facts (static-checks-1.6; recorded only ...)" under the recorded facts (`--json`: `static_facts`);
+  the `report` facts event carries `static_facts`, and the report text lists an armed version with its static facts. No exit code changes.
+- The version string changes S7's predecessor rule only for facts stored by a 1.5 build ("stored by static-checks-1.5, not
+  static-checks-1.6"): no released build stores entry facts, so no user store is affected.
+- Read from witness.db:
+
+      sqlite3 ~/.chaingate/witness.db "SELECT package_name, version, static_facts FROM entry_fact_versions WHERE static_facts IS NOT NULL"
+
+- Full suite at `1966cd6` on a non-root host, Node 22.23.4: 1,603 tests, 1,562 pass, 0 fail, 41 skipped; protected paths unchanged.
+- Candidate final code commit: `1966cd6`. It becomes final when recon's parity check against the 41 vectors passes on it. Then README
+  and release notes, release checks, and the v3.2 re-issue (R6) against it.
