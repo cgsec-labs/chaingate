@@ -503,9 +503,10 @@ const R14 = {
 const pairs = (list) => list.map(([name, re]) => ({ name, regex: re.source, flags: re.flags }));
 const want = (list) => list.map((x) => ({ name: x.name, regex: x.regex, flags: x.flags ?? '' }));
 
-test('P14-1 the version string and the eight checks (id, gate, class, roles, notice) are recon\'s (static-checks-1.5)', async () => {
+test('P14-1 the version string and the eight checks (id, gate, class, roles, notice) are recon\'s (static-checks-1.5; 1.6 adds facts only)', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, R14.version);
+  // static-checks-1.6 (R11, recon v6.14) is a facts-only bump: every 1.5 constant here is unchanged (cft015-static-checks-1.6, C2)
+  assert.equal(R14.version, 'static-checks-1.5'); assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.6');
   assert.deepEqual(S.CHECKS.map(({ id, gate, cls, roles, notice }) => ({ id, gate, cls, roles, notice })), R14.checks);
 });
 

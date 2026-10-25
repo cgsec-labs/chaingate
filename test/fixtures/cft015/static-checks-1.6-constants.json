@@ -1,0 +1,2162 @@
+{
+ "static_checks_version": "static-checks-1.6",
+ "source": "recon v6.14 static-checks.mjs (staged tree investigations/recon/v6.14, branch g10-c2-recon-v6.14 @b9cbc1e, manifest RECON-v6.14.SHA256SUMS 6a7d3edc, static-checks.mjs 812cf94b)",
+ "rulings": "operator rulings 2026-10-22 R7 (S6 NAMED, S0 stays NAMED), R9 + R9a + R9b (S7 NAMED on the named condition): chaingate docs/HANDOFF-0.1.5.md @fdbe89b; chaingate-ops tarball-scan-1.3 @f8688d0 handover section 12 | operator ruling R11 2026-10-24 (chaingate docs/HANDOFF-0.1.5.md @357dc27): the triage noise-reduction rules as SHADOW FACTS; static-checks-1.6 facts-only, S0-S7 unchanged",
+ "checks": [
+  {
+   "id": "S0",
+   "gate": "static:S0-shell-fetch-in-hook",
+   "cls": "shell-fetch-in-hook",
+   "roles": null,
+   "notice": "an install script downloads code to run or sends data to an outside host",
+   "provisional_name": false
+  },
+  {
+   "id": "S1",
+   "gate": "static:S1-loader-in-hook-target",
+   "cls": "loader-in-hook-target",
+   "roles": [
+    "hook"
+   ],
+   "notice": "an install script runs a small loader that fetches and executes",
+   "provisional_name": false
+  },
+  {
+   "id": "S2",
+   "gate": "static:S2-obfuscated-entry",
+   "cls": "obfuscated-entry",
+   "roles": [
+    "main",
+    "bin"
+   ],
+   "notice": "its entry file is obfuscated code",
+   "provisional_name": false
+  },
+  {
+   "id": "S3",
+   "gate": "static:S3-secret-harvest-with-sink",
+   "cls": "secret-harvest-with-sink",
+   "roles": [
+    "main",
+    "bin",
+    "hook"
+   ],
+   "notice": "its code reads credentials and sends them to an outside host",
+   "provisional_name": false
+  },
+  {
+   "id": "S4",
+   "gate": "static:S4-wallet-swap-hook",
+   "cls": "wallet-swap-hook",
+   "roles": [
+    "main",
+    "bin"
+   ],
+   "notice": "its code rewrites wallet addresses in web traffic",
+   "provisional_name": false
+  },
+  {
+   "id": "S5",
+   "gate": "static:S5-oversized-hook-target",
+   "cls": "oversized-hook-target",
+   "roles": [
+    "hook"
+   ],
+   "notice": "an install script runs a file too large to read",
+   "provisional_name": false
+  },
+  {
+   "id": "S6",
+   "gate": "static:S6-network-beacon-in-hook-target",
+   "cls": "network-beacon-in-hook-target",
+   "roles": [
+    "hook"
+   ],
+   "notice": "an install script sends details about this machine to the network",
+   "provisional_name": false,
+   "named": "R7 2026-10-22, as INDICATOR"
+  },
+  {
+   "id": "S7",
+   "gate": "static:S7-entry-capability-gain",
+   "cls": "entry-capability-gain",
+   "roles": [
+    "main",
+    "bin"
+   ],
+   "notice": "its entry file gained a capability its previous version did not have",
+   "provisional_name": false,
+   "named": "R9 2026-10-22, on s7.named_condition only"
+  }
+ ],
+ "s0": {
+  "shells": [
+   "sh",
+   "bash",
+   "dash",
+   "zsh"
+  ],
+  "shell_c": {
+   "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:sh|bash|dash|zsh)\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z]*c[a-zA-Z]*\\s+(?:'([^']*)'|\"((?:[^\"\\\\]|\\\\.)*)\")",
+   "flags": "g",
+   "reads": "group 1 (single-quoted) or group 2 (double-quoted) argument, one level"
+  },
+  "net_tools": [
+   {
+    "name": "curl",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:curl)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   },
+   {
+    "name": "wget",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:wget)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   },
+   {
+    "name": "nc",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:nc|ncat|netcat)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   },
+   {
+    "name": "nslookup",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:nslookup)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   },
+   {
+    "name": "dig",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:dig)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   },
+   {
+    "name": "host",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:host)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   },
+   {
+    "name": "ping",
+    "regex": "(?:^|[;&|(\\x60]|\\$\\()\\s*(?:sudo\\s+(?:-\\S+\\s+)*)?(?:env\\s+(?:\\w+=\\S*\\s+)*)?(?:(?:\\/[^\\s/;&|()'\"\\x60]+)*\\/)?(?:ping)(?:\\.exe)?(?=\\s|$|[;&|)])",
+    "flags": "i"
+   }
+  ],
+  "dns_tools": [
+   "nslookup",
+   "dig",
+   "host",
+   "ping"
+  ],
+  "send_markers": [
+   {
+    "name": "command-substitution",
+    "regex": "\\$\\(|`"
+   },
+   {
+    "name": "data-flag",
+    "regex": "(?:^|\\s)(?:--data(?:-[a-z]+)?|--form(?:-string)?|--upload-file|--post-data|--post-file)(?=[\\s=]|$)|(?:^|\\s)-[dFT](?=\\s|[^\\s-])"
+   },
+   {
+    "name": "raw-ip-url",
+    "regex": "\\bhttps?:\\/\\/(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d+)?\\b"
+   },
+   {
+    "name": "exfil-host-url",
+    "regex": null
+   }
+  ]
+ },
+ "s6": {
+  "api_net_sinks": [
+   {
+    "name": "http-request",
+    "regex": "\\b(?:https?|http2)\\.(?:request|get)\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "fetch",
+    "regex": "\\bfetch\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "net-connect",
+    "regex": "\\bnet\\.(?:connect|createConnection)\\s*\\(|\\btls\\.connect\\s*\\(|\\bdgram\\.createSocket\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "websocket",
+    "regex": "\\bnew\\s+WebSocket\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "xhr",
+    "regex": "\\bnew\\s+XMLHttpRequest\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "axios",
+    "regex": "\\baxios(?:\\.\\w+)?\\s*\\(",
+    "flags": ""
+   }
+  ],
+  "host_identity": [
+   {
+    "name": "os.hostname",
+    "regex": "(?:\\bos|\\brequire\\(\\s*['\"\\x60](?:node:)?os['\"\\x60]\\s*\\))\\s*\\.\\s*hostname\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "os.userInfo",
+    "regex": "(?:\\bos|\\brequire\\(\\s*['\"\\x60](?:node:)?os['\"\\x60]\\s*\\))\\s*\\.\\s*userInfo\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "os.networkInterfaces",
+    "regex": "(?:\\bos|\\brequire\\(\\s*['\"\\x60](?:node:)?os['\"\\x60]\\s*\\))\\s*\\.\\s*networkInterfaces\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "env-dump",
+    "regex": "JSON\\.stringify\\(\\s*process\\.env\\s*\\)|Object\\.(?:keys|entries|values)\\(\\s*process\\.env\\s*\\)|\\.\\.\\.process\\.env\\b",
+    "flags": ""
+   },
+   {
+    "name": "identity-env",
+    "regex": "\\bprocess\\.env(?:\\.(?:USER|USERNAME|LOGNAME|HOSTNAME|COMPUTERNAME)\\b|\\[\\s*(['\"\\x60])(?:USER|USERNAME|LOGNAME|HOSTNAME|COMPUTERNAME)\\1\\s*\\])",
+    "flags": ""
+   }
+  ],
+  "identity_env": [
+   "USER",
+   "USERNAME",
+   "LOGNAME",
+   "HOSTNAME",
+   "COMPUTERNAME"
+  ],
+  "exec_sinks": [
+   {
+    "name": "child_process",
+    "regex": "child_process|\\b(?:execSync|spawnSync|execFileSync|execFile|spawn|fork)\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "eval",
+    "regex": "\\beval\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "Function",
+    "regex": "(?:^|[^\\w$.])(?:new\\s+)?Function\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "vm",
+    "regex": "\\bvm\\.(?:runIn(?:New|This)?Context|Script)\\s*\\(",
+    "flags": ""
+   }
+  ],
+  "rule": "hook target: API net sink AND host identity AND no exec sink; no 8 KiB cap; grade contributing until measured (R2)"
+ },
+ "s7": {
+  "capability_classes": [
+   "net",
+   "exec",
+   "decode",
+   "obf",
+   "cred"
+  ],
+  "capabilities": "net:<API sink> | exec:<EXEC_SINKS> | decode:<DECODE_MARKERS, fromCharCode-run, hex-density, numeric-hex> | obf:_0x-idents (>= s2MinIdents) | cred:<CRED_SOURCES>; url-literal never",
+  "decode_markers": [
+   {
+    "name": "eval",
+    "regex": "\\beval\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "Function",
+    "regex": "(?:^|[^\\w$.])(?:new\\s+)?Function\\s*\\(",
+    "flags": ""
+   },
+   {
+    "name": "atob",
+    "regex": "\\batob\\s*\\(",
+    "flags": ""
+   }
+  ],
+  "cred_sources": [
+   {
+    "name": "npmrc",
+    "regex": "\\.npmrc\\b",
+    "flags": ""
+   },
+   {
+    "name": "ssh-key",
+    "regex": "\\.ssh\\/|\\bid_rsa\\b|\\bid_ed25519\\b|\\bid_ecdsa\\b",
+    "flags": ""
+   },
+   {
+    "name": "aws-credentials",
+    "regex": "\\.aws\\/credentials|\\bAWS_SECRET_ACCESS_KEY\\b|\\bAWS_ACCESS_KEY_ID\\b",
+    "flags": ""
+   },
+   {
+    "name": "git-credentials",
+    "regex": "\\.git-credentials\\b",
+    "flags": ""
+   },
+   {
+    "name": "token-env",
+    "regex": "\\b(?:NPM_TOKEN|GITHUB_TOKEN|GH_TOKEN|NODE_AUTH_TOKEN|NPM_AUTH_TOKEN|GITLAB_TOKEN|CI_JOB_TOKEN)\\b",
+    "flags": ""
+   },
+   {
+    "name": "env-dump",
+    "regex": "JSON\\.stringify\\(\\s*process\\.env\\s*\\)|Object\\.(?:keys|entries|values)\\(\\s*process\\.env\\s*\\)|\\.\\.\\.process\\.env\\b",
+    "flags": ""
+   },
+   {
+    "name": "wallet-file",
+    "regex": "wallet\\.dat|Local Storage\\/leveldb|\\.config\\/gcloud|\\.kube\\/config",
+    "flags": ""
+   }
+  ],
+  "s2_min_idents": 20,
+  "rule": "per role main/bin: gain = current capability absent from the predecessor same role (bin = union); role READ/ABSENT/NOT_CHECKED; predecessor NOT_CHECKED checked before cold start; cold start NOT_APPLICABLE; refused archive NOT_CHECKED; row names predecessor {version, basis}; runtime predecessor = last version the proxy served (R3). static-checks-1.5 outcome: any role meeting named_condition INDICATOR, else any role NOT_CHECKED NOT_CHECKED, else NONE; a gain not named is NONE and stays on the row",
+  "absent_rule": "review verdict 2026-10-21: ABSENT (verified absent) only when the archive was read in full; a named candidate not seen otherwise NOT_CHECKED; no candidate on the keep list = none declared; row notes current/predecessor <role>: ... (verified absent); coverage counts verified-absent roles as checked; S1-S5 keep nothing-read = NOT_CHECKED. static-checks-1.5: a role whose predecessor role is ABSENT is never named (predecessor_nonempty false), so no indicator is against an empty baseline; the row keeps the notes",
+  "summary_shape": "entryFactsSummary -> { version, archive_read_in_full, by_role: { main|bin: { status READ|ABSENT|NOT_CHECKED, caps[], files[], not_checked[], absent? } } } (what the proxy stores per served version, R4)",
+  "named_condition": {
+   "eligible": "the predecessor same role status READ (predecessor_nonempty: a file read, not ABSENT; a file read with no capability counts) AND the current role status READ",
+   "arms": [
+    "decode-obf",
+    "net+exec"
+   ],
+   "decode_obf": "any gain whose class is decode or obf (decode:*, obf:*) except decode_obf_excluded (R9a; any later decode/obf class counts)",
+   "net_exec": "at least one gain net:<API sink> (api_net_sinks names only) AND at least one gain exec:* except exec_excluded, in the same role (R9b)",
+   "decode_obf_excluded": [
+    "decode:Function"
+   ],
+   "exec_excluded": [
+    "exec:Function"
+   ],
+   "named_gains": "the decode/obf gains that count, plus, when net_exec holds, its net and exec gains (exec_excluded never listed); sorted, unique",
+   "row_fields": "by_role.<role>: gains (full set, Function included), predecessor_nonempty, arms, named, not_named (why a gain is not named)",
+   "excerpt": "S7: vs <v> (<basis>): <role> gained <gains> (<arms joined ,>: <named joined ,>)[; ...] [static-checks-1.5]  (named roles only)",
+   "test_vectors": [
+    {
+     "gains": [
+      "decode:eval",
+      "exec:eval",
+      "net:xhr"
+     ],
+     "arms": [
+      "decode-obf",
+      "net+exec"
+     ],
+     "named": [
+      "decode:eval",
+      "exec:eval",
+      "net:xhr"
+     ]
+    },
+    {
+     "gains": [
+      "decode:atob"
+     ],
+     "arms": [
+      "decode-obf"
+     ],
+     "named": [
+      "decode:atob"
+     ]
+    },
+    {
+     "gains": [
+      "decode:numeric-hex",
+      "obf:_0x-idents"
+     ],
+     "arms": [
+      "decode-obf"
+     ],
+     "named": [
+      "decode:numeric-hex",
+      "obf:_0x-idents"
+     ]
+    },
+    {
+     "gains": [
+      "exec:child_process",
+      "net:http-request"
+     ],
+     "arms": [
+      "net+exec"
+     ],
+     "named": [
+      "exec:child_process",
+      "net:http-request"
+     ]
+    },
+    {
+     "gains": [
+      "decode:later-class"
+     ],
+     "arms": [
+      "decode-obf"
+     ],
+     "named": [
+      "decode:later-class"
+     ]
+    },
+    {
+     "gains": [
+      "decode:Function",
+      "exec:Function"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "decode:Function",
+      "exec:Function",
+      "net:websocket"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "exec:Function",
+      "net:fetch"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "net:fetch"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "exec:child_process"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "net:url-literal",
+      "exec:child_process"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "cred:npmrc",
+      "cred:env-dump"
+     ],
+     "arms": [],
+     "named": []
+    },
+    {
+     "gains": [
+      "cred:npmrc",
+      "exec:child_process",
+      "net:fetch"
+     ],
+     "arms": [
+      "net+exec"
+     ],
+     "named": [
+      "exec:child_process",
+      "net:fetch"
+     ]
+    },
+    {
+     "gains": [
+      "net:fetch",
+      "exec:Function",
+      "exec:eval"
+     ],
+     "arms": [
+      "net+exec"
+     ],
+     "named": [
+      "exec:eval",
+      "net:fetch"
+     ]
+    },
+    {
+     "gains": [
+      "decode:Function",
+      "decode:eval"
+     ],
+     "arms": [
+      "decode-obf"
+     ],
+     "named": [
+      "decode:eval"
+     ]
+    },
+    {
+     "gains": [],
+     "arms": [],
+     "named": []
+    }
+   ],
+   "verification": "the 145 stored static-checks-1.4 S7 hit rows (ops .s7-subsets.json: B2 23, compromised_lib Run 3 54, malicious_intent 68) name exactly B2 2 (@firebase/database 0.2.2-0, @velcro/runtime 0.7.0), compromised_lib 17, malicious_intent 28 (npmamzs 1.1.0 included); recon test v613 R3; the check of record is ops' hit-row run with its driver on the v6.13 tree"
+  }
+ },
+ "limits": {
+  "keepFiles": 6,
+  "keepBytes": 1048576,
+  "maxBin": 4,
+  "maxHookTargets": 3,
+  "s1MaxBytes": 8192,
+  "s2MinIdents": 20,
+  "s2MinCharCodes": 50,
+  "s2HexDensity": 0.15,
+  "s2MinNumericHex": 1000,
+  "s4MinAddressFamilies": 2,
+  "headBytes": 8000,
+  "pathChars": 200
+ },
+ "unchanged_from_1_5": "every 1.5 export other than STATIC_CHECKS_VERSION is equal in 1.6 (27 non-function exports, checked in code against the staged v6.13 tree); every section above facts is the 1.5 file's",
+ "facts": {
+  "rule": "SHADOW FACTS (operator ruling R11, 2026-10-24): computed and recorded, never read by a row outcome, an indicator, a gate, a class or a notice; S0-S7 unchanged by construction. Re-tiering on any of them is a later ruling.",
+  "note": "shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict",
+  "limits": {
+   "windowBytes": 2097152,
+   "b64MinRun": 400,
+   "hexEscapeMinRun": 60,
+   "magicBytes": 16,
+   "diversityRef": 16,
+   "listed": 20
+  },
+  "decoded_magic": [
+   {
+    "name": "wasm",
+    "hex_prefix": "0061736d"
+   },
+   {
+    "name": "png",
+    "hex_prefix": "89504e470d0a1a0a"
+   },
+   {
+    "name": "gzip",
+    "hex_prefix": "1f8b"
+   },
+   {
+    "name": "woff",
+    "hex_prefix": "774f4646"
+   },
+   {
+    "name": "woff2",
+    "hex_prefix": "774f4632"
+   }
+  ],
+  "input_contract": {
+   "members": "every regular-file member of the archive (the installed view: the last duplicate wins), its first 2097152 bytes; binary = a NUL in the first 8000 bytes (any extension); truncated = size beyond the window",
+   "s5_bodies": "for every hook-target path on the keep list, the WHOLE body streamed through makeBase64Share (no bytes kept); the result rides on the not-kept entry as base64 and lands on a FIRING S5 file entry",
+   "proxy_note": "proxy/tar-walk.js keeps the keep list only today: this input (a per-member window and the hook-target body stream) is the owner's to build"
+  },
+  "rule6": {
+   "b64_run": {
+    "re": "[A-Za-z0-9+/]{400,}={0,2}",
+    "flags": "g"
+   },
+   "hex_escape_run": {
+    "re": "(?:\\\\x[0-9a-fA-F]{2}){60,}",
+    "flags": "g"
+   },
+   "hex_kind": "a base64 run whose characters without the = padding are all [0-9a-f] is kind hex",
+   "chars": "the regex match length for base64/hex (padding included); for hex-escape, the hex digits (2 per escape)",
+   "distinct_chars": "distinct characters of the run without padding; of the hex digits for hex-escape",
+   "magic": "base64: Buffer.from(first 24 characters, base64); hex and hex-escape: the first 32 hex digits; then decoded_magic by prefix, else null",
+   "package": "runs and files counted in full; by_kind, by_magic (none for null), under_diversity_ref (distinct_chars < diversityRef); the first `listed` runs listed with their path"
+  },
+  "rule7": {
+   "alphabet": "A-Z a-z 0-9 + /",
+   "run": "a run of at least 400 alphabet bytes counts with up to two = bytes directly after it; any other byte (or a third =) ends a run; an alphabet byte after = starts a new run",
+   "share": "base64_bytes / bytes, Number(x.toFixed(3)); 0 for an empty body",
+   "magic": "decided once, when the FIRST run reaches 400 bytes: decoded_magic of Buffer.from(that run's first 24 characters, base64), else null",
+   "s5_row": "a FIRING S5 file entry carries base64_share and base64_magic; without a streamed body both null and base64_note \"body not streamed: base64 share not checked\"; a non-firing entry carries none"
+  },
+  "s8a": {
+   "excluded_path": {
+    "re": "(?:^|\\/)(?:test|__tests__|fixtures|vendor|node_modules)\\/",
+    "flags": ""
+   },
+   "dynamic_code_p2": {
+    "re": "\\beval\\s*\\(|(?:^|[^\\w$.])(?:new\\s+)?Function\\s*\\(|\\bvm\\.runIn(?:New|This)?Context\\s*\\(|\\bvm\\.Script\\s*\\(",
+    "flags": ""
+   },
+   "raw_ip_url_p9": {
+    "re": "\\bhttps?:\\/\\/(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d+)?\\b",
+    "flags": ""
+   },
+   "count": "lines of the window (split on \\n) with a match, per member; the package splits rest / excluded into lines and files with a hit, and lists the excluded files with a hit"
+  },
+  "s8d": {
+   "agent_names": [
+    "claude",
+    "cursor",
+    "codex",
+    "gemini",
+    "opencode",
+    "windsurf",
+    "github-copilot"
+   ],
+   "home_dir": {
+    "re": "(?:^|[\\\\/'\"`])\\.(claude|cursor|codex|gemini|opencode|windsurf|github-copilot)(?=[\\\\/'\"`]|$)",
+    "flags": "gm"
+   },
+   "xdg_dir": {
+    "re": "\\.config(?:[\\\\/]|['\"`]\\s*,\\s*['\"`])(claude|cursor|codex|gemini|opencode|windsurf|github-copilot)(?=[\\\\/'\"`]|$)",
+    "flags": "gm"
+   },
+   "write_markers": [
+    {
+     "name": "fs-write",
+     "re": "\\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|symlinkSync|outputFileSync|outputFile|outputJsonSync|outputJson|writeJsonSync|writeJson)\\s*\\(",
+     "flags": ""
+    },
+    {
+     "name": "fs-mkdir",
+     "re": "\\b(?:mkdirSync|mkdir|mkdirp|ensureDirSync|ensureDir)\\s*\\(",
+     "flags": ""
+    },
+    {
+     "name": "shell-copy",
+     "re": "(?:^|[\\s;&|(\"'`])(?:cp|mv|ln|rsync)\\s",
+     "flags": "m"
+    },
+    {
+     "name": "shell-mkdir",
+     "re": "(?:^|[\\s;&|(\"'`])mkdir\\s",
+     "flags": "m"
+    },
+    {
+     "name": "shell-tee",
+     "re": "(?:^|[\\s;&|(\"'`])tee\\s",
+     "flags": "m"
+    },
+    {
+     "name": "ps-write",
+     "re": "\\b(?:Copy-Item|New-Item|Set-Content|Add-Content|Out-File)\\b",
+     "flags": "i"
+    }
+   ],
+   "shell_redirect": {
+    "name": "shell-redirect",
+    "re": "(?<![=<>-])>>?\\s*[\"']?(?:~|\\$\\{?HOME\\}?|%USERPROFILE%|\\$env:USERPROFILE)",
+    "flags": ""
+   },
+   "shell_script": {
+    "re": "\\.(?:sh|bash|zsh|ps1|cmd|bat)$",
+    "flags": "i"
+   },
+   "rule": "a text names a dir (dirs sorted, unique: .<name> or .config/<name>) AND matches a write marker (marker-list order); the redirect only for hook commands and shell-script paths; files listed with their keep-list roles (else [\"module\"]), then hook commands"
+  },
+  "s8h": {
+   "classes": [
+    "network",
+    "filesystem",
+    "process",
+    "env",
+    "exec",
+    "encoding"
+   ],
+   "tokens": [
+    {
+     "class": "network",
+     "name": "http-request",
+     "re": "\\b(?:https?|http2)\\.(?:request|get)\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "fetch",
+     "re": "\\bfetch\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "net-connect",
+     "re": "\\bnet\\.(?:connect|createConnection)\\s*\\(|\\btls\\.connect\\s*\\(|\\bdgram\\.createSocket\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "websocket",
+     "re": "\\bnew\\s+WebSocket\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "xhr",
+     "re": "\\bnew\\s+XMLHttpRequest\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "axios",
+     "re": "\\baxios(?:\\.\\w+)?\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "net-module",
+     "re": "\\b(?:require|import)\\s*\\(\\s*['\"`](?:node:)?(?:https?|http2|net|dgram|tls|dns)['\"`]|\\bfrom\\s*['\"`](?:node:)?(?:https?|http2|net|dgram|tls|dns)['\"`]",
+     "flags": ""
+    },
+    {
+     "class": "network",
+     "name": "net-tool",
+     "re": "\\b(?:curl|wget)\\b",
+     "flags": ""
+    },
+    {
+     "class": "filesystem",
+     "name": "fs-call",
+     "re": "\\b(?:readFileSync|writeFileSync|appendFileSync|readFile|writeFile|appendFile|createWriteStream|createReadStream|unlinkSync|unlink|rmSync|rmdirSync|chmodSync|chmod|renameSync|copyFileSync|readdirSync|symlinkSync)\\s*\\(|\\bos\\.homedir\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "filesystem",
+     "name": "fs-module",
+     "re": "\\b(?:require|import)\\s*\\(\\s*['\"`](?:node:)?(?:fs|fs\\/promises)['\"`]|\\bfrom\\s*['\"`](?:node:)?(?:fs|fs\\/promises)['\"`]",
+     "flags": ""
+    },
+    {
+     "class": "process",
+     "name": "process-object",
+     "re": "\\bprocess\\s*\\.\\s*(?!env\\b)[A-Za-z_$]|\\bprocess\\s*\\[",
+     "flags": ""
+    },
+    {
+     "class": "env",
+     "name": "env-read",
+     "re": "\\bprocess\\s*\\.\\s*env\\b|\\b(?:Deno|Bun)\\.env\\b|\\bimport\\.meta\\.env\\b",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "child_process",
+     "re": "child_process|\\b(?:execSync|spawnSync|execFileSync|execFile|spawn|fork)\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "eval",
+     "re": "\\beval\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "Function",
+     "re": "(?:^|[^\\w$.])(?:new\\s+)?Function\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "vm",
+     "re": "\\bvm\\.(?:runIn(?:New|This)?Context|Script)\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "dynamic-import",
+     "re": "\\bimport\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "dynamic-require",
+     "re": "\\brequire\\s*\\(\\s*(?!['\"`\\s])",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "wasm",
+     "re": "\\bWebAssembly\\s*\\.\\s*(?:instantiate|instantiateStreaming|compile|compileStreaming|Module|Instance)\\b",
+     "flags": ""
+    },
+    {
+     "class": "exec",
+     "name": "worker",
+     "re": "\\bnew\\s+Worker\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "encoding",
+     "name": "decode-call",
+     "re": "\\batob\\s*\\(|\\bbtoa\\s*\\(|\\bBuffer\\s*\\.\\s*from\\s*\\(|\\bString\\s*\\.\\s*fromCharCode\\b|\\bTextDecoder\\b|\\bunescape\\s*\\(|\\bdecodeURIComponent\\s*\\(",
+     "flags": ""
+    },
+    {
+     "class": "encoding",
+     "name": "encoding-name",
+     "re": "['\"`](?:base64|base64url|hex|latin1|binary)['\"`]",
+     "flags": ""
+    },
+    {
+     "class": "encoding",
+     "name": "hex-escape",
+     "re": "\\\\x[0-9a-fA-F]{2}",
+     "flags": ""
+    }
+   ],
+   "rule": "a member with an encoded run has the encoding class (token encoded-run); an install hook (preinstall, install, postinstall) is an exec surface; present (no_io_surface false, CHECKED) on any token or hook whatever was not read; NONE (true) only when the archive was read in full and every member read as text within the window; else NOT_CHECKED, no_io_surface null, with the reason"
+  },
+  "block_shape": "checks.static_checks.facts = { version, note, status, encoded_runs, excluded_paths, agent_config_writes, io_surface }; without members: { version, note, status NOT_CHECKED, reason \"no member facts supplied\" }",
+  "vectors": {
+   "encoded_runs": [
+    {
+     "text": "const w = \"AGFzbQEAAAALMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2\";",
+     "expected": [
+      {
+       "kind": "base64",
+       "chars": 544,
+       "distinct_chars": 64,
+       "magic": "wasm"
+      }
+     ]
+    },
+    {
+     "text": "url(data:image/png;base64,iVBORw0KGgoLMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2)",
+     "expected": [
+      {
+       "kind": "base64",
+       "chars": 544,
+       "distinct_chars": 64,
+       "magic": "png"
+      }
+     ]
+    },
+    {
+     "text": "\"d09GMgswVXqfxOkOM1h9osfsETZbgKXK7xQ5XoOozfIXPGGGq9D1Gj9kia7T+B1CZ4yx1vsgRWqPtNn+I0htkrfcASZLcJW63wQpTnOYveIHLFF2m8DlCi9UeZ7D6A0yV3yhxusQNVp/pMnuEzhdgqfM8RY7YIWqz/QZPmOIrdL3HEFmi7DV+h9EaY6z2P0iR2yRttsAJUpvlLneAyhNcpe84QYrUHWav+QJLlN4ncLnDDFWe6DF6g80WX6jyO0SN1yBpsvwFTpfhKnO8xg9Yoes0fYbQGWKr9T5HkNojbLX/CFGa5C12v8kSW6TuN0CJ0xxlrvgBSpPdJm+4wgtUnecweYLMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbY=\"",
+     "expected": [
+      {
+       "kind": "base64",
+       "chars": 540,
+       "distinct_chars": 64,
+       "magic": "woff2"
+      }
+     ]
+    },
+    {
+     "text": "\"dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCB0aGUgcXVpY2sgYnJvd24gZm94IGp1bXBzIG92ZXIgdGhlIGxhenkgZG9nLCBhZ2FpbiBhbmQgYWdhaW4sIHRoZSBxdWljayBicm93biBmb3gganVtcHMgb3ZlciB0aGUgbGF6eSBkb2csIGFnYWluIGFuZCBhZ2FpbiwgdGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCB0aGUgcXVpY2sgYnJvd24gZm94IGp1bXBzIG92ZXIgdGhlIGxhenkgZG9nLCBhZ2FpbiBhbmQgYWdhaW4sIHRoZSBxdWljayBicm93biBmb3gganVtcHMgb3ZlciB0aGUgbGF6eSBkb2csIGFnYWluIGFuZCBhZ2FpbiwgdGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCB0aGUgcXVpY2sgYnJvd24gZm94IGp1bXBzIG92ZXIgdGhlIGxhenkgZG9nLCBhZ2FpbiBhbmQgYWdhaW4sIHRoZSBxdWljayBicm93biBmb3gganVtcHMgb3ZlciB0aGUgbGF6eSBkb2csIGFnYWluIGFuZCBhZ2FpbiwgdGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCA=\"",
+     "expected": [
+      {
+       "kind": "base64",
+       "chars": 828,
+       "distinct_chars": 53,
+       "magic": null
+      }
+     ]
+    },
+    {
+     "text": "x = \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\";",
+     "expected": [
+      {
+       "kind": "base64",
+       "chars": 500,
+       "distinct_chars": 1,
+       "magic": null
+      }
+     ]
+    },
+    {
+     "text": "h = \"1f8b08000b30557a9fc4e90e33587da2c7ec11365b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6fb20456a8fb4d9fe23486d92b7dc01264b7095badf04294e7398bde2072c51769bc0e50a2f54799ec3e80d32577ca1c6eb10355a7fa4c9ee13385d82a7ccf1163b6085aacff4193e6388add2f71c41668bb0d5fa1f44698eb3d8fd22476c91b6db00254a6f94b9de03284d7297bce1062b50759abfe4092e53789dc2e70c31567ba0c5ea0f34597ea3c8ed12375c81a6cbf0153a5f84a9cef3183d6287acd1f61b40658aafd4f91e43688db2d7fc21466b90b5daff24496e93b8dd02274c7196bbe0052a4f7499bee3082d52779cc1e60b30557a9fc4e90e33587da2c7ec11365b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6fb20456a8fb4d9fe23486d92b7dc01264b7095badf04294e7398bde2072c51769bc0e50a2f54799ec3e80d32577ca1c6eb10355a7fa4c9ee13385d82a7ccf1163b6085aacff4193e6388add2f71c41668bb0d5fa1f44698eb3d8fd22476c91b6\";",
+     "expected": [
+      {
+       "kind": "hex",
+       "chars": 808,
+       "distinct_chars": 16,
+       "magic": "gzip"
+      }
+     ]
+    },
+    {
+     "text": "s = \"\\x89\\x50\\x4e\\x47\\x0d\\x0a\\x1a\\x0a\\x0b\\x30\\x55\\x7a\\x9f\\xc4\\xe9\\x0e\\x33\\x58\\x7d\\xa2\\xc7\\xec\\x11\\x36\\x5b\\x80\\xa5\\xca\\xef\\x14\\x39\\x5e\\x83\\xa8\\xcd\\xf2\\x17\\x3c\\x61\\x86\\xab\\xd0\\xf5\\x1a\\x3f\\x64\\x89\\xae\\xd3\\xf8\\x1d\\x42\\x67\\x8c\\xb1\\xd6\\xfb\\x20\\x45\\x6a\\x8f\\xb4\\xd9\\xfe\\x23\\x48\\x6d\\x92\\xb7\\xdc\\x01\\x26\\x4b\\x70\\x95\\xba\\xdf\\x04\\x29\\x4e\";",
+     "expected": [
+      {
+       "kind": "hex-escape",
+       "chars": 160,
+       "distinct_chars": 16,
+       "magic": "png"
+      }
+     ]
+    },
+    {
+     "text": "\"QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ\"",
+     "expected": []
+    },
+    {
+     "text": "\"\\x89\\x50\\x4e\\x47\\x0d\\x0a\\x1a\\x0a\\x0b\\x30\\x55\\x7a\\x9f\\xc4\\xe9\\x0e\\x33\\x58\\x7d\\xa2\\xc7\\xec\\x11\\x36\\x5b\\x80\\xa5\\xca\\xef\\x14\\x39\\x5e\\x83\\xa8\\xcd\\xf2\\x17\\x3c\\x61\\x86\\xab\\xd0\\xf5\\x1a\\x3f\\x64\\x89\\xae\\xd3\\xf8\\x1d\\x42\\x67\\x8c\\xb1\\xd6\\xfb\\x20\\x45\"",
+     "expected": []
+    },
+    {
+     "text": "\"AGFzbQEAAAALMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2\" + \"iVBORw0KGgoLMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2\"",
+     "expected": [
+      {
+       "kind": "base64",
+       "chars": 544,
+       "distinct_chars": 64,
+       "magic": "wasm"
+      },
+      {
+       "kind": "base64",
+       "chars": 544,
+       "distinct_chars": 64,
+       "magic": "png"
+      }
+     ]
+    }
+   ],
+   "base64_share": [
+    {
+     "body_utf8": "var w=\"AGFzbQEAAAALMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2\";\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - \nvar t=\"QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ\";\n",
+     "expected": {
+      "bytes": 1964,
+      "base64_bytes": 544,
+      "share": 0.277,
+      "magic": "wasm"
+     },
+     "note": "identical for chunk sizes 1, 7 and 401"
+    },
+    {
+     "body_utf8": "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCB0aGUgcXVpY2sgYnJvd24gZm94IGp1bXBzIG92ZXIgdGhlIGxhenkgZG9nLCBhZ2FpbiBhbmQgYWdhaW4sIHRoZSBxdWljayBicm93biBmb3gganVtcHMgb3ZlciB0aGUgbGF6eSBkb2csIGFnYWluIGFuZCBhZ2FpbiwgdGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCB0aGUgcXVpY2sgYnJvd24gZm94IGp1bXBzIG92ZXIgdGhlIGxhenkgZG9nLCBhZ2FpbiBhbmQgYWdhaW4sIHRoZSBxdWljayBicm93biBmb3gganVtcHMgb3ZlciB0aGUgbGF6eSBkb2csIGFnYWluIGFuZCBhZ2FpbiwgdGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCB0aGUgcXVpY2sgYnJvd24gZm94IGp1bXBzIG92ZXIgdGhlIGxhenkgZG9nLCBhZ2FpbiBhbmQgYWdhaW4sIHRoZSBxdWljayBicm93biBmb3gganVtcHMgb3ZlciB0aGUgbGF6eSBkb2csIGFnYWluIGFuZCBhZ2FpbiwgdGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZywgYWdhaW4gYW5kIGFnYWluLCA=",
+     "expected": {
+      "bytes": 828,
+      "base64_bytes": 828,
+      "share": 1,
+      "magic": null
+     },
+     "note": "identical for chunk sizes 1, 7 and 401"
+    },
+    {
+     "body_utf8": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ iVBORw0KGgoLMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2",
+     "expected": {
+      "bytes": 945,
+      "base64_bytes": 944,
+      "share": 0.999,
+      "magic": null
+     },
+     "note": "identical for chunk sizes 1, 7 and 401"
+    },
+    {
+     "body_utf8": "",
+     "expected": {
+      "bytes": 0,
+      "base64_bytes": 0,
+      "share": 0,
+      "magic": null
+     },
+     "note": "identical for chunk sizes 1, 7 and 401"
+    }
+   ],
+   "member_facts": [
+    {
+     "path": "index.js",
+     "size": 55,
+     "data_utf8": "module.exports = function add(a, b) { return a + b; };\n",
+     "expected": {
+      "path": "index.js",
+      "size": 55,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "test/a.js",
+     "size": 81,
+     "data_utf8": "const f = new Function(\"return 1\");\nfetch(\"http://10.0.0.1:8080/x\");\neval(code);\n",
+     "expected": {
+      "path": "test/a.js",
+      "size": 81,
+      "truncated": false,
+      "excluded_path": true,
+      "binary": false,
+      "io": [
+       "network",
+       "exec"
+      ],
+      "io_tokens": [
+       "fetch",
+       "eval",
+       "Function"
+      ],
+      "p2_lines": 2,
+      "p9_lines": 1,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "lib/vendor/f.js",
+     "size": 9,
+     "data_utf8": "eval(x);\n",
+     "expected": {
+      "path": "lib/vendor/f.js",
+      "size": 9,
+      "truncated": false,
+      "excluded_path": true,
+      "binary": false,
+      "io": [
+       "exec"
+      ],
+      "io_tokens": [
+       "eval"
+      ],
+      "p2_lines": 1,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "vendorx/a.js",
+     "size": 9,
+     "data_utf8": "eval(x);\n",
+     "expected": {
+      "path": "vendorx/a.js",
+      "size": 9,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "exec"
+      ],
+      "io_tokens": [
+       "eval"
+      ],
+      "p2_lines": 1,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "lib/setup.js",
+     "size": 123,
+     "data_utf8": "const p = require(\"path\").join(require(\"os\").homedir(), \".claude\", \"settings.json\");\nrequire(\"fs\").writeFileSync(p, \"{}\");\n",
+     "expected": {
+      "path": "lib/setup.js",
+      "size": 123,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "filesystem"
+      ],
+      "io_tokens": [
+       "fs-call",
+       "fs-module"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": {
+       "dirs": [
+        ".claude"
+       ],
+       "writes": [
+        "fs-write"
+       ]
+      }
+     }
+    },
+    {
+     "path": "lib/b.js",
+     "size": 83,
+     "data_utf8": "fs.mkdirSync(path.join(os.homedir(), \".config\", \"opencode\"), { recursive: true });\n",
+     "expected": {
+      "path": "lib/b.js",
+      "size": 83,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "filesystem"
+      ],
+      "io_tokens": [
+       "fs-call"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": {
+       "dirs": [
+        ".config/opencode"
+       ],
+       "writes": [
+        "fs-mkdir"
+       ]
+      }
+     }
+    },
+    {
+     "path": "scripts/i.sh",
+     "size": 57,
+     "data_utf8": "mkdir -p ~/.cursor/rules && cp rules.md ~/.cursor/rules/\n",
+     "expected": {
+      "path": "scripts/i.sh",
+      "size": 57,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": {
+       "dirs": [
+        ".cursor"
+       ],
+       "writes": [
+        "shell-copy",
+        "shell-mkdir"
+       ]
+      }
+     }
+    },
+    {
+     "path": "scripts/r.sh",
+     "size": 36,
+     "data_utf8": "echo \"{}\" > ~/.claude/settings.json\n",
+     "expected": {
+      "path": "scripts/r.sh",
+      "size": 36,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": {
+       "dirs": [
+        ".claude"
+       ],
+       "writes": [
+        "shell-redirect"
+       ]
+      }
+     }
+    },
+    {
+     "path": "lib/g.js",
+     "size": 40,
+     "data_utf8": "const later = n > \"~/.cursor/settings\";\n",
+     "expected": {
+      "path": "lib/g.js",
+      "size": 40,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "lib/e.js",
+     "size": 46,
+     "data_utf8": "fs.writeFileSync(x, $(\".cursorline\").text());\n",
+     "expected": {
+      "path": "lib/e.js",
+      "size": 46,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "filesystem"
+      ],
+      "io_tokens": [
+       "fs-call"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "index.js",
+     "size": 28,
+     "data_utf8": "const e = process.env.HOME;\n",
+     "expected": {
+      "path": "index.js",
+      "size": 28,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "env"
+      ],
+      "io_tokens": [
+       "env-read"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "index.js",
+     "size": 18,
+     "data_utf8": "import(\"./x.js\");\n",
+     "expected": {
+      "path": "index.js",
+      "size": 18,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "exec"
+      ],
+      "io_tokens": [
+       "dynamic-import"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "index.js",
+     "size": 15,
+     "data_utf8": "require(name);\n",
+     "expected": {
+      "path": "index.js",
+      "size": 15,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "exec"
+      ],
+      "io_tokens": [
+       "dynamic-require"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "index.js",
+     "size": 22,
+     "data_utf8": "require(\"./util.js\");\n",
+     "expected": {
+      "path": "index.js",
+      "size": 22,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "dist/a.js",
+     "size": 1054,
+     "data_utf8": "a=\"AGFzbQEAAAALMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbbbACVKb5S53gMoTXKXvOEGK1B1mr/kCS5TeJ3C5wwxVnugxeoPNFl+o8jtEjdcgabL8BU6X4SpzvMYPWKHrNH2G0Bliq/U+R5DaI2y1/whRmuQtdr/JEluk7jdAidMcZa74AUqT3SZvuMILVJ3nMHmCzBVep/E6Q4zWH2ix+wRNluApcrvFDleg6jN8hc8YYar0PUaP2SJrtP4HUJnjLHW+yBFao+02f4jSG2St9wBJktwlbrfBClOc5i94gcsUXabwOUKL1R5nsPoDTJXfKHG6xA1Wn+kye4TOF2Cp8zxFjtgharP9Bk+Y4it0vccQWaLsNX6H0RpjrPY/SJHbJG2\";b=\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\";",
+     "expected": {
+      "path": "dist/a.js",
+      "size": 1054,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": false,
+      "io": [
+       "encoding"
+      ],
+      "io_tokens": [
+       "encoded-run"
+      ],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 2,
+      "run_counts": {
+       "by_kind": {
+        "base64": 2,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 1,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 1
+       },
+       "under_diversity_ref": 1
+      },
+      "runs": [
+       {
+        "kind": "base64",
+        "chars": 544,
+        "distinct_chars": 64,
+        "magic": "wasm"
+       },
+       {
+        "kind": "base64",
+        "chars": 500,
+        "distinct_chars": 1,
+        "magic": null
+       }
+      ],
+      "agent": null
+     }
+    },
+    {
+     "path": "logo.png",
+     "size": 416,
+     "data_base64": "iVBORw0KGgoAAAANSUhEUgswVXqfxOkOM1h9osfsETZbgKXK7xQ5XoOozfIXPGGGq9D1Gj9kia7T+B1CZ4yx1vsgRWqPtNn+I0htkrfcASZLcJW63wQpTnOYveIHLFF2m8DlCi9UeZ7D6A0yV3yhxusQNVp/pMnuEzhdgqfM8RY7YIWqz/QZPmOIrdL3HEFmi7DV+h9EaY6z2P0iR2yRttsAJUpvlLneAyhNcpe84QYrUHWav+QJLlN4ncLnDDFWe6DF6g80WX6jyO0SN1yBpsvwFTpfhKnO8xg9Yoes0fYbQGWKr9T5HkNojbLX/CFGa5C12v8kSW6TuN0CJ0xxlrvgBSpPdJm+4wgtUnecweYLMFV6n8TpDjNYfaLH7BE2W4Clyu8UOV6DqM3yFzxhhqvQ9Ro/ZImu0/gdQmeMsdb7IEVqj7TZ/iNIbZK33AEmS3CVut8EKU5zmL3iByxRdpvA5QovVHmew+gNMld8ocbrEDVaf6TJ7hM4XYKnzPEWO2CFqs/0GT5jiK3S9xxBZouw1fofRGmOs9j9IkdskbY=",
+     "expected": {
+      "path": "logo.png",
+      "size": 416,
+      "truncated": false,
+      "excluded_path": false,
+      "binary": true,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    },
+    {
+     "path": "big.js",
+     "size": 2097162,
+     "data_utf8": "module.exports = 1;\n",
+     "note": "size beyond the 2 MiB window, data = the first bytes only",
+     "expected": {
+      "path": "big.js",
+      "size": 2097162,
+      "truncated": true,
+      "excluded_path": false,
+      "binary": false,
+      "io": [],
+      "io_tokens": [],
+      "p2_lines": 0,
+      "p9_lines": 0,
+      "runs_total": 0,
+      "run_counts": {
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0
+      },
+      "runs": [],
+      "agent": null
+     }
+    }
+   ],
+   "static_facts": [
+    {
+     "name": "no I/O surface",
+     "members": [
+      {
+       "path": "index.js",
+       "data_utf8": "module.exports = function add(a, b) { return a + b; };\n"
+      },
+      {
+       "path": "README.md",
+       "data_utf8": "# add\nAdds two numbers.\n"
+      },
+      {
+       "path": "package.json",
+       "data_utf8": "{\"name\":\"add\",\"version\":\"1.0.0\"}"
+      }
+     ],
+     "hooks": [],
+     "keep_list_roles": {},
+     "archive_complete": true,
+     "expected": {
+      "version": "static-checks-1.6",
+      "note": "shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict",
+      "status": "CHECKED",
+      "encoded_runs": {
+       "runs": 0,
+       "files": 0,
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0,
+       "diversity_ref": 16,
+       "listed": []
+      },
+      "excluded_paths": {
+       "pattern": "(?:^|\\/)(?:test|__tests__|fixtures|vendor|node_modules)\\/",
+       "p2": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "p9": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "listed": [],
+       "note": "lines with a hit, over each member's read window: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (bare-IP URL)"
+      },
+      "agent_config_writes": {
+       "count": 0,
+       "listed": []
+      },
+      "io_surface": {
+       "status": "CHECKED",
+       "no_io_surface": true,
+       "classes": {
+        "network": 0,
+        "filesystem": 0,
+        "process": 0,
+        "env": 0,
+        "exec": 0,
+        "encoding": 0
+       },
+       "tokens": [],
+       "install_hooks": 0,
+       "members": 3,
+       "text_read": 3,
+       "not_read": 0,
+       "not_read_listed": [],
+       "note": "present = a token of any class in any member, or an install hook; NONE only when every member of an archive read in full was read as text"
+      }
+     }
+    },
+    {
+     "name": "binary member, no token",
+     "members": [
+      {
+       "path": "index.js",
+       "data_utf8": "module.exports = 1;\n"
+      }
+     ],
+     "plus_member": "logo.png as in member_facts",
+     "hooks": [],
+     "keep_list_roles": {},
+     "archive_complete": true,
+     "expected": {
+      "version": "static-checks-1.6",
+      "note": "shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict",
+      "status": "CHECKED",
+      "encoded_runs": {
+       "runs": 0,
+       "files": 0,
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0,
+       "diversity_ref": 16,
+       "listed": []
+      },
+      "excluded_paths": {
+       "pattern": "(?:^|\\/)(?:test|__tests__|fixtures|vendor|node_modules)\\/",
+       "p2": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "p9": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "listed": [],
+       "note": "lines with a hit, over each member's read window: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (bare-IP URL)"
+      },
+      "agent_config_writes": {
+       "count": 0,
+       "listed": []
+      },
+      "io_surface": {
+       "status": "NOT_CHECKED",
+       "no_io_surface": null,
+       "classes": {
+        "network": 0,
+        "filesystem": 0,
+        "process": 0,
+        "env": 0,
+        "exec": 0,
+        "encoding": 0
+       },
+       "tokens": [],
+       "install_hooks": 0,
+       "members": 2,
+       "text_read": 1,
+       "not_read": 1,
+       "not_read_listed": [
+        {
+         "path": "logo.png",
+         "reason": "binary (a NUL in the first 8000 bytes)"
+        }
+       ],
+       "reason": "1 member not read as text (1 binary, 0 beyond the 2 MiB read window)",
+       "note": "present = a token of any class in any member, or an install hook; NONE only when every member of an archive read in full was read as text"
+      }
+     }
+    },
+    {
+     "name": "install hook is an exec surface",
+     "members": [
+      {
+       "path": "index.js",
+       "data_utf8": "module.exports = 1;\n"
+      }
+     ],
+     "hooks": [
+      {
+       "source": "registry",
+       "hook": "postinstall",
+       "cmd": "node x.js"
+      }
+     ],
+     "keep_list_roles": {},
+     "archive_complete": true,
+     "expected": {
+      "version": "static-checks-1.6",
+      "note": "shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict",
+      "status": "CHECKED",
+      "encoded_runs": {
+       "runs": 0,
+       "files": 0,
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0,
+       "diversity_ref": 16,
+       "listed": []
+      },
+      "excluded_paths": {
+       "pattern": "(?:^|\\/)(?:test|__tests__|fixtures|vendor|node_modules)\\/",
+       "p2": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "p9": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "listed": [],
+       "note": "lines with a hit, over each member's read window: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (bare-IP URL)"
+      },
+      "agent_config_writes": {
+       "count": 0,
+       "listed": []
+      },
+      "io_surface": {
+       "status": "CHECKED",
+       "no_io_surface": false,
+       "classes": {
+        "network": 0,
+        "filesystem": 0,
+        "process": 0,
+        "env": 0,
+        "exec": 0,
+        "encoding": 0
+       },
+       "tokens": [],
+       "install_hooks": 1,
+       "members": 1,
+       "text_read": 1,
+       "not_read": 0,
+       "not_read_listed": [],
+       "note": "present = a token of any class in any member, or an install hook; NONE only when every member of an archive read in full was read as text"
+      }
+     }
+    },
+    {
+     "name": "archive not read in full",
+     "members": [
+      {
+       "path": "index.js",
+       "data_utf8": "module.exports = 1;\n"
+      }
+     ],
+     "hooks": [],
+     "keep_list_roles": {},
+     "archive_complete": false,
+     "expected": {
+      "version": "static-checks-1.6",
+      "note": "shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict",
+      "status": "CHECKED",
+      "encoded_runs": {
+       "runs": 0,
+       "files": 0,
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0,
+       "diversity_ref": 16,
+       "listed": []
+      },
+      "excluded_paths": {
+       "pattern": "(?:^|\\/)(?:test|__tests__|fixtures|vendor|node_modules)\\/",
+       "p2": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "p9": {
+        "rest": 0,
+        "excluded": 0,
+        "rest_files": 0,
+        "excluded_files": 0
+       },
+       "listed": [],
+       "note": "lines with a hit, over each member's read window: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (bare-IP URL)"
+      },
+      "agent_config_writes": {
+       "count": 0,
+       "listed": []
+      },
+      "io_surface": {
+       "status": "NOT_CHECKED",
+       "no_io_surface": null,
+       "classes": {
+        "network": 0,
+        "filesystem": 0,
+        "process": 0,
+        "env": 0,
+        "exec": 0,
+        "encoding": 0
+       },
+       "tokens": [],
+       "install_hooks": 0,
+       "members": 1,
+       "text_read": 1,
+       "not_read": 0,
+       "not_read_listed": [],
+       "reason": "archive not read in full",
+       "note": "present = a token of any class in any member, or an install hook; NONE only when every member of an archive read in full was read as text"
+      }
+     }
+    },
+    {
+     "name": "agent writes and the 8a split",
+     "members": [
+      {
+       "path": "lib/setup.js",
+       "data_utf8": "const p = require(\"path\").join(require(\"os\").homedir(), \".claude\", \"settings.json\");\nrequire(\"fs\").writeFileSync(p, \"{}\");\n"
+      },
+      {
+       "path": "test/a.js",
+       "data_utf8": "const f = new Function(\"return 1\");\nfetch(\"http://10.0.0.1:8080/x\");\neval(code);\n"
+      },
+      {
+       "path": "vendor/d.js",
+       "data_utf8": "const f = new Function(\"return 1\");\nfetch(\"http://10.0.0.1:8080/x\");\neval(code);\n"
+      },
+      {
+       "path": "dist/index.js",
+       "data_utf8": "eval(x);\n"
+      }
+     ],
+     "hooks": [
+      {
+       "source": "registry",
+       "hook": "postinstall",
+       "cmd": "mkdir -p ~/.codex && cp agent.toml ~/.codex/config.toml"
+      }
+     ],
+     "keep_list_roles": {
+      "lib/setup.js": [
+       "main"
+      ]
+     },
+     "archive_complete": true,
+     "expected": {
+      "version": "static-checks-1.6",
+      "note": "shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict",
+      "status": "CHECKED",
+      "encoded_runs": {
+       "runs": 0,
+       "files": 0,
+       "by_kind": {
+        "base64": 0,
+        "hex": 0,
+        "hex-escape": 0
+       },
+       "by_magic": {
+        "wasm": 0,
+        "png": 0,
+        "gzip": 0,
+        "woff": 0,
+        "woff2": 0,
+        "none": 0
+       },
+       "under_diversity_ref": 0,
+       "diversity_ref": 16,
+       "listed": []
+      },
+      "excluded_paths": {
+       "pattern": "(?:^|\\/)(?:test|__tests__|fixtures|vendor|node_modules)\\/",
+       "p2": {
+        "rest": 1,
+        "excluded": 4,
+        "rest_files": 1,
+        "excluded_files": 2
+       },
+       "p9": {
+        "rest": 0,
+        "excluded": 2,
+        "rest_files": 0,
+        "excluded_files": 2
+       },
+       "listed": [
+        {
+         "path": "test/a.js",
+         "p2": 2,
+         "p9": 1
+        },
+        {
+         "path": "vendor/d.js",
+         "p2": 2,
+         "p9": 1
+        }
+       ],
+       "note": "lines with a hit, over each member's read window: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (bare-IP URL)"
+      },
+      "agent_config_writes": {
+       "count": 2,
+       "listed": [
+        {
+         "source": "file",
+         "path": "lib/setup.js",
+         "roles": [
+          "main"
+         ],
+         "dirs": [
+          ".claude"
+         ],
+         "writes": [
+          "fs-write"
+         ]
+        },
+        {
+         "source": "hook",
+         "hook": "postinstall",
+         "hook_source": "registry",
+         "dirs": [
+          ".codex"
+         ],
+         "writes": [
+          "shell-copy",
+          "shell-mkdir"
+         ]
+        }
+       ]
+      },
+      "io_surface": {
+       "status": "CHECKED",
+       "no_io_surface": false,
+       "classes": {
+        "network": 2,
+        "filesystem": 1,
+        "process": 0,
+        "env": 0,
+        "exec": 3,
+        "encoding": 0
+       },
+       "tokens": [
+        "Function",
+        "eval",
+        "fetch",
+        "fs-call",
+        "fs-module"
+       ],
+       "install_hooks": 1,
+       "members": 4,
+       "text_read": 4,
+       "not_read": 0,
+       "not_read_listed": [],
+       "note": "present = a token of any class in any member, or an install hook; NONE only when every member of an archive read in full was read as text"
+      }
+     }
+    }
+   ],
+   "agent_config_write": [
+    {
+     "text": "mkdir -p ~/.codex && cp agent.toml ~/.codex/config.toml",
+     "shell": true,
+     "expected": {
+      "dirs": [
+       ".codex"
+      ],
+      "writes": [
+       "shell-copy",
+       "shell-mkdir"
+      ]
+     }
+    },
+    {
+     "text": "node build.js",
+     "shell": true,
+     "expected": null
+    },
+    {
+     "text": "echo x > ~/.claude/a",
+     "shell": true,
+     "expected": {
+      "dirs": [
+       ".claude"
+      ],
+      "writes": [
+       "shell-redirect"
+      ]
+     }
+    },
+    {
+     "text": "echo x > ~/.claude/a",
+     "shell": false,
+     "expected": null
+    },
+    {
+     "text": "see ~/.cursor/rules",
+     "shell": false,
+     "expected": null
+    }
+   ]
+  }
+ }
+}
