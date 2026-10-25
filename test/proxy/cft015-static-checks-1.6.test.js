@@ -147,6 +147,7 @@ const tarOf = (entries) => zlib.gzipSync(Buffer.concat([...entries.flatMap(([p, 
 const tgz = (files) => tarOf(Object.entries(files));
 const walkOf = async (buf, opts) => { const w = createTarWalker(opts); for (let i = 0; i < buf.length; i += 997) w.write(buf.subarray(i, i + 997)); return w.end(); };
 const plainOf = (r) => JSON.parse(JSON.stringify(r, (k, v) => (v && v.type === 'Buffer' ? `buf:${v.data.length}` : v)));
+const noMs = ({ memberMs, ...r }) => r;   // eslint-disable-line no-unused-vars -- the time the 1.6 work spent (T1), the only added key
 // var w="AGFzbQ..." (recon's wasm base64 run of 544 characters) lengthened to 2,544, so its share of a 1.2 MiB body reads 0.002
 const WASM = F.vectors.base64_share[0].body_utf8.split('\n')[0].replace('";', `${'A'.repeat(2000)}";`);
 const FILL = `\n${'- '.repeat(600 * 1024)}\n`;                             // 1.2 MiB of non-alphabet bytes: over the 1 MiB keep cap
@@ -159,9 +160,9 @@ test('W1 onMember(path, size, window): every regular file on the Linux view with
   const b = await walkOf(buf, {});
   assert.deepEqual(seen, [['package.json', PJ.length, PJ], ['README.md', 300, 'x'.repeat(100)], ['lib/index.js', 20, 'module.exports = 1;\n'], ['empty.txt', 0, ''], ['lib/index.js', 20, 'module.exports = 2;\n']],
     'every member in archive order (the caller keeps the last duplicate), each cut at the window');
-  assert.deepEqual(plainOf(a), plainOf(b));
+  assert.deepEqual(plainOf(noMs(a)), plainOf(b));
   const c = await walkOf(buf, { keep: ['lib/index.js'] }); const d = await walkOf(buf, { keep: ['lib/index.js'], onMember: () => {}, memberWindow: 100 });
-  assert.deepEqual(plainOf(c), plainOf(d), 'with a keep list too');
+  assert.deepEqual(plainOf(noMs(d)), plainOf(c), 'with a keep list too');
   const e = await walkOf(buf, { onMember: () => { throw new Error('a member tally never fails the walk'); }, memberWindow: 100 });
   assert.equal(e.ok, true);
 });
@@ -176,7 +177,7 @@ test('W2 a keep target over the keep cap is streamed whole through shareOf(): it
   assert.deepEqual(nk.base64, w); assert.equal(w.magic, 'wasm'); assert.ok(w.share > 0 && w.share < 0.01, String(w.share));
   assert.equal(nk.size, Buffer.byteLength(big)); assert.equal(r.files[0].path, 'index.js'); assert.equal('base64' in r.files[0], false);
   const plain = await walkOf(buf, { keep: ['install.js', 'index.js'] });
-  assert.deepEqual(plainOf({ ...r, notKept: r.notKept.map(({ base64, ...x }) => x) }), plainOf(plain));   // eslint-disable-line no-unused-vars
+  assert.deepEqual(plainOf({ ...noMs(r), notKept: r.notKept.map(({ base64, ...x }) => x) }), plainOf(plain));   // eslint-disable-line no-unused-vars
 });
 
 // ------------------------------------------------------------------ (D) the proxy's facts of an armed walk
@@ -362,5 +363,68 @@ test('E3 `report` names the armed version\'s static facts in the record-only blo
     assert.match(text, /z@1\.1\.0: .*static-checks-1\.6 facts: encoded runs 1 \(wasm 1\)/);
     const bare = { ...j, installs: j.installs.map((i) => ({ ...i, events: i.events.filter((e) => e.kind !== 'facts') })) };
     assert.equal(renderReport(j, { source: 'proxy' }).exit, renderReport(bare, { source: 'proxy' }).exit);
+  });
+});
+
+// ------------------------------------------------------------------ (G) the time 1.6 adds to an armed walk (operator ruling R12 2026-10-25)
+// As R8 measured the entry facts (facts_ms), an armed walk's 1.6 work is timed and stored beside them: the walker's member windows and
+// onMember calls (the memberFacts calls) and its share counter's push/end calls (the base64 share) as `memberMs`, plus staticFactsOf,
+// in milliseconds, as `static_facts_ms` on the version's entry_fact_versions row. proxy/static-checks.js is unchanged (R12), so recon's
+// parity record stands. No bar is set on the number in 0.1.5 (the facts change no outcome); the first week gives it.
+test('T1 the walker keeps the time its member windows, onMember calls and share counter spend as memberMs; without onMember or shareOf there is none', async () => {
+  const S = await SC();
+  const big = `${WASM}${FILL}`;
+  const buf = tgz({ 'package.json': '{"name":"p","version":"1.0.0"}', 'install.js': big, 'index.js': 'module.exports = 1;\n' });
+  const a = await walkOf(buf, { onMember: (p, n, d) => S.memberFacts({ path: p, size: n, data: d }), memberWindow: S.FACTS_LIMITS.windowBytes });
+  assert.ok(Number.isFinite(a.memberMs) && a.memberMs > 0, String(a.memberMs));
+  assert.equal(Number(a.memberMs.toFixed(3)), a.memberMs, 'milliseconds to three places, as facts_ms');
+  const b = await walkOf(buf, { keep: ['install.js', 'index.js'], shareOf: S.makeBase64Share });
+  assert.ok(Number.isFinite(b.memberMs) && b.memberMs > 0, `the share counter alone: ${b.memberMs}`);
+  const c = await walkOf(buf, { keep: ['install.js', 'index.js'] }); const d = await walkOf(buf, {});
+  assert.equal('memberMs' in c, false); assert.equal('memberMs' in d, false);
+  const e = await walkOf(buf, { onMember: () => { throw new Error('x'); }, memberWindow: 10 });
+  assert.equal(e.ok, true); assert.ok(Number.isFinite(e.memberMs), 'a throwing tally is still timed');
+});
+
+test('T2 the store: recordStaticFacts(p, v, x, ms) writes static_facts_ms with the facts, once; without ms it reads NULL; an old table gains the column', () => {
+  withDb((db) => {
+    db.recordEntryFacts(rec('1.0.0')); db.recordEntryFacts(rec('2.0.0'));
+    const x = { facts: { version: 'static-checks-1.6', status: 'NOT_CHECKED', reason: 'r' }, s5: [] };
+    assert.equal(db.recordStaticFacts('a', '1.0.0', x, 12.345), 1);
+    assert.equal(db.recordStaticFacts('a', '1.0.0', x, 99), 0, 'once per version');
+    const ms = (v) => db.db.prepare('SELECT static_facts_ms FROM entry_fact_versions WHERE package_name = ? AND version = ?').get('a', v).static_facts_ms;
+    assert.equal(ms('1.0.0'), 12.345);
+    assert.deepEqual(db.staticFactsFor('a', '1.0.0'), x, 'the stored block is the facts alone');
+    assert.equal(db.recordStaticFacts('a', '2.0.0', x), 1); assert.equal(ms('2.0.0'), null);
+  });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft015-sc16t-'));
+  try {
+    const p = path.join(dir, 'w.db'); const raw = new Database(p);
+    raw.exec(`CREATE TABLE entry_fact_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, package_name TEXT NOT NULL, version TEXT NOT NULL,
+      served_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), walk TEXT NOT NULL CHECK (walk IN ('read','refused')), reason TEXT,
+      static_checks_version TEXT NOT NULL, facts_ms REAL, shape TEXT, shadow TEXT, static_facts TEXT, UNIQUE (package_name, version));
+      INSERT INTO entry_fact_versions (package_name, version, walk, static_checks_version) VALUES ('a', '0.9.0', 'read', 'static-checks-1.6');`);
+    raw.close();
+    const db = openWitnessDB(p); db.applySchema();
+    try { assert.equal(db.recordStaticFacts('a', '0.9.0', { facts: {}, s5: [] }, 1.5), 1); } finally { db.close(); }
+    const r = new Database(p, { readonly: true });
+    try { assert.equal(r.prepare('SELECT static_facts_ms FROM entry_fact_versions').get().static_facts_ms, 1.5); } finally { r.close(); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('T3 end to end: the armed version carries static_facts_ms beside facts_ms, read by the sqlite line; the unarmed one NULL; the facts block unchanged', async () => {
+  await withProxy({}, async ({ base, proxy, dbPath }) => {
+    await get(`${base}/z`); await get(`${base}/z/-/z-1.1.0.tgz`);
+    const x = await eventually(() => proxy.witnessDb.staticFactsFor('z', '1.1.0'));
+    assert.deepEqual(Object.keys(x).sort(), ['facts', 's5'], 'the block has no timing field');
+    await get(`${base}/q`); await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
+    const r = new Database(dbPath, { readonly: true });
+    try {
+      const rows = r.prepare("SELECT package_name, version, facts_ms, static_facts_ms FROM entry_fact_versions WHERE package_name IN ('z', 'q')").all();
+      const z = rows.find((w) => w.package_name === 'z'); const q = rows.find((w) => w.package_name === 'q');
+      assert.ok(Number.isFinite(z?.static_facts_ms) && z.static_facts_ms > 0, JSON.stringify(rows));
+      assert.ok(Number.isFinite(z.facts_ms), 'beside facts_ms');
+      assert.equal(q?.static_facts_ms ?? null, null, JSON.stringify(rows));
+    } finally { r.close(); }
   });
 });
