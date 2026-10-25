@@ -170,6 +170,8 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudi
 -- most 200,000 in all (recordEntryFacts).
 -- 0.1.5 (R11 2026-10-24): shape = the version's file sizes by class (proxy/shadow-facts.js, 8b), written with the entry facts; shadow =
 -- its shadow facts (rules 3, 5, 8, 8b), written once after its first download's rows are final. Record only: no verdict reads them.
+-- static_facts = the static-checks-1.6 facts of an armed walk (rules 6, 7, 8a, 8d, 8h; proxy/static-checks.js staticFactsOf), written
+-- once when its rows are recorded. Record only likewise.
 CREATE TABLE IF NOT EXISTS entry_fact_versions (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     package_name          TEXT NOT NULL,
@@ -181,6 +183,7 @@ CREATE TABLE IF NOT EXISTS entry_fact_versions (
     facts_ms              REAL,
     shape                 TEXT,
     shadow                TEXT,
+    static_facts          TEXT,
     UNIQUE (package_name, version)
 );
 CREATE TABLE IF NOT EXISTS entry_facts (
@@ -276,7 +279,7 @@ export class WitnessDB {
     const efv = this.db.prepare("SELECT name FROM pragma_table_info('entry_fact_versions')").all().map((c) => c.name);
     if (efv.length && !efv.includes('facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN facts_ms REAL');
     // 0.1.5 (R11 2026-10-24): shape and shadow likewise
-    for (const c of ['shape', 'shadow']) if (efv.length && !efv.includes(c)) this.db.exec(`ALTER TABLE entry_fact_versions ADD COLUMN ${c} TEXT`);
+    for (const c of ['shape', 'shadow', 'static_facts']) if (efv.length && !efv.includes(c)) this.db.exec(`ALTER TABLE entry_fact_versions ADD COLUMN ${c} TEXT`);
     this._prepare();
     return this;
   }
@@ -549,6 +552,7 @@ export class WitnessDB {
       insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms, shape)
         VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms, @shape)`),
       shadowSet: this.db.prepare('UPDATE entry_fact_versions SET shadow = @shadow WHERE package_name = @p AND version = @v AND shadow IS NULL'),
+      staticSet: this.db.prepare('UPDATE entry_fact_versions SET static_facts = @x WHERE package_name = @p AND version = @v AND static_facts IS NULL'),
       insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
         VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
       prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = @p AND version <> @v AND id <
@@ -616,6 +620,21 @@ export class WitnessDB {
     try {
       const r = this.db.prepare('SELECT shadow FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
       return r && typeof r.shadow === 'string' ? JSON.parse(r.shadow) : null;
+    } catch { return null; }
+  }
+
+  /** 0.1.5 (R11): store a version's static-checks-1.6 facts ({ facts, s5 }), once; 1 when written, 0 when already stored or no entry facts row exists. */
+  recordStaticFacts(packageName, version, x) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return st.staticSet.run({ p: packageName, v: version, x: JSON.stringify(x) }).changes;
+  }
+
+  /** 0.1.5 (R11): a version's stored static-checks-1.6 facts, or null (none, a database without the column, or not readable). Never throws. */
+  staticFactsFor(packageName, version) {
+    try {
+      const r = this.db.prepare('SELECT static_facts FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
+      return r && typeof r.static_facts === 'string' ? JSON.parse(r.static_facts) : null;
     } catch { return null; }
   }
 

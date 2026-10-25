@@ -43,6 +43,10 @@
 // INDICATOR only when a role READ and non-empty on the predecessor and READ now gains a decode:* or obf:* class other than
 // decode:Function, or an API network sink with an execution sink other than exec:Function (s7Named); every other gain is NONE and stays
 // on the row as a fact with why it was not named.
+// static-checks-1.6 (operator ruling R11 2026-10-24) is recon's v6.14 mirrored: every 1.5 constant unchanged, plus SHADOW FACTS (the
+// triage noise-reduction rules 6, 7, 8a, 8d and 8h), recon's facts code as written (memberFacts, staticFacts, makeBase64Share and their
+// constants). They are computed on an armed walk and stored beside the version's entry facts, never a row: no outcome, indicator,
+// gate, class or notice reads them (staticFactsOf below; proxy/tar-walk.js reads the member windows and streams an over-cap hook target).
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -53,7 +57,7 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.5';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.6';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -564,6 +568,211 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null, p
   return rows;
 }
 
+// ---- static-checks-1.6: shadow facts (operator ruling R11), recon v6.14's code as written (paths through factsClip, the head through LIMITS)
+/** Facts only (R11): read from every member of the flagged archive (its first windowBytes, the pattern scan's window) and, for rule 7,
+ *  from the whole body of a hook target. diversityRef is the consult's 16-character reference, counted, never a gate. */
+export const FACTS_LIMITS = Object.freeze({ windowBytes: 2 << 20, b64MinRun: 400, hexEscapeMinRun: 60, magicBytes: 16, diversityRef: 16, listed: 20 });
+export const FACTS_NOTE = 'shadow facts (operator ruling R11, 2026-10-24): no outcome, tier or notice depends on them; a fact is read against the file, never a verdict';
+/** Rules 6 and 7: the magic numbers read at the start of decoded bytes (name, hex prefix). Anything else is null, never a guess. */
+export const DECODED_MAGIC = Object.freeze([['wasm', '0061736d'], ['png', '89504e470d0a1a0a'], ['gzip', '1f8b'], ['woff', '774f4646'], ['woff2', '774f4632']].map((x) => Object.freeze(x)));
+const MAGIC_BUF = DECODED_MAGIC.map(([n, h]) => [n, Buffer.from(h, 'hex')]);
+export function magicOf(buf) {
+  if (!Buffer.isBuffer(buf)) return null;
+  for (const [n, m] of MAGIC_BUF) if (buf.length >= m.length && buf.subarray(0, m.length).equals(m)) return n;
+  return null;
+}
+/** Rule 6: a base64 run (recon pattern P7) and a hex-escape run (P8's first alternative); a base64 run made only of lowercase hex digits
+ *  is a hex run (P8's second alternative). Used with matchAll only. */
+export const B64_RUN = /[A-Za-z0-9+/]{400,}={0,2}/g;
+export const HEX_ESCAPE_RUN = /(?:\\x[0-9a-fA-F]{2}){60,}/g;
+const B64_MAGIC_CHARS = Math.ceil(FACTS_LIMITS.magicBytes / 3) * 4;   // 24 base64 characters decode to the first 18 bytes
+/** Rule 6, pure: every encoded run in a text, in text order: { kind: base64 | hex | hex-escape, chars (base64 padding included; a
+ *  hex-escape run's hex digits), distinct_chars (padding and the \x framing excluded), magic (of the decoded first bytes, or null) }. */
+export function encodedRuns(text) {
+  const s = typeof text === 'string' ? text : ''; const out = []; const M = FACTS_LIMITS.magicBytes;
+  for (const m of s.matchAll(B64_RUN)) {
+    const body = m[0].replace(/=+$/, ''); const hex = /^[0-9a-f]+$/.test(body);
+    const head = hex ? Buffer.from(body.slice(0, M * 2), 'hex') : Buffer.from(body.slice(0, B64_MAGIC_CHARS), 'base64');
+    out.push({ at: m.index, kind: hex ? 'hex' : 'base64', chars: m[0].length, distinct_chars: new Set(body).size, magic: magicOf(head) });
+  }
+  for (const m of s.matchAll(HEX_ESCAPE_RUN)) {
+    const digits = m[0].replace(/\\x/g, '');
+    out.push({ at: m.index, kind: 'hex-escape', chars: digits.length, distinct_chars: new Set(digits).size, magic: magicOf(Buffer.from(digits.slice(0, M * 2), 'hex')) });
+  }
+  return out.sort((a, b) => a.at - b.at).map(({ at, ...x }) => x);   // eslint-disable-line no-unused-vars
+}
+const B64_ALPHA = new Uint8Array(256); for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/') B64_ALPHA[c.charCodeAt(0)] = 1;
+/** Rule 7: a streaming counter over a whole body (an S5 target is over the keep cap, so its body is never kept): bytes in base64 runs
+ *  of at least b64MinRun characters (P7's alphabet and up to two '=' after a run, so a hex run counts too) over all bytes, and the
+ *  magic of the FIRST such run's decoded first bytes. Chunk boundaries never change the result. */
+export function makeBase64Share() {
+  const MIN = FACTS_LIMITS.b64MinRun; let bytes = 0; let b64 = 0; let run = 0; let eq = 0; let head = ''; let decided = false; let magic = null;
+  const close = () => { if (run >= MIN) b64 += run + eq; run = 0; eq = 0; head = ''; };
+  return {
+    push(chunk) {
+      const b = Buffer.isBuffer(chunk) ? chunk : Buffer.alloc(0); bytes += b.length;
+      for (let i = 0; i < b.length; i += 1) {
+        const c = b[i];
+        if (B64_ALPHA[c]) {
+          if (eq) close();
+          run += 1; if (head.length < B64_MAGIC_CHARS) head += String.fromCharCode(c);
+          if (run === MIN && !decided) { decided = true; magic = magicOf(Buffer.from(head, 'base64')); }
+        } else if (c === 0x3d && run > 0 && eq < 2) eq += 1;
+        else close();
+      }
+    },
+    end() { close(); return { bytes, base64_bytes: b64, share: bytes ? Number((b64 / bytes).toFixed(3)) : 0, magic }; },
+  };
+}
+/** 8a: the paths whose P2/P9-type hit lines are counted apart (the consult's five; at the start or after any separator). */
+export const EXCLUDED_PATH = /(?:^|\/)(?:test|__tests__|fixtures|vendor|node_modules)\//;
+/** 8a: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (RAW_IP_URL above, the same source). */
+export const DYNAMIC_CODE = /\beval\s*\(|(?:^|[^\w$.])(?:new\s+)?Function\s*\(|\bvm\.runIn(?:New|This)?Context\s*\(|\bvm\.Script\s*\(/;
+/** 8d: the agent names whose config dirs are read: ~/.<name>, and ~/.config/<name> (also as path.join parts). */
+export const AGENT_CONFIG_NAMES = Object.freeze(['claude', 'cursor', 'codex', 'gemini', 'opencode', 'windsurf', 'github-copilot']);
+const AGN = AGENT_CONFIG_NAMES.join('|');
+export const AGENT_HOME_DIR = new RegExp(`(?:^|[\\\\/'"\`])\\.(${AGN})(?=[\\\\/'"\`]|$)`, 'gm');
+export const AGENT_XDG_DIR = new RegExp(`\\.config(?:[\\\\/]|['"\`]\\s*,\\s*['"\`])(${AGN})(?=[\\\\/'"\`]|$)`, 'gm');
+/** 8d: what writes. Every marker is read in every text member and hook command, except the shell redirect, read only in hook commands
+ *  and shell scripts (in code a '>' is a comparison). */
+export const WRITE_MARKERS = [
+  ['fs-write', /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|symlinkSync|outputFileSync|outputFile|outputJsonSync|outputJson|writeJsonSync|writeJson)\s*\(/],
+  ['fs-mkdir', /\b(?:mkdirSync|mkdir|mkdirp|ensureDirSync|ensureDir)\s*\(/],
+  ['shell-copy', /(?:^|[\s;&|("'`])(?:cp|mv|ln|rsync)\s/m], ['shell-mkdir', /(?:^|[\s;&|("'`])mkdir\s/m], ['shell-tee', /(?:^|[\s;&|("'`])tee\s/m],
+  ['ps-write', /\b(?:Copy-Item|New-Item|Set-Content|Add-Content|Out-File)\b/i],
+];
+export const SHELL_REDIRECT = ['shell-redirect', /(?<![=<>-])>>?\s*["']?(?:~|\$\{?HOME\}?|%USERPROFILE%|\$env:USERPROFILE)/];
+export const SHELL_SCRIPT = /\.(?:sh|bash|zsh|ps1|cmd|bat)$/i;
+const agentDirs = (s) => [...new Set([...[...s.matchAll(AGENT_HOME_DIR)].map((m) => `.${m[1]}`), ...[...s.matchAll(AGENT_XDG_DIR)].map((m) => `.config/${m[1]}`)])].sort();
+const writesOf = (s, shell) => [...WRITE_MARKERS, ...(shell ? [SHELL_REDIRECT] : [])].filter(([, re]) => re.test(s)).map(([n]) => n);
+/** 8d, pure: { dirs, writes } when a text both names an agent config dir and writes; else null. */
+export function agentConfigWrite(s, { shell = false } = {}) {
+  const t = typeof s === 'string' ? s : ''; const dirs = agentDirs(t); if (!dirs.length) return null;
+  const writes = writesOf(t, shell); return writes.length ? { dirs, writes } : null;
+}
+/** 8h: the I/O token classes and their tokens (class, name, regex). A literal require of a file is not a token (that file is read too). */
+export const IO_CLASSES = Object.freeze(['network', 'filesystem', 'process', 'env', 'exec', 'encoding']);
+const MOD = (m) => new RegExp(`\\b(?:require|import)\\s*\\(\\s*['"\`](?:node:)?(?:${m})['"\`]|\\bfrom\\s*['"\`](?:node:)?(?:${m})['"\`]`);
+export const IO_TOKENS = [
+  ...API_NET_SINKS.map(([n, re]) => ['network', n, re]), ['network', 'net-module', MOD('https?|http2|net|dgram|tls|dns')], ['network', 'net-tool', /\b(?:curl|wget)\b/],
+  ['filesystem', 'fs-call', /\b(?:readFileSync|writeFileSync|appendFileSync|readFile|writeFile|appendFile|createWriteStream|createReadStream|unlinkSync|unlink|rmSync|rmdirSync|chmodSync|chmod|renameSync|copyFileSync|readdirSync|symlinkSync)\s*\(|\bos\.homedir\s*\(/],
+  ['filesystem', 'fs-module', MOD('fs|fs\\/promises')],
+  ['process', 'process-object', /\bprocess\s*\.\s*(?!env\b)[A-Za-z_$]|\bprocess\s*\[/],
+  ['env', 'env-read', /\bprocess\s*\.\s*env\b|\b(?:Deno|Bun)\.env\b|\bimport\.meta\.env\b/],
+  ...EXEC_SINKS.map(([n, re]) => ['exec', n, re]), ['exec', 'dynamic-import', /\bimport\s*\(/], ['exec', 'dynamic-require', /\brequire\s*\(\s*(?!['"`\s])/],
+  ['exec', 'wasm', /\bWebAssembly\s*\.\s*(?:instantiate|instantiateStreaming|compile|compileStreaming|Module|Instance)\b/], ['exec', 'worker', /\bnew\s+Worker\s*\(/],
+  ['encoding', 'decode-call', /\batob\s*\(|\bbtoa\s*\(|\bBuffer\s*\.\s*from\s*\(|\bString\s*\.\s*fromCharCode\b|\bTextDecoder\b|\bunescape\s*\(|\bdecodeURIComponent\s*\(/],
+  ['encoding', 'encoding-name', /['"`](?:base64|base64url|hex|latin1|binary)['"`]/], ['encoding', 'hex-escape', /\\x[0-9a-fA-F]{2}/],
+];
+const RUN_KINDS = ['base64', 'hex', 'hex-escape']; const MAGIC_NAMES = [...DECODED_MAGIC.map(([n]) => n), 'none'];
+/**
+ * The 1.6 facts of ONE archive member, pure: data = its first windowBytes (more is cut here); size = its full size. binary (a NUL in the
+ * first 8000 bytes) -> nothing read; truncated = size beyond the window. Small and bounded: the caller keeps this record, never the bytes.
+ */
+export function memberFacts({ path, size, data } = {}) {
+  const L = FACTS_LIMITS; const buf = Buffer.isBuffer(data) ? data.subarray(0, L.windowBytes) : Buffer.alloc(0); const n = Number.isFinite(size) ? size : buf.length;
+  const p = typeof path === 'string' ? path : '?';
+  const base = { path: factsClip(p), size: n, truncated: n > buf.length, excluded_path: EXCLUDED_PATH.test(p) };
+  const none = { by_kind: Object.fromEntries(RUN_KINDS.map((k) => [k, 0])), by_magic: Object.fromEntries(MAGIC_NAMES.map((k) => [k, 0])), under_diversity_ref: 0 };
+  if (buf.subarray(0, LIMITS.headBytes).includes(0)) return { ...base, binary: true, io: [], io_tokens: [], p2_lines: 0, p9_lines: 0, runs_total: 0, run_counts: none, runs: [], agent: null };
+  const s = buf.toString('utf8');
+  let p2 = 0; let p9 = 0; for (const line of s.split('\n')) { if (DYNAMIC_CODE.test(line)) p2 += 1; if (RAW_IP_URL.test(line)) p9 += 1; }
+  const runs = encodedRuns(s); const rc = none;
+  for (const r of runs) { rc.by_kind[r.kind] += 1; rc.by_magic[r.magic ?? 'none'] += 1; if (r.distinct_chars < L.diversityRef) rc.under_diversity_ref += 1; }
+  const toks = IO_TOKENS.filter(([, , re]) => re.test(s)); const io = new Set(toks.map(([c]) => c)); if (runs.length) io.add('encoding');
+  return { ...base, binary: false, io: IO_CLASSES.filter((c) => io.has(c)), io_tokens: [...new Set([...toks.map(([, t]) => t), ...(runs.length ? ['encoded-run'] : [])])],
+    p2_lines: p2, p9_lines: p9, runs_total: runs.length, run_counts: rc, runs: runs.slice(0, L.listed), agent: agentConfigWrite(s, { shell: SHELL_SCRIPT.test(p) }) };
+}
+/**
+ * The 1.6 facts block of one version, pure: members = memberFacts records of every member of the archive (the installed view), hooks =
+ * the hook commands staticChecks reads, keepList for the roles of a writing file. No members -> NOT_CHECKED, stated.
+ */
+export function staticFacts({ members, hooks = [], keepList: kl = null, archiveComplete = false } = {}) {
+  const L = FACTS_LIMITS; const v = { version: STATIC_CHECKS_VERSION, note: FACTS_NOTE };
+  if (!Array.isArray(members)) return { ...v, status: 'NOT_CHECKED', reason: 'no member facts supplied' };
+  const ms = members.filter((m) => m && typeof m === 'object'); const klRoles = kl && typeof kl.roles === 'object' && kl.roles ? kl.roles : {};
+  const hs = (Array.isArray(hooks) ? hooks : []).filter((h) => h && typeof h.cmd === 'string' && h.cmd);
+  // rule 6
+  const er = { runs: 0, files: 0, by_kind: Object.fromEntries(RUN_KINDS.map((k) => [k, 0])), by_magic: Object.fromEntries(MAGIC_NAMES.map((k) => [k, 0])), under_diversity_ref: 0, diversity_ref: L.diversityRef, listed: [] };
+  for (const m of ms) {
+    if (!m.runs_total) continue; er.files += 1; er.runs += m.runs_total; er.under_diversity_ref += m.run_counts?.under_diversity_ref ?? 0;
+    for (const k of RUN_KINDS) er.by_kind[k] += m.run_counts?.by_kind?.[k] ?? 0; for (const k of MAGIC_NAMES) er.by_magic[k] += m.run_counts?.by_magic?.[k] ?? 0;
+    for (const r of m.runs || []) if (er.listed.length < L.listed) er.listed.push({ path: m.path, ...r });
+  }
+  // 8a
+  const side = (k) => { const rest = ms.filter((m) => !m.excluded_path); const ex = ms.filter((m) => m.excluded_path); const sum = (xs) => xs.reduce((a, m) => a + (m[k] || 0), 0);
+    return { rest: sum(rest), excluded: sum(ex), rest_files: rest.filter((m) => m[k] > 0).length, excluded_files: ex.filter((m) => m[k] > 0).length }; };
+  const excluded_paths = { pattern: EXCLUDED_PATH.source, p2: side('p2_lines'), p9: side('p9_lines'),
+    listed: ms.filter((m) => m.excluded_path && (m.p2_lines || m.p9_lines)).slice(0, L.listed).map((m) => ({ path: m.path, p2: m.p2_lines, p9: m.p9_lines })),
+    note: 'lines with a hit, over each member\'s read window: P2-type = recon pattern P2 (dynamic code), P9-type = recon pattern P9 (bare-IP URL)' };
+  // 8d
+  const aw = [...ms.filter((m) => m.agent).map((m) => ({ source: 'file', path: m.path, roles: Array.isArray(klRoles[m.path]) ? klRoles[m.path] : ['module'], dirs: m.agent.dirs, writes: m.agent.writes })),
+    ...hs.map((h) => ({ h, a: agentConfigWrite(h.cmd, { shell: true }) })).filter((x) => x.a).map(({ h, a }) => ({ source: 'hook', hook: factsClip(h.hook ?? '?', 40), hook_source: h.source === 'tarball' ? 'tarball' : 'registry', dirs: a.dirs, writes: a.writes }))];
+  const agent_config_writes = { count: aw.length, listed: aw.slice(0, L.listed) };
+  // 8h
+  const notRead = ms.filter((m) => m.binary || m.truncated); const classes = Object.fromEntries(IO_CLASSES.map((c) => [c, ms.filter((m) => (m.io || []).includes(c)).length]));
+  const hookN = new Set(hs.filter((h) => INSTALL_HOOKS.includes(h.hook)).map((h) => h.hook)).size;
+  const present = Object.values(classes).some((x) => x > 0) || hookN > 0;
+  const bin = notRead.filter((m) => m.binary).length; const tr = notRead.length - bin; const why = [];
+  if (archiveComplete !== true) why.push('archive not read in full'); if (!ms.length) why.push('no member read');
+  if (notRead.length) why.push(`${notRead.length} member${notRead.length === 1 ? '' : 's'} not read as text (${bin} binary, ${tr} beyond the ${L.windowBytes >> 20} MiB read window)`);
+  const status = present || !why.length ? 'CHECKED' : 'NOT_CHECKED';
+  const io_surface = { status, no_io_surface: present ? false : why.length ? null : true, classes, tokens: [...new Set(ms.flatMap((m) => m.io_tokens || []))].sort(), install_hooks: hookN,
+    members: ms.length, text_read: ms.length - notRead.length, not_read: notRead.length,
+    not_read_listed: notRead.slice(0, L.listed).map((m) => ({ path: m.path, reason: m.binary ? 'binary (a NUL in the first 8000 bytes)' : `beyond the read window (${m.size} B)` })),
+    ...(status === 'NOT_CHECKED' ? { reason: why.join('; ') } : {}),
+    note: 'present = a token of any class in any member, or an install hook; NONE only when every member of an archive read in full was read as text' };
+  return { ...v, status: 'CHECKED', encoded_runs: er, excluded_paths, agent_config_writes, io_surface };
+}
+/** Recon's clip (its pathChars cap, the cut and the length said), over a path with the proxy's control and bidi characters removed (UNSAFE, as shownName). */
+const factsClip = (x, n = 200) => { const t = String(x ?? '').replace(UNSAFE, ''); return t.length > n ? `${t.slice(0, n)}…[${t.length} chars]` : t; };
+/** Rule 7 on a FIRING S5 file entry, recon's fields (its staticChecks computes them inline): the streamed share, or why there is none. */
+export const s5Base64Fields = (b) => (b && Number.isFinite(b.share) ? { base64_share: b.share, base64_magic: b.magic ?? null } : { base64_share: null, base64_magic: null, base64_note: 'body not streamed: base64 share not checked' });
+
+// ---- the proxy's half of the 1.6 input contract (R11 (b)); facts only, never a row
+/** The archive members whose facts one armed walk keeps (each a small memberFacts record, never the bytes); past it the block is NOT_CHECKED. */
+export const MAX_FACTS_MEMBERS = 20000;
+/** The member facts of one walk: onMember(path, size, window) from tar-walk.js (every regular file on the Linux view, its first
+ *  FACTS_LIMITS.windowBytes); the installed view keeps the LAST duplicate of a path in the place of the first, as recon's tar.mjs. */
+export function createMemberTally({ max = MAX_FACTS_MEMBERS } = {}) {
+  const ms = new Map(); let over = false;
+  return {
+    max,
+    onMember(path, size, data) {
+      if (over) return;
+      if (!ms.has(path) && ms.size >= max) { over = true; ms.clear(); return; }
+      ms.set(path, memberFacts({ path, size, data }));
+    },
+    result() { return { over, members: over ? [] : [...ms.values()] }; },
+  };
+}
+/**
+ * The 1.6 facts of a finished ARMED walk, pure: { facts: recon's staticFacts block, s5: the S5 file entries that fire, each with recon's
+ * rule 7 fields }. The hook commands are the ones S0 reads (the registry manifest's, then the tarball package.json's that differ); the
+ * roles of a writing file are the registry keep list's, as recon's. Member facts count only from a walk read in full (recon reads them
+ * from an archive it read in full); none supplied, or more than MAX_FACTS_MEMBERS, is NOT_CHECKED with the reason.
+ */
+export function staticFactsOf({ manifest, packageJson = null, walk, members, membersOver = false } = {}) {
+  const ok = Boolean(walk?.ok) && Array.isArray(walk?.files);
+  const klReg = keepListFor(manifest); const klTar = keepListFor(packageJson, 'tarball package.json');
+  const reg = hookDictOf(manifest); const tar = hookDictOf(packageJson);
+  const hooks = Object.entries(reg).map(([hook, cmd]) => ({ source: 'registry', hook, cmd }));
+  for (const [hook, cmd] of Object.entries(tar)) if (reg[hook] !== cmd) hooks.push({ source: 'tarball', hook, cmd });
+  const facts = ok && membersOver
+    ? { version: STATIC_CHECKS_VERSION, note: FACTS_NOTE, status: 'NOT_CHECKED', reason: `more than ${MAX_FACTS_MEMBERS} archive members: member facts not kept` }
+    : staticFacts({ members: ok && Array.isArray(members) ? members : undefined, hooks, keepList: klReg, archiveComplete: ok });
+  // rule 7: a hook target over the keep cap (the S5 condition), once per target (its node-resolution variants are the same target)
+  const primaryOf = {}; for (const t of [...klReg.targets, ...klTar.targets]) for (const v of t.variants) primaryOf[v] ??= t.path;
+  const s5 = []; const seen = new Set();
+  for (const x of ok && Array.isArray(walk.notKept) ? walk.notKept : []) {
+    const roles = x && typeof x.path === 'string' ? klReg.roles[x.path] ?? klTar.roles[x.path] : null;
+    if (!Array.isArray(roles) || !roles.includes('hook') || !(Number.isFinite(x.size) && x.size > LIMITS.maxKeepBytes)) continue;
+    const prim = primaryOf[x.path] ?? x.path; if (seen.has(prim)) continue; seen.add(prim);
+    s5.push({ path: shownName(prim), roles, size: x.size, fires: true, ...s5Base64Fields(x.base64) });
+  }
+  return { facts, s5 };
+}
+
 // ---- the trigger (operator ruling 2026-10-13, design note §3) and the retry rule ----
 /**
  * Why a download's keep-list walk is armed, from the version's recorded rows: a NAMED WARN row (the runner's named gates, or a seed-v3
@@ -592,4 +801,6 @@ export function staticSettled(latest) {
   return mine.every((r) => typeof r.detail === 'string' && !RETRY_PREFIXES.some((p) => r.detail.startsWith(p)));
 }
 
-export default { entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, s7Named, S7_NAMED_ARMS, S7_DECODE_OBF_EXCLUDED, S7_EXEC_EXCLUDED, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
+export default { FACTS_LIMITS, FACTS_NOTE, DECODED_MAGIC, magicOf, B64_RUN, HEX_ESCAPE_RUN, encodedRuns, makeBase64Share, EXCLUDED_PATH, DYNAMIC_CODE,
+  AGENT_CONFIG_NAMES, AGENT_HOME_DIR, AGENT_XDG_DIR, WRITE_MARKERS, SHELL_REDIRECT, SHELL_SCRIPT, agentConfigWrite, IO_CLASSES, IO_TOKENS, memberFacts, staticFacts,
+  s5Base64Fields, MAX_FACTS_MEMBERS, createMemberTally, staticFactsOf, RAW_IP_URL, entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, s7Named, S7_NAMED_ARMS, S7_DECODE_OBF_EXCLUDED, S7_EXEC_EXCLUDED, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };

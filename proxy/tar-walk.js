@@ -28,6 +28,11 @@
 // kept path (a case alias, a backslash separator), that platform is listed in platformsNotChecked: the body read is the Linux one.
 // 0.1.5 shadow facts (R11, 8b): an optional `onFile(path, size)` is called for each regular file on the Linux view, its header size;
 // the result is unchanged, key for key.
+// 0.1.5 static-checks-1.6 (R11 (b), the input recon's facts read): an optional `onMember(path, size, window)` is called as each regular
+// file on the Linux view completes, with its header size and its first `memberWindow` bytes (only those are held, one member at a
+// time; every duplicate is reported, the caller keeps the last); an optional `shareOf()` makes a streaming counter ({ push, end }) that
+// reads the WHOLE body of each keep-list target over the kept-file cap, its result on that not-kept entry as `base64`. Without either
+// the result is unchanged, key for key.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
 
@@ -138,6 +143,10 @@ export function createTarWalker(opts = {}) {
   // 0.1.5 keep list: targets (normalised Linux-view paths), kept bodies (last entry wins, as node-tar overwrites), what was not kept
   const keepOpt = o.keep; const keepGiven = keepOpt !== undefined;
   const onFile = typeof o.onFile === 'function' ? o.onFile : null;
+  const onMember = typeof o.onMember === 'function' ? o.onMember : null; const memberWindow = Number.isFinite(o.memberWindow) ? Math.max(0, o.memberWindow) : 0;
+  const shareOf = typeof o.shareOf === 'function' ? o.shareOf : null;
+  let member = null;                                       // { path, size, chunks, got }: the member window being read
+  let share = null;                                        // { entry, counter }: an over-cap keep target streamed whole
   let keepTargets = Array.isArray(keepOpt) ? null : (typeof keepOpt === 'function' ? null : new Set());
   const keepOrder = []; const kept = new Map(); const notKept = []; const aliases = new Map();
   const seenBefore = new Set(); let seenOverflow = false;
@@ -195,7 +204,13 @@ export function createTarWalker(opts = {}) {
   gunzip.once('end', () => resolveSettled());
   gunzip.on('error', (e) => fail(`gunzip: ${e.message}`));
 
+  /** The end of a regular file's body: its window to onMember, its streamed share to its not-kept entry (neither ever fails the walk). */
+  function endMember() {
+    if (member) { const m = member; member = null; try { onMember(m.path, m.size, Buffer.concat(m.chunks)); } catch { /* a member tally never fails the walk */ } }
+    if (share) { const x = share; share = null; try { x.entry.base64 = x.counter.end(); } catch { /* likewise */ } }
+  }
   function complete() {
+    endMember();
     if (!collect) return;
     const body = Buffer.concat(collect.chunks);
     const c = collect; collect = null;
@@ -287,13 +302,19 @@ export function createTarWalker(opts = {}) {
         if (keepTargets === null) { if (lx != null) { if (seenBefore.size < MAX_SEEN_BEFORE) seenBefore.add(lx); else seenOverflow = true; } }
         else {
           if (lx != null && keepTargets.has(lx)) {
-            if (size > o.maxKeepBytes) pushNotKept(lx, `over the kept-file cap (${o.maxKeepBytes} bytes)`, size);
+            if (size > o.maxKeepBytes) {
+              pushNotKept(lx, `over the kept-file cap (${o.maxKeepBytes} bytes)`, size);
+              const entry = shareOf ? notKept.find((x) => x.path === lx) : null;
+              if (entry) try { share = { entry, counter: shareOf() }; } catch { share = null; }
+            }
             else if (!kept.has(lx) && kept.size >= o.maxKeep) pushNotKept(lx, `beyond ${o.maxKeep} kept files`, size);
             else collect = { kind: 'keep', chunks: [], path: lx, name: entryPath };
           }
           noteAliases(entryPath, lx);
         }
       }
+      // 1.6 (R11): this member's window for the caller's member facts, read beside whatever else collects its body
+      if (onMember) { const lx = writtenRel(entryPath, false); if (lx != null) member = { path: lx, size, chunks: [], got: 0 }; }
     }
     return size;
   }
@@ -322,6 +343,8 @@ export function createTarWalker(opts = {}) {
       if (state === 'content') {
         const take = Math.min(remaining, buf.length - off);
         if (collect) collect.chunks.push(Buffer.from(buf.subarray(off, off + take)));
+        if (member && member.got < memberWindow) { const t = Math.min(take, memberWindow - member.got); member.chunks.push(Buffer.from(buf.subarray(off, off + t))); member.got += t; }
+        if (share) try { share.counter.push(buf.subarray(off, off + take)); } catch { share = null; }
         off += take; remaining -= take;
         if (remaining === 0) {
           try { complete(); } catch (err) {

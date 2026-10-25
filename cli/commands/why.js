@@ -15,7 +15,7 @@ import { explain } from '../../seed/v3/explain.js';
 import { CHECK_SCHEMA_IDS, EXIT_TOOL_ERROR, recordCompatibility } from '../check-record.js';
 import { runCheck, parseTarget } from './check.js';
 import { decisionSnapshot, adjudicate } from '../adjudicate.js';
-import { shadowLines, SHADOW_NOTE } from '../../proxy/shadow-facts.js';
+import { shadowLines, staticFactsLines, SHADOW_NOTE } from '../../proxy/shadow-facts.js';
 
 export const UNBOUND_LABEL = 'CACHED — UNBOUND: produced without recorded seed/rule/policy identities; '
   + 'not a current evaluation';
@@ -94,9 +94,10 @@ function showCached(parsed, opts) {
       pending: applicable.pending, override: applicable.override } : null;
     // 0.1.5 shadow facts (operator ruling R11 2026-10-24): recorded once per served version; record only, no verdict reads them
     const shadow = db.shadowFactsFor(parsed.name, parsed.version);
+    const staticFacts = typeof db.staticFactsFor === 'function' ? db.staticFactsFor(parsed.name, parsed.version) : null;   // static-checks-1.6, armed versions
     if (opts.json) {
       console.log(JSON.stringify({ label: 'CACHED-UNBOUND', note: UNBOUND_LABEL,
-        package: parsed.name, version: parsed.version, cached: row || null, applicable: applies, shadow_facts: shadow }, null, 2));
+        package: parsed.name, version: parsed.version, cached: row || null, applicable: applies, shadow_facts: shadow, static_facts: staticFacts }, null, 2));
     } else {
       console.log(fmt.yellow ? fmt.yellow(UNBOUND_LABEL) : UNBOUND_LABEL);
       if (!row) {
@@ -113,6 +114,12 @@ function showCached(parsed, opts) {
         let lines = [];
         try { lines = shadowLines(shadow); } catch { lines = ['not readable']; }
         console.log(`  Recorded facts (${shadow.version ?? 'unknown'}; ${SHADOW_NOTE}):`);
+        for (const l of lines) console.log(`    ${l}`);
+      }
+      if (staticFacts) {
+        let lines = [];
+        try { lines = staticFactsLines(staticFacts); } catch { lines = ['not readable']; }
+        console.log(`  Static check facts (${staticFacts.facts?.version ?? 'unknown'}; ${SHADOW_NOTE}):`);
         for (const l of lines) console.log(`    ${l}`);
       }
       console.log(`  For a current evaluation: chaingate check ${parsed.name}@${parsed.version} --packument <file>`);

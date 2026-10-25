@@ -36,7 +36,8 @@ import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cach
 import { createTarWalker } from './tar-walk.js';
 import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
 import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
-  withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION } from './static-checks.js';
+  withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, FACTS_LIMITS, makeBase64Share, createMemberTally,
+  staticFactsOf } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
 import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf } from './shadow-facts.js';
 /** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
@@ -1222,6 +1223,10 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         // 0.1.5 shadow facts (R11, 8b): the facts walk also tallies every file's size by class, for the next version's size change
         const shapeTally = factsDue ? createShapeTally() : null;
         if (shapeTally) keepOpts = { ...keepOpts, onFile: shapeTally.onFile };
+        // 0.1.5 static-checks-1.6 (R11): an ARMED walk also reads every file's first 2 MiB for recon's member facts and streams a hook
+        // target over the keep cap through the base64 counter (rule 7); facts only, stored beside the entry facts, never a row
+        const memberTally = staticWhy === 'armed' ? createMemberTally() : null;
+        if (memberTally) keepOpts = { ...keepOpts, onMember: memberTally.onMember, memberWindow: FACTS_LIMITS.windowBytes, shareOf: makeBase64Share };
         const walker = mcWalk || factsDue ? createTarWalker(keepOpts) : null;
         const headerFn = notice && upstream.statusCode === 200 ? (h) => withNotice(h, notice) : null;
         const tap = walker ? (c) => walker.write(c) : null;
@@ -1327,6 +1332,18 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             } catch (err) {
               log?.warn?.(`[mc] ${canonicalName}@${state.tarballVersion}: not recorded (${err.message})`);
             }
+            // 0.1.5 static-checks-1.6 (R11): the armed walk's facts, once per version, when its rows are recorded; no row reads them
+            if (memberTally) {
+              try {
+                if (!witnessDb.staticFactsFor(canonicalName, state.tarballVersion)) {
+                  const t = memberTally.result();
+                  witnessDb.recordStaticFacts(canonicalName, state.tarballVersion, staticFactsOf({ manifest: staticManifest,
+                    packageJson: walk.ok ? parsedPackageJson(walk) : null, walk, members: t.members, membersOver: t.over }));
+                }
+              } catch (err) {
+                log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: static facts not recorded (${err.message})`);
+              }
+            }
           }
         }
         // 0.1.5 shadow facts (operator ruling R11 2026-10-24): rules 3, 5 (transition), 8 (known owner) and 8b, computed once per served
@@ -1343,7 +1360,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 named: named(state.tarballVersion) ?? [] });
               witnessDb.recordShadowFacts(canonicalName, state.tarballVersion, facts);
             }
-            if (facts) noteInstall(req, { kind: 'facts', package: canonicalName, version: state.tarballVersion, facts });
+            const sx = facts ? witnessDb.staticFactsFor(canonicalName, state.tarballVersion) : null;   // static-checks-1.6, armed versions only
+            if (facts) noteInstall(req, { kind: 'facts', package: canonicalName, version: state.tarballVersion, facts, ...(sx ? { static_facts: sx } : {}) });
           } catch (err) {
             log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: shadow facts not recorded (${err.message})`);
           }

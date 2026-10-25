@@ -7,7 +7,7 @@
 // and bidi/format controls, and capped; copyable commands are printed only for identities notice.js validates (dated
 // notes 6.10, 7.14).
 import { identity, labelFor } from '../proxy/notice.js';
-import { shadowLines, notable, SHADOW_NOTE } from '../proxy/shadow-facts.js';
+import { shadowLines, staticFactsLines, notable, SHADOW_NOTE } from '../proxy/shadow-facts.js';
 
 // C0, DEL, C1, and the bidi/format controls (U+061C, U+200B-U+200F, U+202A-U+202E, U+2060-U+2069, U+FEFF)
 export const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
@@ -224,7 +224,11 @@ function renderInstall(inst, cutoff) {
   for (const e of events) if (e.kind === 'facts' && e.facts && typeof e.facts === 'object') factsBy.set(idOf(e), e);
   const factLines = [];
   for (const e of factsBy.values()) {
-    try { if (notable(e.facts)) factLines.push(`  ${shownId(e.package, e.version)}: ${shadowLines(e.facts).map((l) => clean(l, 400)).join('; ')}`); } catch { /* malformed: not shown */ }
+    try {
+      // static-checks-1.6 (R11): an armed version's static facts are listed with it, notable or not (armed versions are few)
+      const sx = e.static_facts && typeof e.static_facts === 'object' ? `; ${clean(e.static_facts.facts?.version ?? 'static checks', 40)} facts: ${staticFactsLines(e.static_facts).map((l) => clean(l, 400)).join('; ')}` : '';
+      if (notable(e.facts) || sx) factLines.push(`  ${shownId(e.package, e.version)}: ${shadowLines(e.facts).map((l) => clean(l, 400)).join('; ')}${sx}`);
+    } catch { /* malformed: not shown */ }
   }
   if (factLines.length) {
     out.push('', `Recorded facts (${clean([...factsBy.values()][0].facts.version ?? 'unknown', 40)}; ${SHADOW_NOTE}), `

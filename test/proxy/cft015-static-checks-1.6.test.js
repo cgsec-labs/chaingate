@@ -342,7 +342,8 @@ test('E2 `why` prints the static-checks-1.6 facts under the recorded facts, mark
     assert.match(w.out, /S5 install\.js \(\d+ B\): base64 share 0\.\d+, magic wasm/);
     assert.match(w.out, /agent config writes 1: scripts\/a\.sh \.cursor \(shell-copy, shell-mkdir\)/);
     assert.match(w.out, /I\/O surface present/);
-    assert.ok([...w.out].every((ch) => ch.charCodeAt(0) < 0x80), 'plain ASCII');
+    const block = w.out.slice(w.out.indexOf('  Static check facts')).split('\n'); const end = block.findIndex((l, i) => i > 0 && !l.startsWith('    '));
+    assert.ok(block.slice(0, end).join('\n').split('').every((ch) => ch.charCodeAt(0) < 0x80), 'the facts block is plain ASCII');
     const j = await runCli(['why', 'z@1.1.0', '--json'], { CHAINGATE_WITNESS_DB: dbPath, HOME: dir });
     const parsed = JSON.parse(j.out.slice(j.out.indexOf('{')));
     assert.equal(parsed.static_facts?.facts?.version, 'static-checks-1.6');

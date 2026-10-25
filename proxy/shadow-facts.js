@@ -172,6 +172,27 @@ export function shadowLines(f) {
   return out;
 }
 
+/** The static-checks-1.6 facts of an armed version ({ facts, s5 }, proxy/static-checks.js staticFactsOf), as `why` and `report` print them. */
+export function staticFactsLines(x) {
+  const f = x?.facts; const out = [];
+  if (!f || f.status !== 'CHECKED') out.push(`not checked (${f?.reason ?? 'not recorded'})`);
+  else {
+    const er = f.encoded_runs ?? {}; const mg = Object.entries(er.by_magic ?? {}).filter(([, n]) => n > 0).map(([k, n]) => `${k === 'none' ? 'no known magic' : k} ${n}`);
+    out.push(er.runs ? `encoded runs ${er.runs} (${mg.join(', ')}); ${er.under_diversity_ref} with fewer than ${er.diversity_ref} distinct characters` : 'encoded runs 0');
+    const xp = f.excluded_paths ?? {}; const U = 'under test, fixture, vendor or node_modules paths';
+    out.push(`dynamic-code lines ${xp.p2?.rest ?? 0}, and ${xp.p2?.excluded ?? 0} ${U}; bare-IP URL lines ${xp.p9?.rest ?? 0}, and ${xp.p9?.excluded ?? 0} ${U}`);
+    const aw = f.agent_config_writes ?? { count: 0, listed: [] };
+    out.push(`agent config writes ${aw.count}${aw.count ? `: ${(aw.listed ?? []).map((w) => `${w.source === 'file' ? shown(w.path) : `${shown(w.hook)} hook`} ${w.dirs.join(', ')} (${w.writes.join(', ')})`).join('; ')}` : ''}`);
+    const io = f.io_surface ?? {};
+    out.push(io.status !== 'CHECKED' ? `I/O surface not checked (${io.reason ?? 'not recorded'})` : io.no_io_surface ? `I/O surface NONE (${io.text_read} members read as text)`
+      : `I/O surface present (${[...Object.entries(io.classes ?? {}).filter(([, n]) => n > 0).map(([c, n]) => `${c} ${n}`), ...(io.install_hooks ? [`install hooks ${io.install_hooks}`] : [])].join(', ')})`);
+  }
+  for (const e of Array.isArray(x?.s5) ? x.s5 : []) {
+    out.push(`S5 ${shown(e.path)} (${e.size} B): ${e.base64_share === null ? `base64 share not checked (${e.base64_note})` : `base64 share ${e.base64_share}, magic ${e.base64_magic ?? 'none'}`}`);
+  }
+  return out;
+}
+
 /** Whether a fact would have spoken on a triage card: not the latest tag, not a known owner, a sign not new, a size change all docs. */
 export function notable(f) {
   return Boolean((f?.dist_tag?.state === 'known' && f.dist_tag.not_latest)
@@ -181,4 +202,4 @@ export function notable(f) {
 }
 
 export default { SHADOW_FACTS_VERSION, SHADOW_NOTE, MAX_PACKAGES, rememberPackumentFacts, packumentFactsFor, forgetPackumentFacts,
-  distTagFact, knownOwnerFact, fileClass, createShapeTally, sizeAttributionFact, transitionFact, shadowFactsOf, shadowLines, notable };
+  distTagFact, knownOwnerFact, fileClass, createShapeTally, sizeAttributionFact, transitionFact, shadowFactsOf, shadowLines, staticFactsLines, notable };
