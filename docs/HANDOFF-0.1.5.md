@@ -257,3 +257,16 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
   unchanged.
 - Open with the operator: commit messages since v0.1.4 that name the internal plan (69 of 118) and this file itself, before
   anything reaches main.
+
+## Final code commit: 7e981c8 (2026-10-25; the operator, directly: no internal codes in comments or printed text)
+
+- ce64220 is retired for this. Comments: `1015b36`, 80 shipped files, comments only (checked: with comments stripped, every file's
+  code equals the previous commit's; the one exception is witness/db.js, whose SQL `--` comment lines inside the schema text were
+  reworded; node --check on every file). `proxy/static-checks.js` untouched (df56a279), so recon's parity record stands.
+- Printed text (`c727bc6` tests, `7e981c8`): the placement reasons for a takedown stub, a release with no publication time and a
+  CalVer collapse, the strict-tier threshold detail, and the two `on_*` choice explanations no longer name internal rule codes.
+  The frozen goldens are unchanged and are compared through an explicit wording map (`test/seed-v3/cft015-plain-wording.mjs`);
+  test D9 keeps the codes out of printed strings.
+- Full suite at `7e981c8` on a non-root host, Node.js 22.23.4: 1,610 tests, 1,569 pass, 0 fail, 41 skipped; protected paths
+  unchanged.
+- Main: squash, as the operator chose; this file leaves the tree before the squash commit.
