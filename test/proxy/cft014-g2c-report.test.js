@@ -194,6 +194,11 @@ test('G2c-7b (D-R6) the tag moved off a pinned `latest` is reported, with "npm i
 test('G2c-9 an exhausted log budget and a deduplicated named line change nothing in the report', async () => {
   await withProxy({ hooks: { logBudget: { burst: 0, perSecond: 0 } } }, async ({ proxyUrl, logs }) => {
     await install(proxyUrl, 'sesslogA');
+    // the last download's facts are stored after its response (R11); the second install starts once all four are, or it may
+    // download u@1.2.0 before they exist and read none back (a race in this test, not a report change)
+    const factsOfA = async () => ((await get(`${proxyUrl}/_chaingate/report?all=1`)).json.installs
+      .find((i) => i.key === 'npm-session:sesslogA')?.events ?? []).filter((e) => e.kind === 'facts').length;
+    for (const until = Date.now() + 5000; (await factsOfA()) < 4 && Date.now() < until;) await new Promise((r) => setTimeout(r, 50));
     await install(proxyUrl, 'sesslogB');
     assert.equal(logs.filter((l) => l.startsWith('[gate] q@1.5.0: WARN named')).length, 1, 'the second named line was deduplicated');
     const all = (await get(`${proxyUrl}/_chaingate/report?all=1`)).json;

@@ -119,7 +119,7 @@ test('G4-14 (R6, R8, R10) README and SECURITY.md: the 1.2 model, labelled platfo
   for (const re of [/six gates/i, /combination is what matters/i, /\(hard limit\)/, /There are six gates/]) assert.doesNotMatch(readme, re);
   assert.match(readme, /no combination of contributing rows warns/i);
   assert.match(readme, /qualification of 0\.1\.3/);
-  assert.match(readme, /0\.1\.5 ran its full test suite on Linux x64 with Node\.js 22\.22\.2/);
+  assert.match(readme, /0\.1\.5 ran its full test suite on Linux x64 with Node\.js 22\.23\.4/);   // 22.22.2 left the test host 2026-10-23
   assert.match(readme, /passed\s+all 36 jobs/);
   assert.match(readme, /is never an ALLOW for that rule/);
   const security = read('SECURITY.md');
