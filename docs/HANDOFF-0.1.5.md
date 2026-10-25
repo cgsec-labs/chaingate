@@ -227,3 +227,17 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
 - Next, each on the operator's word: README and release notes (the 2026-10-23 review note for README lines 175 and 181, now
   static-checks-1.6, the shadow facts and this time), the release commit and release checks, the package sha256 sent once to the
   v3.2 session.
+
+## README for 0.1.5 (2026-10-25, on the operator's word)
+
+- `fe77f8a`: S6 and S7 named beside S0 and S5 (what each reads, the four npm notice texts, the measurement basis over about
+  19,600 ordinary versions and S7's runtime basis); entry-path-change arms the walk; `static-checks-1.6`; withholding on any named
+  static check; the recorded facts (record only) and their timing columns; `check --tarball` reports S7 not applicable offline.
+  This closes the 2026-10-23 review note for README lines 175 and 181.
+- `ce2ca23`: the 0.1.5 test run line (Node.js 22.23.4, 1,606 tests, none failed, 41 skipped).
+- `a5d3864`, test only (`test/` is not in the package): G4-14 pins that line; G2c-9 waits for the first install's facts events
+  before the second install (it failed once under load in the full suite after `ce2ca23`: the last download's facts follow its
+  response). The final code commit stays `44113b7`: nothing under `files` in package.json changed after it except README.md.
+- Full suite at `a5d3864` after the push: 1,606 tests, 1,565 pass, 0 fail, 41 skipped; protected paths unchanged.
+- The release notes draft is outside the repository. Next, each on the operator's word: the release commit and release checks,
+  then the package sha256 once to the v3.2 session.
