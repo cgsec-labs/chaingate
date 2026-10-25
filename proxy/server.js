@@ -39,7 +39,7 @@ import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSe
   withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, FACTS_LIMITS, makeBase64Share, createMemberTally,
   staticFactsOf } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
-import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf } from './shadow-facts.js';
+import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf, publicStaticFacts } from './shadow-facts.js';
 /** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
 function parsedPackageJson(walk) {
   if (!walk?.ok || !walk.packageJson) return null;
@@ -1341,7 +1341,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                     members: t.members, membersOver: t.over });
                   // R12: the time 1.6 added to this walk (the walker's memberMs plus staticFactsOf), beside facts_ms; no bar in 0.1.5
                   const ms = (Number.isFinite(walk.memberMs) ? walk.memberMs : 0) + performance.now() - t1;
-                  witnessDb.recordStaticFacts(canonicalName, state.tarballVersion, sf, Number(ms.toFixed(3)));
+                  witnessDb.recordStaticFacts(canonicalName, state.tarballVersion, publicStaticFacts(sf), Number(ms.toFixed(3)));
                 }
               } catch (err) {
                 log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: static facts not recorded (${err.message})`);

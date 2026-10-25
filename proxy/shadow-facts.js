@@ -13,7 +13,17 @@
 // Rule 8's fourth form ("maintains other packages already in scope") needs state across packages and is not computed here.
 
 export const SHADOW_FACTS_VERSION = 'shadow-facts-1.0';
-export const SHADOW_NOTE = 'recorded only: no verdict, tier or notice depends on it (operator ruling R11)';
+export const SHADOW_NOTE = 'recorded only: no verdict, tier or notice depends on it';
+/** The plain notes the proxy stores and shows in place of the two notes recon's facts block carries (that block stays byte for byte). */
+const STATIC_FACTS_NOTE = 'recorded only: no outcome, tier or notice depends on these facts; a fact is read against the file, never a verdict';
+const EXCLUDED_PATHS_NOTE = 'lines with a hit, over each file\'s read window: p2 = dynamic code (eval, Function, vm), p9 = a URL with a bare IP address';
+/** A copy of a staticFactsOf result ({ facts, s5 }) with those two notes in plain words; nothing else changes. Null stays null. */
+export function publicStaticFacts(x) {
+  if (!x || typeof x !== 'object' || !x.facts || typeof x.facts !== 'object') return x ?? null;
+  const facts = { ...x.facts, note: STATIC_FACTS_NOTE };
+  if (facts.excluded_paths && typeof facts.excluded_paths === 'object') facts.excluded_paths = { ...facts.excluded_paths, note: EXCLUDED_PATHS_NOTE };
+  return { ...x, facts };
+}
 const BASIS = 'the version this proxy served before';
 const NOT_AT_HAND = 'the package metadata is not at hand';
 
@@ -201,5 +211,5 @@ export function notable(f) {
     || (f?.size?.state === 'known' && f.size.all_attributed));
 }
 
-export default { SHADOW_FACTS_VERSION, SHADOW_NOTE, MAX_PACKAGES, rememberPackumentFacts, packumentFactsFor, forgetPackumentFacts,
+export default { SHADOW_FACTS_VERSION, SHADOW_NOTE, publicStaticFacts, MAX_PACKAGES, rememberPackumentFacts, packumentFactsFor, forgetPackumentFacts,
   distTagFact, knownOwnerFact, fileClass, createShapeTally, sizeAttributionFact, transitionFact, shadowFactsOf, shadowLines, staticFactsLines, notable };
