@@ -241,3 +241,19 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
 - Full suite at `a5d3864` after the push: 1,606 tests, 1,565 pass, 0 fail, 41 skipped; protected paths unchanged.
 - The release notes draft is outside the repository. Next, each on the operator's word: the release commit and release checks,
   then the package sha256 once to the v3.2 session.
+
+## Final code commit: ce64220 (2026-10-25; the operator, directly: plain wording in public text and runtime output)
+
+- The operator asked that public text and what the runtime prints carry none of the project's internal naming. 44113b7 is
+  retired for this; the final code commit is `ce64220`.
+- Runtime (`a6d6e5e` tests, `ce64220`): `SHADOW_NOTE` no longer names a ruling. The proxy stores the static facts through
+  `publicStaticFacts` (`proxy/shadow-facts.js`), which replaces the two notes recon's block carries (`facts.note` and
+  `facts.excluded_paths.note`) with plain ones and changes nothing else. `proxy/static-checks.js` is unchanged at df56a279
+  (`FACTS_NOTE` included), so recon's parity record stands. Stored, `why` (text and `--json`) and the report carry no internal
+  wording (T4, T5).
+- Docs: README and SECURITY.md in plain language (`4df8b68`; tests `91e4f66`), SEEDS.md without internal identifiers and
+  without the unpublished engineering seed's record (`fec9019`; guard `71b1e34`, test D8).
+- Full suite at `fec9019` on a non-root host, Node.js 22.23.4: 1,609 tests, 1,568 pass, 0 fail, 41 skipped; protected paths
+  unchanged.
+- Open with the operator: commit messages since v0.1.4 that name the internal plan (69 of 118) and this file itself, before
+  anything reaches main.
