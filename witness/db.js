@@ -3,8 +3,8 @@ import { applicableFromRows } from './decision-rule.js';
 
 /**
  * A stored decision row that recorded an exact-version override ALLOW: the runner's synthetic `override` result
- * (gates/index.js). Structural, never inferred from text. U-05 gap-closure r2 (N3): such a row applies only while the
- * override it recorded still exists.
+ * (gates/index.js). Structural, never inferred from text. Such a row applies only while the override it recorded still
+ * exists.
  */
 export function isOverrideRow(gatesFired) {
   return Array.isArray(gatesFired) && gatesFired.some((r) => r && r.gate === 'override');
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS dep_first_publish (
     attempts      INTEGER NOT NULL DEFAULT 1
 );
 
--- 0.1.4 group 2c (D-R2, O3, E20): the only per-install facts kept on disk -- named warnings served, refusals resting on a
+-- Since 0.1.4: the only per-install facts kept on disk -- named warnings served, refusals resting on a
 -- fact, and dist-tags moved off a fact-withheld version. Written by the proxy once per install and event; pruned at its
 -- start (365 days, at most 100,000 rows). Its statements are prepared LAZILY (namedFactStmts), never in _prepare(): a
 -- read-only handle on a database the 0.1.3 code created has no such table, and must still open (it reads as empty).
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS named_fact_events (
 );
 CREATE INDEX IF NOT EXISTS idx_named_fact_events_at ON named_fact_events(at);
 
--- 0.1.4 group 2d (D-U1, E24): the user's actions. Live state in acceptances and pins; every action appended to
+-- Since 0.1.4: the user's actions. Live state in acceptances and pins; every action appended to
 -- adjudications, which triggers keep append-only. Lazily prepared statements, as for named_fact_events.
 CREATE TABLE IF NOT EXISTS acceptances (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,17 +163,16 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_u BEFORE UPDATE ON adjudi
 CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudications
   BEGIN SELECT RAISE(ABORT, 'adjudications are append-only'); END;
 
--- 0.1.5 (operator ruling R4 2026-10-21): the entry facts of each version this proxy served, written once per version on its
+-- Since 0.1.5: the entry facts of each version this proxy served, written once per version on its
 -- first download (tarballs are immutable per version): the main and bin targets the registry manifest names, each read (size,
 -- sha256, the closed-vocabulary fileFacts summary) or not read (its reason). walk = 'refused' when the archive itself was refused
 -- (no files). S7 compares a version with the last one served before it. Retention: the newest 3 served versions per package and at
 -- most 200,000 in all (recordEntryFacts).
--- 0.1.5 (R11 2026-10-24): shape = the version's file sizes by class (proxy/shadow-facts.js, 8b), written with the entry facts; shadow =
--- its shadow facts (rules 3, 5, 8, 8b), written once after its first download's rows are final. Record only: no verdict reads them.
--- static_facts = the static-checks-1.6 facts of an armed walk (rules 6, 7, 8a, 8d, 8h; proxy/static-checks.js staticFactsOf), written
--- once when its rows are recorded. Record only likewise. static_facts_ms = the time that walk's 1.6 work spent (the member windows
--- and tally, the streamed share and staticFactsOf), in milliseconds, written with static_facts (operator ruling R12 2026-10-25; no bar
--- in 0.1.5).
+-- Since 0.1.5: shape = the version's file sizes by class (proxy/shadow-facts.js), written with the entry facts; shadow = its
+-- recorded facts (dist-tags, sign transitions, known owner, size change), written once after its first download's rows are final.
+-- Record only: no verdict reads them. static_facts = the static-checks-1.6 facts of an armed walk (proxy/static-checks.js
+-- staticFactsOf), written once when its rows are recorded. Record only likewise. static_facts_ms = the time that walk's 1.6 work spent (the member windows
+-- and tally, the streamed share and staticFactsOf), in milliseconds, written with static_facts.
 CREATE TABLE IF NOT EXISTS entry_fact_versions (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     package_name          TEXT NOT NULL,
@@ -278,10 +277,10 @@ export class WitnessDB {
       );
     }
     this.db.exec(SCHEMA_SQL);
-    // 0.1.5 (R8 2026-10-22): facts_ms joined entry_fact_versions after the table; a table created before it gains the column
+    // 0.1.5: facts_ms joined entry_fact_versions after the table; a table created before it gains the column
     const efv = this.db.prepare("SELECT name FROM pragma_table_info('entry_fact_versions')").all().map((c) => c.name);
     if (efv.length && !efv.includes('facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN facts_ms REAL');
-    // 0.1.5 (R11 2026-10-24): shape and shadow likewise
+    // 0.1.5: shape, shadow and static_facts likewise
     for (const c of ['shape', 'shadow', 'static_facts']) if (efv.length && !efv.includes(c)) this.db.exec(`ALTER TABLE entry_fact_versions ADD COLUMN ${c} TEXT`);
     if (efv.length && !efv.includes('static_facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN static_facts_ms REAL');
     this._prepare();
@@ -389,7 +388,7 @@ export class WitnessDB {
          WHERE package_name = ? AND version = ?
          ORDER BY decided_at DESC, id DESC`,
       ),
-      // U-05 owner decision 10 (C2): the same order, oldest first, for the applicable-BLOCK walk.
+      // The same order, oldest first, for the applicable-BLOCK walk.
       decisionsOldestFirst: this.db.prepare(
         `SELECT id, disposition, gates_fired, decided_at
          FROM gate_decisions
@@ -459,7 +458,7 @@ export class WitnessDB {
   }
 
   /**
-   * 0.1.4 group 2c (D-R2): the named_fact_events statements, prepared on first use. Null when the table does not exist
+   * Since 0.1.4: the named_fact_events statements, prepared on first use. Null when the table does not exist
    * (a database the 0.1.3 code created, opened read-only): readers treat that as empty.
    */
   _namedFactStmts() {
@@ -472,7 +471,7 @@ export class WitnessDB {
            install_key, k_version)
          VALUES (@at, @kind, @package_name, @version, @classes, @reason, @policy_version, @seed_sha256, @install_key, @k_version)`,
       ),
-      // the NEWEST rows of the window (dated note 7.7); the caller gets them oldest first
+      // the NEWEST rows of the window; the caller gets them oldest first
       since: this.db.prepare(
         `SELECT id, at, kind, package_name, version, classes, reason, policy_version, seed_sha256, install_key, k_version
          FROM named_fact_events WHERE at >= ? ORDER BY at DESC, id DESC LIMIT ?`,
@@ -487,7 +486,7 @@ export class WitnessDB {
   }
 
   /**
-   * 0.1.4 group 2d (D-U1): the statements of one lazily used table, prepared on first use; null while the table does not
+   * Since 0.1.4: the statements of one lazily used table, prepared on first use; null while the table does not
    * exist (a database the 0.1.3 code created, opened read-only), which readers treat as empty.
    */
   _tableStmts(table, build) {
@@ -569,14 +568,14 @@ export class WitnessDB {
     }));
   }
 
-  /** 0.1.5 (R4): whether the entry facts of this version are stored (false on a database without the tables). */
+  /** 0.1.5: whether the entry facts of this version are stored (false on a database without the tables). */
   hasEntryFacts(packageName, version) {
     const st = this._entryFactStmts();
     return Boolean(st && st.has.get(packageName, version));
   }
 
   /**
-   * 0.1.5 (R4): store one served version's entry facts, once: 'wrote', or 'exists' (nothing changed). Serving order is the row id
+   * 0.1.5: store one served version's entry facts, once: 'wrote', or 'exists' (nothing changed). Serving order is the row id
    * (first download). Prunes to the newest `keepPerPackage` versions of the package and `maxVersions` in all, oldest served first.
    */
   recordEntryFacts(r, { keepPerPackage = 3, maxVersions = 200_000 } = {}) {
@@ -600,7 +599,7 @@ export class WitnessDB {
   }
 
   /**
-   * 0.1.5 (R3): the last version of the package this proxy served BEFORE `version` (before its first download when it is stored,
+   * 0.1.5: the last version of the package this proxy served BEFORE `version` (before its first download when it is stored,
    * else the last one served), with its files; null on a cold start.
    */
   predecessorEntryFacts(packageName, version) {
@@ -612,14 +611,14 @@ export class WitnessDB {
       shape: decodeJsonField(v, 'shape', null).shape ?? null, files };
   }
 
-  /** 0.1.5 (R11): store a served version's shadow facts, once; 1 when written, 0 when already stored or no entry facts row exists. */
+  /** 0.1.5: store a served version's shadow facts, once; 1 when written, 0 when already stored or no entry facts row exists. */
   recordShadowFacts(packageName, version, facts) {
     const st = this._entryFactStmts();
     if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
     return st.shadowSet.run({ p: packageName, v: version, shadow: JSON.stringify(facts) }).changes;
   }
 
-  /** 0.1.5 (R11): a version's stored shadow facts, or null (none, a database without the column, or not readable). Never throws. */
+  /** 0.1.5: a version's stored shadow facts, or null (none, a database without the column, or not readable). Never throws. */
   shadowFactsFor(packageName, version) {
     try {
       const r = this.db.prepare('SELECT shadow FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
@@ -627,7 +626,7 @@ export class WitnessDB {
     } catch { return null; }
   }
 
-  /** 0.1.5 (R11): store a version's static-checks-1.6 facts ({ facts, s5 }) and the time they took (ms, or NULL), once; 1 when written,
+  /** 0.1.5: store a version's static-checks-1.6 facts ({ facts, s5 }) and the time they took (ms, or NULL), once; 1 when written,
    *  0 when already stored or no entry facts row exists. */
   recordStaticFacts(packageName, version, x, ms = null) {
     const st = this._entryFactStmts();
@@ -635,7 +634,7 @@ export class WitnessDB {
     return st.staticSet.run({ p: packageName, v: version, x: JSON.stringify(x), ms: Number.isFinite(ms) ? ms : null }).changes;
   }
 
-  /** 0.1.5 (R11): a version's stored static-checks-1.6 facts, or null (none, a database without the column, or not readable). Never throws. */
+  /** 0.1.5: a version's stored static-checks-1.6 facts, or null (none, a database without the column, or not readable). Never throws. */
   staticFactsFor(packageName, version) {
     try {
       const r = this.db.prepare('SELECT static_facts FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
@@ -684,7 +683,7 @@ export class WitnessDB {
     return st ? st.list.all().map((r) => decodeJsonField(r, 'classes', {})) : [];
   }
 
-  /** PRAGMA data_version: changes when ANOTHER connection commits (the pin set's change check, D-U6). */
+  /** PRAGMA data_version: changes when ANOTHER connection commits (the pin set's change check). */
   dataVersion() {
     return this.db.pragma('data_version', { simple: true });
   }
@@ -740,7 +739,7 @@ export class WitnessDB {
   }
 
   /**
-   * The newest decision for (pkg, version) that is NOT a stored override ALLOW (U-05 gap-closure r2, N3): the decision
+   * The newest decision for (pkg, version) that is NOT a stored override ALLOW: the decision
    * that applies once the override it recorded no longer exists. A row whose gates_fired does not parse is not an
    * override row; it is returned and read by its disposition, as getLatestDecision's callers read it. Read-only.
    */
@@ -769,7 +768,7 @@ export class WitnessDB {
   }
 
   /**
-   * U-05 owner decision 10 (C2): the decision that APPLIES to (pkg, version) under the one applicable-BLOCK rule
+   * The decision that APPLIES to (pkg, version) under the one applicable-BLOCK rule
    * (witness/decision-rule.js). `overrideLive` defaults to whether an exact override exists now. Read errors propagate:
    * a caller that cannot read the history has no decision. Read-only.
    */

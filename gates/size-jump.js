@@ -1,4 +1,4 @@
-// T1.2 size jump -- a CONTRIBUTING row in cft-policy-1.2 (r3 §18.6: contributing at >= 2x; group 3 tables D-T4). The
+// size-jump -- a CONTRIBUTING row in cft-policy-1.2 (contributing at >= 2x). The
 // candidate's dist.unpackedSize against its predecessor (gates/predecessor.js). The runner's role table records a WARN from
 // this gate as NOTE: shown beside a named row and as detail, never a warning on its own.
 import { predecessorOf, MAX_WALK } from './predecessor.js';

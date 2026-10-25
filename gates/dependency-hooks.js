@@ -1,17 +1,16 @@
-// N1h -- dependency-hooks, a NAMED gate in cft-policy-1.2 (r3 §18.11; group 3 tables D-N1..D-N2). The counted P6 plain
-// rule (46072722…), ported exactly from p5/run_p5_r1.py (judged_fields, added, target_of), p5/run_p5.py (eligible, STUB,
-// NONREG) and p5/resolve.mjs (node-semver):
+// N1h -- dependency-hooks, a NAMED gate in cft-policy-1.2. The measured plain rule, ported exactly from the measurement
+// scripts (judged fields, added dependencies, target, eligibility, STUB, NONREG; resolution with node-semver):
 //
 //   R fires iff an ADDED dependency D -- in R's judged fields (dependencies, optionalDependencies, peerDependencies not
 //   marked optional) and absent from the judged fields of every ELIGIBLE earlier version (published before R; not a
 //   takedown stub; not npm-published) -- with a REGISTRY spec (an npm: alias judges its target; git/URL/file/link/owner-repo
-//   are D2 and not judged) RESOLVES (a range: maxSatisfying, no prerelease, loose; a dist-tag: the SERVED dist-tags) to a
+//   are not judged) RESOLVES (a range: maxSatisfying, no prerelease, loose; a dist-tag: the SERVED dist-tags) to a
 //   version declaring a truthy preinstall/install/postinstall, or gypfile === true.
-//   Outcome (A1): WARN if any added dependency fires; else SKIP (not evaluable) if any is not evaluable; else ALLOW.
+//   Outcome: WARN if any added dependency fires; else SKIP (not evaluable) if any is not evaluable; else ALLOW.
 //
 // The dependency's packument is not in the parent's; the runner judges from the process cache (gates/dependency-cache.js)
 // and records the dependencies it could not judge yet as `pending`. The proxy fetches those at TARBALL time, bounded, and
-// writes the judged row (§18.20 item 2, D-N3); the store keeps the last judgement over a later pending row (D-N5).
+// writes the judged row; the store keeps the last judgement over a later pending row.
 import semver from 'semver';
 import { getDependency, manifestFacts } from './dependency-cache.js';
 
@@ -46,7 +45,7 @@ export function isEligible(man, version) {
   return !(String(u.email || '').toLowerCase() === 'npm@npmjs.com' || u.name === 'npm');
 }
 
-// G3 dated note 3.1: one index per packument (memoised per versions/time object) -- each version's time and judged fields,
+// One index per packument (memoised per versions/time object) -- each version's time and judged fields,
 // the earliest time each name appears among ELIGIBLE versions, and the two earliest eligible times -- so a version costs
 // O(its own dependencies), not O(every version).
 const indexes = new WeakMap();
@@ -157,7 +156,7 @@ export default {
     for (const d of added) {
       const t = specTarget(d.name, d.spec);
       if (t.kind !== 'registry') continue;
-      // G3 dated note 3.2: a name/spec too long to carry is NOT EVALUABLE (never dropped, never clean)
+      // a name/spec too long to carry is NOT EVALUABLE (never dropped, never clean)
       const tooLong = d.name.length > 214 || t.target.length > 214 ? 'name' : (t.spec.length > 256 ? 'spec' : null);
       if (tooLong) {
         const shown = d.name.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 60);

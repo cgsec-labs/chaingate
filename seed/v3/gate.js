@@ -1,4 +1,4 @@
-// CFT-05 — the supported installation path, assembled: the v3 seed as a D1 gate module.
+// The supported installation path, assembled: the v3 seed as a gate module.
 //
 //   npm packument  ->  explicit observation row  ->  candidate  ->  finding  ->  policy  ->  one
 //   GateResult, which the proxy's packument rewriter turns into enforcement.
@@ -9,7 +9,7 @@
 //
 // WHERE A LIVE RELEASE SITS IN HISTORY.
 //
-// This is grounded in the FU-2 FINAL rule of record
+// This is grounded in the final lineage rule of record
 // (`collector/drift_cooccurrence.resolve_lineage_predecessors`), not in a shortcut. That rule is:
 //
 //   E5  a version with no publication time is dropped: it can neither be a predecessor nor hold one
@@ -41,7 +41,7 @@
 //                         this release -- E1 depends on the package's full distinct-major publish
 //                         sequence, which the seed does not store
 //
-// SEED CONTRACT 1.2 (seed v3.2 #5, narrow rl2; placement rule rl2-placement-1.0, the seed side's tools/seedgen/placement.py).
+// SEED CONTRACT 1.2 (placement rule rl2-placement-1.0, the seed side's tools/seedgen/placement.py).
 // The rule of record keys a lineage by (major, prerelease tag family): a prerelease's predecessor is the previous version
 // of its own family in its key, a plain release's is the previous version of ANY family in its key. The seed keeps one
 // chain per (key, family), "release" a family of its own, and every chain's tip, so for a live release:
@@ -118,7 +118,7 @@ function resolveDomainVersionCount(configured, { rawVersions, candidateEmail }) 
   return { count: domainCountsFor(rawVersions).get(domain) || 0, source: 'from-packument', domain };
 }
 
-// FU-2 E4/E2, mirrored exactly: `0\.0\.\d+-security$` and `^(\d+)` with a '0' fallback.
+// Rules E4/E2 above, mirrored exactly: `0\.0\.\d+-security$` and `^(\d+)` with a '0' fallback.
 const STUB_RE = /0\.0\.\d+-security$/;
 const MAJOR_RE = /^(\d+)/;
 const CALVER_KEY = '__CALVER__';
@@ -136,7 +136,7 @@ const isCalverYear = (major) => /^20\d\d$/.test(major)
 /**
  * How a release orders against a recorded one — 'after', 'before', or 'ambiguous'.
  *
- * FU-2 sorts on (published_at, version), but the seed stores `published_s` in SECONDS
+ * The lineage rule sorts on (published_at, version), but the seed stores `published_s` in SECONDS
  * (`contract.TIMESTAMP_PRECISION === 'unix_seconds_utc'`), so two releases inside the same second
  * are indistinguishable in it. Treating equal stored seconds as exact timestamp equality and then
  * breaking the tie on the version string INVENTED an ordering the seed cannot support: the real
@@ -168,7 +168,7 @@ const PLACEMENTS = Object.freeze({
 });
 
 /**
- * Where this release sits, per FU-2. Never throws: an unresolved placement is an OUTCOME that the
+ * Where this release sits, per the lineage rule. Never throws: an unresolved placement is an OUTCOME that the
  * caller must handle, not an error that discards the evidence which does not depend on it.
  *
  * @returns {{kind, lineage_id, ord, channel_a_usable, reason}}
@@ -178,8 +178,8 @@ function resolvePlacement(seed, packageName, version, publishedS, { holdingDescr
 
   const pkg = seed.db.prepare('SELECT id FROM packages WHERE package_name = ?').get(packageName);
   if (!pkg) {
-    // A takedown stub is outside lineage grouping whether or not the seed represents its package (U-05, revision 2
-    // §3.3: an all-stub package reported `uncovered-package`). Placement only; the finding is unchanged.
+    // A takedown stub is outside lineage grouping whether or not the seed represents its package (an all-stub
+    // package used to report `uncovered-package`). Placement only; the finding is unchanged.
     if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
     return no(PLACEMENTS.UNCOVERED_PACKAGE, 'the seed does not cover this package');
   }
@@ -369,8 +369,8 @@ function firstIndex(arr, pred) {
 }
 
 /**
- * 0.1.4 A8 (cft-policy-1.2; seed-base table R7/P3): how many registry releases sit between the seed tip and an `append`
- * candidate. Channel-A compares against the tip (R1) whatever the registry published since; this only COUNTS what the
+ * Since 0.1.4 (cft-policy-1.2): how many registry releases sit between the seed tip and an `append`
+ * candidate. Channel-A compares against the tip whatever the registry published since; this only COUNTS what the
  * seed has not seen, for policy to state as a coverage row. Never throws: a malformed time on another version is not
  * counted, and must not turn this candidate's evaluation into a refusal.
  *
@@ -452,7 +452,7 @@ function validateEvaluationConfig({ config = {}, domainVersionCount } = {}) {
  * THE evaluation path: one candidate, derived from what the proxy holds, to a policy decision.
  *
  * The gate calls it and `chaingate check` calls it; there is no second path. Its input handling is
- * the gate's, unchanged (U-01 plan §2): a missing manifest and any throw from row, placement,
+ * the gate's, unchanged: a missing manifest and any throw from row, placement,
  * candidate or check are policy refusals; a non-string `publishedAt` is passed as null, NOT refused.
  *
  * Call `validateEvaluationConfig` first (the gate does so at construction).
@@ -465,7 +465,7 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
   const version = input.version;
   const manifest = input.rawManifest;
 
-  // The advisory pin FIRST (cft-policy-1.1, D4). It names this exact version and needs neither a manifest, a
+  // The advisory pin FIRST (cft-policy-1.1). It names this exact version and needs neither a manifest, a
   // placement nor a finding, so it is looked up before anything that can fail and carried into every decision below:
   // a refusal can no longer discard it. A lookup that throws is carried as a recorded failure, never as "no pin".
   const looked = POL.lookupPin(seed, pkg, version);
@@ -518,13 +518,13 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
 }
 
 /**
- * Build the D1 gate module.
+ * Build the gate module.
  *
  * @param {object} opts
  *   opts.seed     an open reader Seed (read-only)
  *   opts.config   the operator's policy configuration (see policy.OPEN_CHOICES)
  *   opts.onDecision  optional sink for the full decision, for reporting; the gate still returns
- *                    exactly one GateResult, because that is the shape D1 aggregates.
+ *                    exactly one GateResult, because that is the shape the gate runner aggregates.
  * @returns {{name: string, evaluate: (input: object) => {gate, result, detail}}}
  */
 function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = null } = {}) {
@@ -541,7 +541,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
   function resultFrom(decision, sink) {
     // The decision exists before the sink sees it. A sink that throws used to escape `evaluate`, and the runner then
     // answered with `onError` -- replacing a computed decision (a pin BLOCK included) with the input rule. The decision
-    // stands; the sink's failure is stated beside it (U-05 Amendment 1, G4).
+    // stands; the sink's failure is stated beside it.
     let sinkFailure = null;
     if (sink) {
       try { sink(decision); } catch (e) { sinkFailure = e; }
@@ -559,14 +559,14 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
     const bearing = decision.results.filter((x) => x.result === decision.disposition);
     const why = (bearing.length ? bearing : decision.results)
       .map((x) => `${x.gate}: ${x.detail}`).join(' | ');
-    // cft-policy-1.2 (0.1.4 group 2a, D-N5): contributing rows never bear the disposition, so they are shown after the
+    // cft-policy-1.2 (since 0.1.4): contributing rows never bear the disposition, so they are shown after the
     // bearing rows -- the detail is what `why --cached` and the store keep. (When nothing bears, `why` already lists them.)
     const also = bearing.length ? decision.results.filter((x) => x.result === POL.NOTE)
       .map((x) => ` | also (contributing): ${x.gate}: ${x.detail}`).join('') : '';
     return {
       gate: SEED_V3_GATE,
       result: decision.disposition,
-      // D-N4: the decision's rows, structured (closed vocabulary), so a reader classifies named / contributing / coverage
+      // The decision's rows, structured (closed vocabulary), so a reader classifies named / contributing / coverage
       // rows without parsing the detail text.
       rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
       detail: `${decision.policy_version}: ${why}${also}`
@@ -585,7 +585,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
    * It is not the runner's decision and it is not this module's: an unusable input is exactly the
    * case `on_unusable_input` governs, so policy answers it.
    *
-   * `identity` (U-05 Amendment 1): the caller's request-bound `{packageName, version}` when it holds both, and
+   * `identity`: the caller's request-bound `{packageName, version}` when it holds both, and
    * `overridden: true` when an exact-version override exists for them. With an identity the advisory pin for that
    * exact version is looked up in THIS gate's seed -- the one accepted at wiring -- and a pin BLOCKs, as it does on
    * every other unusable-input path. Without one nothing is looked up and nothing is invented. An overridden version
@@ -613,7 +613,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
       packageName: known ? pkg : null, version: known ? version : null,
     });
     const pinned = looked.pin ? decision.results.find((x) => x.gate === POL.PIN_GATE) : null;
-    // 2b review (dated note 5.2): the failure path carries its structured rows too, so a 1.2 failure decision's facts are
+    // The failure path carries its structured rows too, so a 1.2 failure decision's facts are
     // read from rows, never from the error text.
     return { gate: SEED_V3_GATE, result: decision.disposition, rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
       detail: `${decision.policy_version}: the seed-v3 path could not run (${error.message})`

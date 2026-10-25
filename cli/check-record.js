@@ -1,7 +1,7 @@
-// U-01 — build one check record: `chaingate.check/3` since 0.1.4 (cft-policy-1.2), `/2` in 0.1.3 (U-05 Amendment 1),
-// `/1` before.
+// Build one check record: `chaingate.check/3` since 0.1.4 (cft-policy-1.2), `/4` when it carries a tarball member or a
+// 1.2 seed, `/2` in 0.1.3, `/1` before.
 //
-// Three shapes, and an absent member is OMITTED, never null-filled (plan §3.7):
+// Three shapes, and an absent member is OMITTED, never null-filled:
 //   evaluated   seed, candidate, finding, decision, effective, explanation
 //   refused     seed, decision, effective, explanation        (no candidate, no finding: none exists)
 //   tool_error  error                                          (nothing was evaluated)
@@ -21,7 +21,7 @@ export const CHECK_SCHEMA_ID = 'chaingate.check/3';
 const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
 
 /**
- * The combinations a check record may carry, one per schema (U-05 Amendment 1). 0.1.4 writes only /3; /2 records are
+ * The combinations a check record may carry, one per schema. 0.1.4 writes only /3; /2 records are
  * what 0.1.3 wrote and /1 records what 0.1.2 and earlier wrote, and both are still read. Anything else -- including a /1 record claiming policy 1.1 or a
  * 1.1 seed, which no release ever wrote -- is refused by name, never guessed at.
  */
@@ -34,8 +34,8 @@ export const SUPPORTED_RECORDS = Object.freeze({
   'chaingate.check/3': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1'] }),
-  // 0.1.5 static checks step 5: /4 = /3 plus the optional `tarball` member of `chaingate check --tarball`; the same combination
-  // plus seed contract 1.2 (FOLLOWUPS #17, operator 2026-10-18), whose rl2 placement adds new-family-cold-start
+  // since 0.1.5: /4 = /3 plus the optional `tarball` member of `chaingate check --tarball`; the same combination
+  // plus seed contract 1.2, whose rl2 placement adds new-family-cold-start
   'chaingate.check/4': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.2',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2'] }),
@@ -124,7 +124,7 @@ export function seedIdentity(seed, bundleId = null) {
 }
 
 /**
- * The gate input the proxy derives from a packument document (plan §3.3): `versions[ver]` as the
+ * The gate input the proxy derives from a packument document: `versions[ver]` as the
  * raw manifest, `time[ver]` as publishedAt (absent -> undefined, which the gate passes as null),
  * `versions{}` as rawVersions. Nothing is synthesized: a version the document does not carry has no
  * manifest, and the gate refuses it exactly as it refuses a missing manifest.
@@ -140,7 +140,7 @@ export function inputFromPackument(doc, packageName, version) {
     rawManifest: own(versions, version) ? versions[version] : undefined,
     publishedAt: own(time, version) ? time[version] : undefined,
     rawVersions: versions,
-    // 0.1.4 A8: the document's own time map, for the stale-seed count; absent when the document has none.
+    // since 0.1.4: the document's own time map, for the stale-seed count; absent when the document has none.
     rawTimes: doc && typeof doc.time === 'object' && doc.time !== null && !Array.isArray(doc.time) ? doc.time : undefined,
   };
 }
@@ -216,7 +216,7 @@ export function buildCheckRecord({ seed, bundleId = null, policy, domainVersionC
   return rec;
 }
 
-/** 0.1.5 (step 5): the `tarball` member of `chaingate check --tarball` makes the record a /4 (as a 1.2 seed does); decision and effective stay as evaluated. */
+/** Since 0.1.5: the `tarball` member of `chaingate check --tarball` makes the record a /4 (as a 1.2 seed does); decision and effective stay as evaluated. */
 export const CHECK_SCHEMA_ID_TARBALL = 'chaingate.check/4';
 export function withTarball(rec, tarball) {
   if (!rec || rec.result === RESULT.TOOL_ERROR) return rec;

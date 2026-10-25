@@ -1,12 +1,12 @@
-// `chaingate why` — explain, never re-decide (CFT-04 R6).
+// `chaingate why` — explain, never re-decide.
 //
 //   why <package>@<version> --packument <file>   evaluate through `check`, then explain that result
 //   why --from <check.json>                      explain a SAVED check output; evaluates nothing
 //   why <package>@<version> --cached             show the legacy stored row, labelled UNBOUND, exit 4
 //
-// The explanation is `explain()`, a pure function of the check result. `--cached` is an approved
-// LEGACY DIAGNOSTIC (U-01 approval, clarification 3): a `gate_decisions` row records no seed, rule
-// or policy identity, so it does NOT meet R4's identity requirement and is never shown as current.
+// The explanation is `explain()`, a pure function of the check result. `--cached` is a
+// LEGACY DIAGNOSTIC: a `gate_decisions` row records no seed, rule or policy identity, so it does
+// NOT meet the identity requirement of a current result and is never shown as current.
 import { existsSync, readFileSync } from 'node:fs';
 import { fmt, renderGate } from '../format.js';
 import { resolvePaths } from '../paths.js';
@@ -41,7 +41,7 @@ function parseArgs(args) {
     else opts.errors.push(`unexpected argument ${a}`);
   }
   const modes = [opts.packument !== null, opts.from !== null, opts.cached].filter(Boolean).length;
-  // 0.1.4 (G4 D-D3): `why <pkg>@<ver>` with no mode -- the form ChainGate's npm notice prints -- shows the recorded
+  // 0.1.4: `why <pkg>@<ver>` with no mode -- the form ChainGate's npm notice prints -- shows the recorded
   // decision, exactly as --cached (UNBOUND, exit 4), so the pointer in the notice works.
   if (modes === 0 && opts.target) { opts.cached = true; opts.defaulted = true; } else if (modes !== 1) {
     opts.errors.push('choose exactly one of --packument, --from, --cached');
@@ -69,7 +69,7 @@ export function explainSaved(file) {
     return { error: `${file} is a tool error (${rec.error?.code}): nothing was evaluated, so there is nothing to explain` };
   }
   // A supported schema id is not enough: the policy, explanation, detection and seed versions must be the combination
-  // that schema carries, and a refused explanation's deciding rows must be the decision's (U-05 Amendment 1).
+  // that schema carries, and a refused explanation's deciding rows must be the decision's.
   const problems = recordCompatibility(rec);
   if (problems.length) return { error: `${file} is not a record this chaingate reads: ${problems.join('; ')}` };
   try { return { explanation: explain(rec) }; } catch (e) {
@@ -87,12 +87,12 @@ function showCached(parsed, opts) {
   const db = openWitnessDB(dbPath, { readonly: true });
   try {
     const row = db.getLatestDecision(parsed.name, parsed.version);
-    // Owner decision 10 (C2): the decision that APPLIES under the one applicable-BLOCK rule, beside the latest row.
+    // The decision that APPLIES under the one applicable-BLOCK rule, beside the latest row.
     let applicable = null;
     try { applicable = row ? db.getApplicableDecision(parsed.name, parsed.version) : null; } catch { applicable = null; }
     const applies = applicable ? { disposition: applicable.disposition, block_row: applicable.block?.id ?? null,
       pending: applicable.pending, override: applicable.override } : null;
-    // 0.1.5 shadow facts (operator ruling R11 2026-10-24): recorded once per served version; record only, no verdict reads them
+    // 0.1.5 shadow facts: recorded once per served version; record only, no verdict reads them
     const shadow = db.shadowFactsFor(parsed.name, parsed.version);
     const staticFacts = typeof db.staticFactsFor === 'function' ? db.staticFactsFor(parsed.name, parsed.version) : null;   // static-checks-1.6, armed versions
     if (opts.json) {
@@ -123,7 +123,7 @@ function showCached(parsed, opts) {
         for (const l of lines) console.log(`    ${l}`);
       }
       console.log(`  For a current evaluation: chaingate check ${parsed.name}@${parsed.version} --packument <file>`);
-      // 0.1.4 (G4 D-D3): the conclusion for the proxy's named warnings -- what moved, the baseline, what to do
+      // 0.1.4: the conclusion for the proxy's named warnings -- what moved, the baseline, what to do
       console.log('  For what the proxy served and why, with what you can do: chaingate report');
     }
   } finally { db.close(); }
@@ -132,7 +132,7 @@ function showCached(parsed, opts) {
 }
 
 /**
- * 0.1.4 group 2d (D-U8): append a `why` adjudication, best-effort -- a read-write open with a 250 ms busy timeout; it never
+ * Append a `why` adjudication, best-effort -- a read-write open with a 250 ms busy timeout; it never
  * creates a table (a read command is no migration) and never changes `why`'s output or exit code.
  */
 function recordWhy(parsed, scope) {

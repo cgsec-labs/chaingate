@@ -1,4 +1,4 @@
-// Provenance pattern — Section 11 step 2b of docs/V2_DESIGN.md.
+// Provenance pattern.
 //
 // Extracts per-version provenance baseline signals from a package's
 // observed publish history. Deterministic, pure function over sorted
@@ -450,11 +450,11 @@ function validateInput(input) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — normalizeAndSortHistory
+// normalizeAndSortHistory
 //
 // Row-level validation + deterministic sort. Invalid rows are dropped
 // and counted in `skipped`. The output `rows` array is ready for the
-// streak walker in Step 2 (computeStreakSignals); each row carries
+// streak walker (computeStreakSignals); each row carries
 // normalized fields and a strict-boolean-or-null provenance_present.
 //
 // Drop criteria:
@@ -474,7 +474,7 @@ function validateInput(input) {
 // CONTRACT. Never treat null as unsigned; downstream sees exactly
 // three states.
 //
-// Sort order (finalizes the Phase-1-open tiebreaker decision):
+// Sort order:
 //   primary   — published_at_ms ASC
 //   secondary — compareSemver(version) ASC
 // No id-based tiebreak — the pattern input shape does not carry id.
@@ -566,7 +566,7 @@ function normalizeAndSortHistory(history) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — computeStreakSignals
+// computeStreakSignals
 //
 // Deterministic walk over sortedRows producing a per-version signal
 // record. Pure function of the sorted stream and K; no sufficiency
@@ -653,7 +653,7 @@ function computeStreakSignals(sortedRows, minBaselineStreak = MIN_BASELINE_STREA
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — extractPriorBaselineCarriers
+// extractPriorBaselineCarriers
 //
 // Returns the identity profile of the versions that carried the
 // currently-established baseline into version T. Input is the rows
@@ -687,7 +687,7 @@ function computeStreakSignals(sortedRows, minBaselineStreak = MIN_BASELINE_STREA
 //
 //   If streakLength is 0 or exceeds rowsBeforeT.length, the function
 //   still returns a valid object with empty arrays and both flags
-//   false. The caller (per-version assembly in Step 4) MUST set
+//   false. The caller (per-version assembly in extract()) MUST set
 //   prior_baseline_carriers=null when baseline_established=false, so
 //   this branch is defensive rather than normal operation.
 function extractPriorBaselineCarriers(rowsBeforeT, streakLength) {
@@ -719,7 +719,7 @@ function extractPriorBaselineCarriers(rowsBeforeT, streakLength) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4a — assemblePerVersionRecord
+// assemblePerVersionRecord
 //
 // Pure combiner: given a normalized row, its streak signal, and the
 // already-computed carrier struct (null when baseline not
@@ -747,13 +747,13 @@ function assemblePerVersionRecord(row, streakSignal, carriers) {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4b — assemblePackageRollup
+// assemblePackageRollup
 //
 // Package-level aggregate derived from sortedRows + per-version
 // records. Every field is filled (no undefineds) so consumers can
 // read without `?? 0` guards — mirrors publisher.js signals contract.
 //
-// Under per-major streak semantics (amended 2026-04-21), the three
+// Under per-major streak semantics, the three
 // streak-derived fields are aggregated across the per-major streams:
 //
 //   max_consecutive_attested — the longest run of consecutive
@@ -897,7 +897,7 @@ function assemblePackageRollup(perVersion, sortedRows, minBaselineStreak = MIN_B
 }
 
 // ---------------------------------------------------------------------------
-// Step 5 — extract() pipeline
+// extract() pipeline
 //
 // Deterministic pure composition over the four building blocks:
 //   normalizeAndSortHistory → computeStreakSignals →

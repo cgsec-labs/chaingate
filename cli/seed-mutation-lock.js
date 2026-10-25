@@ -1,5 +1,5 @@
-// U-05 R2-2 (b): ONE lock per installation base, taken by every seed mutator (install, update, rollback, the legacy
-// routes) before its first decision-bearing read, and held until it is done (R2-2 §2.1, Addendum 1 §3.1).
+// ONE lock per installation base, taken by every seed mutator (install, update, rollback, the legacy
+// routes) before its first decision-bearing read, and held until it is done.
 //
 // The lock is a SQLite database file, `<base>/.seed-mutation.lock`, held by `BEGIN EXCLUSIVE` on a dedicated connection.
 // The OPERATING SYSTEM releases it when the process dies (fcntl on POSIX, LockFileEx on Windows), so there is no

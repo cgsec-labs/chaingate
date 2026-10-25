@@ -1,15 +1,15 @@
-// 0.1.4 group 2c (D-R1, O3, E19): what this proxy served and refused, per install, held in memory only. `chaingate
+// What this proxy served and refused, per install, held in memory only. `chaingate
 // report` reads it through `GET /_chaingate/report`; the log is never its source, so an exhausted log budget or a
-// deduplicated line changes nothing here (G2c-9).
+// deduplicated line changes nothing here.
 //
 // One install = one `npm-session` header value (npm sends a fresh one per invocation), else a client's requests until it
 // is idle for 60 s. Bounded: at most 20 installs (the least recently active is evicted) and 2,000 events per install.
 // When an install is full, ordinary events give way first: an incoming ordinary event is dropped, an incoming important
 // one (a named served, any refusal, a tag moved) evicts the oldest ordinary event, and only when none is left is an
 // important event dropped. Every drop is counted, so the report can say it is incomplete. An install evicted and then
-// heard from again is marked `evicted_earlier` (dated note 7.5).
+// heard from again is marked `evicted_earlier`.
 //
-// Disk writes are CLAIMED per install and disk event (`claimDisk`, dated note 7.1/7.3): never keyed by the install event,
+// Disk writes are CLAIMED per install and disk event (`claimDisk`): never keyed by the install event,
 // so a non-fact event can never use up the claim of a fact one. At most 500 disk rows per install; the rest are counted.
 
 const SESSION_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -19,7 +19,7 @@ const MAX_EVICTED_KEYS = 1000;
 
 export const DEFAULTS = Object.freeze({ maxInstalls: 20, maxEvents: 2000, idleMs: 60_000 });
 
-/** Whether a peer address is loopback (dated note 6.9): 127.0.0.0/8, ::1, or IPv4-mapped 127.0.0.0/8. */
+/** Whether a peer address is loopback: 127.0.0.0/8, ::1, or IPv4-mapped 127.0.0.0/8. */
 export function isLoopbackPeer(addr) {
   if (typeof addr !== 'string' || !addr) return false;
   if (addr === '::1') return true;
@@ -33,7 +33,7 @@ export function isImportant(e) {
 }
 
 const isTarballEvent = (e) => e.kind === 'served' || e.kind === 'refused';
-/** Strings capped at every depth (dated note 7.14); arrays and objects copied. */
+/** Strings capped at every depth; arrays and objects copied. */
 function capped(v, depth = 0) {
   if (typeof v === 'string') return v.length > MAX_TEXT ? `${v.slice(0, MAX_TEXT)}…` : v;
   if (depth > 4 || v === null || typeof v !== 'object') return v;

@@ -34,14 +34,14 @@ function parseArgs(args) {
   return opts;
 }
 
-/** `init --force` may start a new proxy only once the old one is known to be gone (U-05 gap-closure r2, revision 2 §6). */
+/** `init --force` may start a new proxy only once the old one is known to be gone. */
 export function restartAllowed(outcome) {
   return outcome === 'stopped' || outcome === 'not_running';
 }
 
 /**
  * Seeds and the witness database: everything `init` writes that a seed command also writes. It runs under the
- * seed-mutation lock (U-05 R2-2 (b)), after recovery and cleanup, and returns `{ exit }` to stop init, or what a
+ * seed-mutation lock, after recovery and cleanup, and returns `{ exit }` to stop init, or what a
  * started proxy must report back.
  */
 async function installSeeds(opts, paths, deps, lock) {
@@ -50,7 +50,7 @@ async function installSeeds(opts, paths, deps, lock) {
   //     Everything needed to start later is recorded in config.json, so no environment is required.
   let intended = null;                  // the identity a started proxy must report back
   let v3Installed = false;
-  // PRIVATE STAGING FIRST (U-05 R2-2 (d)): a supplied seed is opened once as a regular file, admitted for space and
+  // PRIVATE STAGING FIRST: a supplied seed is opened once as a regular file, admitted for space and
   // copied; it is classified (SQLite opens only the staged copy), verified and installed from that copy.
   let staged = null; let legacyStaged = null;
   if (opts.seedPath) {
@@ -63,7 +63,7 @@ async function installSeeds(opts, paths, deps, lock) {
     if (staged.info.schemaVersion !== 3) { legacyStaged = staged; staged = null; }   // legacy: the route below
   }
   if (staged) try {                       // the staged copy is discarded on every exit from this branch
-    // An interrupted LEGACY installation is completed first (Addendum 2 §3.2): a v3 bundle does not complete it.
+    // An interrupted LEGACY installation is completed first: a v3 bundle does not complete it.
     if (readInstallMarker(paths).state !== 'none') {
       console.error(fmt.fail('An interrupted legacy seed installation is pending; complete it first (`chaingate update-seed`, '
         + 'or `chaingate init --seed <legacy db> --force` with the same seed).'));
@@ -157,7 +157,7 @@ async function installSeeds(opts, paths, deps, lock) {
     v3Installed = true;
   } finally { staged.discard(); }
 
-  // 3. The LEGACY witness seed (the seed IS the witness database). Routing (U-05 R2-2, O1 approved; Addendum 2 §3.3):
+  // 3. The LEGACY witness seed (the seed IS the witness database). Routing:
   //    * a host whose detection runs from a v3 bundle never takes this route: a missing witness database is created
   //      EMPTY there, and a legacy seed is never installed on it;
   //    * `--force` never means "replace the witness database", and `--no-seed` never downloads;
@@ -282,7 +282,7 @@ async function installSeeds(opts, paths, deps, lock) {
 export default async function init(args, deps = {}) {
   const opts = parseArgs(args);
   const paths = resolvePaths(opts.scope);
-  // U-05 R2-2 (O1): contradictory instructions are refused, not resolved by precedence.
+  // Contradictory instructions are refused, not resolved by precedence.
   if (opts.seedPath && opts.noSeed) {
     console.error(fmt.fail('--seed and --no-seed contradict each other; nothing was done.'));
     return EXIT.ERROR;
@@ -367,7 +367,7 @@ export default async function init(args, deps = {}) {
     return EXIT.OK;
   }
 
-  // 3. Seeds and the witness database, under the seed-mutation lock (U-05 R2-2 (b)): taken after the proxy checks
+  // 3. Seeds and the witness database, under the seed-mutation lock: taken after the proxy checks
   //    above and released before a proxy is started below; readers never wait on it.
   let seeded;
   try {

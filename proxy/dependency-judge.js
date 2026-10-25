@@ -1,4 +1,4 @@
-// 0.1.4 group 3b (D-N3, §18.20 item 2): N1h at TARBALL time. For the exact version npm downloads, the dependencies its
+// N1h at TARBALL time (since 0.1.4). For the exact version npm downloads, the dependencies its
 // stored `dependency-hooks` row left pending are fetched -- in parallel, all within one budget (5 s), the request's
 // authorization relayed -- into the dependency cache, judged, and, when the judgement differs from the stored row, ONE new
 // decision row is written: the applicable row's results with that row replaced, the disposition recomputed (any WARN ->
@@ -8,7 +8,7 @@ import { judge } from '../gates/dependency-hooks.js';
 import { getDependency, setDependencyDoc } from '../gates/dependency-cache.js';
 
 export const BUDGET_MS = 5_000;
-// Release audit R4 (G4 tables dated note 4): at most MAX_IN_FLIGHT dependency fetches run in the process; the rest wait in
+// At most MAX_IN_FLIGHT dependency fetches run in the process; the rest wait in
 // line. A queued fetch whose every waiter's budget has passed is dropped unstarted. A running fetch is not aborted: the
 // upstream timeouts bound it, and its answer still fills the cache.
 export const MAX_IN_FLIGHT = 8;
@@ -78,21 +78,21 @@ const sameJudgement = (a, b) => a.result === b.result
 export async function judgeAtTarball({ db, pkg, version, latest, fetchPackument, config, authorization, budgetMs, log }) {
   const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
   const i = rows.findIndex((g) => g && g.gate === 'dependency-hooks');
-  // judged now: a pending row, or a not-evaluable SKIP (retried; G3 dated note 3.4); a determinate judgement stands
+  // judged now: a pending row, or a not-evaluable SKIP (retried); a determinate judgement stands
   if (i < 0 || !awaitsJudgement(rows[i])) return false;
-  // EVERY added target missing from the cache is fetched, not only the stored pending ones (G3 dated note 3.3)
+  // EVERY added target missing from the cache is fetched, not only the stored pending ones
   const { timedOut } = await fetchPending(rows[i].added, { fetchPackument, config, authorization, budgetMs });
   const lookup = (t) => (timedOut.includes(t) ? { why: `no answer within ${Math.round((budgetMs ?? BUDGET_MS) / 1000)} s` } : getDependency(t));
   const row = judge(rows[i].added, { lookup, unjudgeable: Array.isArray(rows[i].unjudgeable) ? rows[i].unjudgeable : [] });
   if (Array.isArray(row.pending)) return false;               // nothing could be judged (cache evicted mid-way): keep the stored row
   if (sameJudgement(row, rows[i])) return false;               // the same judgement: no new row
-  // the guard compares like with like: `latest` is the newest NON-override row (G3 dated note 3.5)
+  // the guard compares like with like: `latest` is the newest NON-override row
   let base = latest;
   let retried = false;
   for (;;) {
     const fresh = db.getLatestNonOverrideDecision(pkg, version);
     if (!fresh || fresh.id === base.id) break;
-    // 0.1.5 follow-up #2: a concurrent writer got there first. Once per download, the same judgement goes on top of its
+    // Since 0.1.5: a concurrent writer got there first. Once per download, the same judgement goes on top of its
     // decision (every row of theirs kept), when that decision still awaits it for the same added dependencies and is not a
     // BLOCK; a second race, or anything else, leaves it to the caller's re-read and a later download, as before.
     if (retried || fresh.disposition === 'BLOCK') return 'raced';

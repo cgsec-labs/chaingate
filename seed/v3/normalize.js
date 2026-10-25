@@ -1,4 +1,4 @@
-// CFT-04 — the registry-to-candidate adapter: raw packument fields -> normalised candidate fields.
+// The registry-to-candidate adapter: raw packument fields -> normalised candidate fields.
 //
 // WHY THIS IS TESTED SEPARATELY. The 152,804-candidate fixture pack supplies candidate fields that are
 // ALREADY normalised — the producer derived them. Passing that pack proves the evaluator agrees about

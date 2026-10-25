@@ -1,5 +1,5 @@
-// `chaingate check <package>@<version> --packument <file>` — a FRESH evaluation (CFT-04 R4).
-// 0.1.5 static checks step 5: `--tarball <file>` also runs the manifest check and the five tarball static checks offline over a
+// `chaingate check <package>@<version> --packument <file>` — a FRESH evaluation.
+// 0.1.5: `--tarball <file>` also runs the manifest check and the five tarball static checks offline over a
 // LOCAL archive (the walker's keep list from the packument's manifest, else from the tarball's own package.json, stated) and
 // REPORTS their rows in a `tarball` member: the record becomes `chaingate.check/4` (/3 plus that optional member). The tarball
 // rows never change the decision, the effective action or the exit code in 0.1.5; a CI consumer may read tarball.disposition.
@@ -7,7 +7,7 @@
 // It evaluates the candidate the proxy would hand the gate from that packument document, against
 // the active seed, under the operator's policy, through the gate's own evaluation path. It never
 // reads a stored decision: `gate_decisions` rows carry no seed/rule/policy identity and can never be
-// bound (plan §2). Offline: the document is a local file and the seed is local; nothing is fetched.
+// bound. Offline: the document is a local file and the seed is local; nothing is fetched.
 //
 // Exit code follows `effective.action`: 0 ALLOW, 2 WARN, 3 BLOCK; 4 tool error.
 import { existsSync, readFileSync } from 'node:fs';
@@ -140,7 +140,7 @@ function parsedPackageJson(walk) {
 }
 
 /**
- * 0.1.5 (step 5): the manifest check and the five static checks over a LOCAL tarball, offline. The keep list comes from the
+ * 0.1.5: the manifest check and the five static checks over a LOCAL tarball, offline. The keep list comes from the
  * packument's manifest for this version when it has one (what npm acts on), else from the tarball's own package.json as the
  * walker's keep function; both are stated. Rows carry their 1.2 roles (a static WARN is NOTE). Never a verdict, never a BLOCK.
  */

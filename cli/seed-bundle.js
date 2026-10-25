@@ -30,7 +30,7 @@
 //    ON WINDOWS the record is a FILE, `seeds/activation.json`, holding both the active and the
 //    previous bundle: a symlink cannot be renamed over an existing one there (EPERM, even as an
 //    administrator), and creating one may need Developer Mode. A file IS replaced by one rename,
-//    so the switch stays a single atomic step. See docs: U-04 Windows activation pointer design.
+//    so the switch stays a single atomic step.
 //    Linux and macOS keep the symlinks.
 
 import { existsSync, mkdirSync, copyFileSync, writeFileSync, renameSync, rmSync,
@@ -87,7 +87,7 @@ const whyOf = (e) => (e instanceof FileRefused ? e.why : e.message);
 
 /** What the seed itself declares, read without trusting a filename. */
 export function inspectSeed(dbPath) {
-  // A FIFO or device would block SQLite's open by path: it is judged on a non-blocking descriptor first (R2-2 §3.1).
+  // A FIFO or device would block SQLite's open by path: it is judged on a non-blocking descriptor first.
   try { closeSync(openRegular(dbPath).fd); } catch (e) {
     if (!(e instanceof FileRefused)) throw e;
     return { schemaVersion: null, corpusSnapshotDigest: null, contractVersion: null, refused: e.why };
@@ -224,7 +224,7 @@ const removeStaging = (dir) => {
 };
 
 /**
- * PRIVATE STAGING (U-05 R2-2 (d); Addendum 1 §4). The caller-supplied seed is opened ONCE, as a regular file, without
+ * PRIVATE STAGING. The caller-supplied seed is opened ONCE, as a regular file, without
  * blocking; its sidecars are read once, bounded; space is admitted; exactly its opened size is copied into a new
  * `seeds/.staging-<pid>-<ms>/`; and the source is never read again. Everything after this -- the digest, the
  * classification (SQLite opens only the STAGED copy), the signature -- describes the staged bytes.
@@ -236,7 +236,7 @@ const removeStaging = (dir) => {
  *   `lock`: the live seed-mutation token for `base` (required).
  */
 export function stageIncoming(seedPath, base, { sidecars, seam, hooks = {}, lock } = {}) {
-  assertHeld(lock, base);                                  // R2-2 (b): staging happens under the seed-mutation lock
+  assertHeld(lock, base);                                  // staging happens under the seed-mutation lock
   let src;
   try { src = openRegular(seedPath); } catch (e) {
     throw new StagingRefused(e instanceof FileRefused ? `${seedPath}: ${e.why}` : `cannot open ${seedPath}: ${e.code || e.message}`, 'input');
@@ -286,7 +286,7 @@ export function stageIncoming(seedPath, base, { sidecars, seam, hooks = {}, lock
 
 /** A gzip stream starts with these two bytes (RFC 1952 section 2.3.1). */
 const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
-/** The independent limit on a decompressed seed: 8 GiB, 3.4x the first gz-primary database (seed v3.2, 2,359,566,336 B). */
+/** The independent limit on a decompressed seed: 8 GiB, 3.4x the first gzip-shipped database (seed v3.2, 2,359,566,336 B). */
 export const GZ_MAX_DB_BYTES = 8 * 1024 * 1024 * 1024;
 const TWO_32 = 2 ** 32;
 
@@ -298,7 +298,7 @@ function readAt(fd, length, position) {
 }
 
 /**
- * Stage a `--seed` the user supplied: a raw database (stageIncoming), or a gzip of one (0.1.5 #9, gz-primary). Which one is
+ * Stage a `--seed` the user supplied: a raw database (stageIncoming), or a gzip of one (since 0.1.5). Which one is
  * decided by the file's first two bytes, never by its name. Both return the same staged shape, describing the database.
  */
 export async function stageIncomingSeed(seedPath, base, opts = {}) {
@@ -313,7 +313,7 @@ export async function stageIncomingSeed(seedPath, base, opts = {}) {
 }
 
 /**
- * gz-primary staging (0.1.5 #9). As stageIncoming, with the copy replaced by a bounded decompression: the .gz is opened ONCE
+ * Gzip seed staging (since 0.1.5). As stageIncoming, with the copy replaced by a bounded decompression: the .gz is opened ONCE
  * as a regular file and read only up to the size it had when opened; the database's own sidecars (`<db>.sha256`, `<db>.sig`,
  * next to `<db>.gz`) are read once, bounded; space is admitted for the DECOMPRESSED size, estimated from the gzip trailer
  * (ISIZE, the size modulo 2^32, raised by 2^32 until it is at least the compressed size); the output is limited to
@@ -495,7 +495,7 @@ export function activateBundle(base, dirName, opts = {}) {
     const current = activeBundleId(base, opts);
     opts.hooks?.afterActiveRead?.();
     const previousNow = previousBundleId(base, opts);
-    // POSIX: two renames, so the intent is published FIRST (R2-2 §2.2 option B; Addendum 1 §2.1). After any kill the
+    // POSIX: two renames, so the intent is published FIRST. After any kill the
     // next mutator recovers (active, previous) to exactly this before or after state.
     const after = { active: dirName, previous: current && current !== dirName ? current : previousNow };
     writeIntent(base, { schema: INTENT_SCHEMA, op: opts.op ?? 'activate',
@@ -581,7 +581,7 @@ function removeLink(p) {
   }
   if (lstatOrNull(p)) rmdirSync(p);                    // a Windows directory link some APIs leave behind
 }
-// ---- U-05 R2-2 (b): the intent journal, its recovery, and conservative cleanup, all under the seed-mutation lock ----
+// ---- the intent journal, its recovery, and conservative cleanup, all under the seed-mutation lock ----
 
 export const INTENT_FILE = '.activation-intent.json';
 const INTENT_SCHEMA = 'chaingate-activation-intent/1';
@@ -633,14 +633,14 @@ export function readActivationIntent(base) {
   return { state: 'pending', intent: rec };
 }
 
-/** Recovery refused: nothing was changed, and the intent is kept (Addendum 1 §2.2, Addendum 2 §3.1). */
+/** Recovery refused: nothing was changed, and the intent is kept. */
 export class ActivationRecoveryRefused extends Error {
   constructor(message) { super(message); this.name = 'ActivationRecoveryRefused'; }
 }
 
 /**
- * Recover an interrupted symlink activation, FIRST in every mutator and under the lock (Addendum 1 §2.2 as corrected by
- * Addendum 2 §3.1). It writes only the `previous` link, never `active`, so repeated interruption and retry converge:
+ * Recover an interrupted symlink activation, FIRST in every mutator and under the lock. It writes only the `previous`
+ * link, never `active`, so repeated interruption and retry converge:
  *   active = after.active  -> previous = after.previous  (the operation took effect: roll forward)
  *   active = before.active -> previous = before.previous (it did not: roll back)
  *   anything else          -> refuse; active was moved outside this protocol (e.g. by an older client)
@@ -689,7 +689,7 @@ export function recoverActivation(base, opts = {}) {
   return { state: 'recovered', active: current, previous: target };
 }
 
-// Leftovers this runtime can create, by exact name, each carrying the creating pid (Addendum 1 §3.3).
+// Leftovers this runtime can create, by exact name, each carrying the creating pid.
 const OWNED = {
   seeds: [
     { re: /^\.staging-(\d+)-\d+$/, kind: 'dir' },
@@ -704,7 +704,7 @@ const OWNED = {
     { re: /^\.download-(\d+)\.json$/, kind: 'download' },
   ],
 };
-/** A conservative DELAY, not proof against PID reuse: young leftovers may survive and are reported (Addendum 2 §3.4). */
+/** A conservative DELAY, not proof against PID reuse: young leftovers may survive and are reported. */
 export const LEFTOVER_MIN_AGE_MS = 15 * 60 * 1000;
 // What else legitimately lives in seeds/: bundles, repair copies, damaged bundles, the records, held evidence.
 const KNOWN_IN_SEEDS = (n) => BUNDLE_NAME.test(n) || /^[0-9a-f]{16}(\.r[1-9][0-9]*)?\.damaged-/.test(n)
@@ -757,7 +757,7 @@ export function cleanLeftovers(base, opts = {}) {
     if (e.keep) { out.kept.push({ path: e.path, why: e.keep }); continue; }
     try {
       if (e.kind === 'download') {
-        // the recorded directory FIRST; the record only once that removal succeeded (Addendum 2 §3.4)
+        // the recorded directory FIRST; the record only once that removal succeeded
         const left = removeDownload(base, e.record.dir, e.pid);
         if (left) { out.failed.push({ path: e.path, why: `could not remove ${left}` }); continue; }
         out.removed.push(e.record.dir, e.path);
@@ -820,7 +820,7 @@ export function readActivationPointer(base, opts = {}) {
   const broken = (why) => new ActivationBroken(file, why);
   if (!st.isFile()) throw broken('it is not a regular file');
   if (st.size > ACTIVATION_MAX_BYTES) throw broken(`it is ${st.size} bytes, more than ${ACTIVATION_MAX_BYTES}`);
-  opts.hooks?.afterLstat?.();                          // test seam (R2-2 C6c); inert otherwise
+  opts.hooks?.afterLstat?.();                          // test seam; inert otherwise
   // What lstat saw is not what an open receives: the decision is taken again on the DESCRIPTOR, which must be a regular
   // file (O_NOFOLLOW on POSIX) of at most ACTIVATION_MAX_BYTES, read through that descriptor only.
   let bytes;

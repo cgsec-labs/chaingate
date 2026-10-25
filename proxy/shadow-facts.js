@@ -1,8 +1,7 @@
-// 0.1.5 shadow facts (operator ruling R11 2026-10-24, "Shadow first"): the triage noise-reduction rules the runtime computes
-// (chaingate-ops af922e7, docs/design/triage-noise-rules-20261023.md, section B), recorded once per served version beside its entry
-// facts and shown in `why` and `report`. RECORD ONLY: nothing here is a runner row, so no verdict, tier or notice depends on it; a
-// re-tier on any of them is a later ruling, after the first weeks live and the section D replay. Kept outside proxy/static-checks.js,
-// which mirrors recon byte for byte.
+// 0.1.5 shadow facts: the noise-reduction rules the runtime computes, recorded once per served version beside its entry
+// facts and shown in `why` and `report`. RECORD ONLY: nothing here is a runner row, so no verdict, tier or notice depends on it;
+// any re-tier on them is a later decision, after the first weeks live. Kept outside proxy/static-checks.js, which mirrors the
+// offline scanner byte for byte.
 //   rule 3   the served version is not the `latest` dist-tag, and which tags point at it (the registry's own tags, before any rewrite);
 //   rule 5   transition half: each named sign on this version, and whether it was already on the version this proxy served before;
 //   rule 8   packument half: the publisher is a known owner (a listed maintainer, an earlier publisher, the majority publisher). The
@@ -14,7 +13,7 @@
 
 export const SHADOW_FACTS_VERSION = 'shadow-facts-1.0';
 export const SHADOW_NOTE = 'recorded only: no verdict, tier or notice depends on it';
-/** The plain notes the proxy stores and shows in place of the two notes recon's facts block carries (that block stays byte for byte). */
+/** The plain notes the proxy stores and shows in place of the two notes the offline scanner's facts block carries (that block stays byte for byte). */
 const STATIC_FACTS_NOTE = 'recorded only: no outcome, tier or notice depends on these facts; a fact is read against the file, never a verdict';
 const EXCLUDED_PATHS_NOTE = 'lines with a hit, over each file\'s read window: p2 = dynamic code (eval, Function, vm), p9 = a URL with a bare IP address';
 /** A copy of a staticFactsOf result ({ facts, s5 }) with those two notes in plain words; nothing else changes. Null stays null. */
@@ -203,7 +202,7 @@ export function staticFactsLines(x) {
   return out;
 }
 
-/** Whether a fact would have spoken on a triage card: not the latest tag, not a known owner, a sign not new, a size change all docs. */
+/** Whether a fact would have spoken on a reviewer's card: not the latest tag, not a known owner, a sign not new, a size change all docs. */
 export function notable(f) {
   return Boolean((f?.dist_tag?.state === 'known' && f.dist_tag.not_latest)
     || (f?.known_owner?.state === 'known' && !f.known_owner.known_owner)

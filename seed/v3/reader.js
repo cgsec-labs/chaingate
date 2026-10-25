@@ -1,7 +1,7 @@
-// CFT-04 — the offline v3 seed reader in native JavaScript. Mirrors tools/seedgen/reader.py:
-// R1 compatibility declared AND checked · R2 trust before use, modes explicit · R2.1 candidate facts
-// supplied never invented · R3 read-only and offline · R4 check evaluates · R5 coverage is an outcome
-// · R6 why is derived, deterministic, inert and complete · R7 full-corpus capability.
+// The offline v3 seed reader in native JavaScript. Mirrors tools/seedgen/reader.py:
+// compatibility declared AND checked; trust before use, modes explicit; candidate facts
+// supplied, never invented; read-only and offline; check evaluates; coverage is an outcome;
+// why is derived, deterministic, inert and complete; full-corpus capability.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -13,11 +13,11 @@ import { pyStrip } from './normalize.js';
 import { CAPS, FileRefused, openRegular, readBounded, readBoundedIfPresent, sha256Regular } from './bounded-file.js';
 
 const SUPPORTED_SCHEMA_VERSIONS = [3];
-// 1.1 (U-05, D4): advisory pins are keyed by package NAME, so a pin no longer presumes a represented package.
+// 1.1: advisory pins are keyed by package NAME, so a pin no longer presumes a represented package.
 // Its pin table carries `package_name` with an index on (package_name, version); see pinLayoutProblem().
 const SEED_CONTRACT_1_0 = 'cft-seed-v3-contract-1.0';
 const SEED_CONTRACT_1_1 = 'cft-seed-v3-contract-1.1';
-// 1.2 (seed v3.2 #5, narrow rl2): chains per (lineage key, tag family) in `lineages.tag_family`, and `cross_links` for every
+// 1.2: chains per (lineage key, tag family) in `lineages.tag_family`, and `cross_links` for every
 // predecessor that is not the previous row of its own chain. Read ONLY together with the pipeline-key identifiers below; a
 // 1.1 reader would take ord - 1 as every predecessor, so it refuses 1.2 by its contract version.
 const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
@@ -79,7 +79,7 @@ class CandidateRejected extends Error {
   constructor(reasons) { super(reasons.join('; ')); this.name = 'CandidateRejected'; this.reasons = reasons; }
 }
 
-// U-05 R2-2 (c): through one non-blocking descriptor that must be a regular file, read from explicit positions.
+// Through one non-blocking descriptor that must be a regular file, read from explicit positions.
 function sha256File(p) { return sha256Regular(p); }
 
 /** What a refusal says, without the path the caller already names. */
@@ -219,7 +219,7 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
   const base = { trust_mode: trust, authenticated: false, path: String(dbPath) };
   if (!fs.existsSync(dbPath)) return { ...base, ok: false, checks: { present: `no such file: ${dbPath}` }, meta: {} };
   checks.present = true;
-  // Before SQLite opens it by path: a FIFO or a device there would block that open (R2-2 §3.1).
+  // Before SQLite opens it by path: a FIFO or a device there would block that open.
   try { fs.closeSync(openRegular(dbPath).fd); } catch (e) {
     return { ...base, ok: false, checks: { ...checks, openable: whyOf(e) }, meta: {} };
   }
@@ -293,7 +293,7 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
           + `${PIPEKEY_CHANNEL_A} is read only from a ${SEED_CONTRACT_1_2} seed, and a ${SEED_CONTRACT_1_2} seed only under it`;
       } else checks.rule_versions = true;
     }
-    // G10 EXPERIMENTAL read layout (read-layout.js): checked only when the seed declares one; a legacy seed's report is unchanged
+    // EXPERIMENTAL read layout (read-layout.js): checked only when the seed declares one; a legacy seed's report is unchanged
     const rl = RL.verifyReadLayout(db, raw, tables);
     if (rl !== null) { checks.read_layout = rl; readLayout = { id: raw.read_layout, digest: raw.read_layout_digest ?? null }; }
   } finally { db.close(); }

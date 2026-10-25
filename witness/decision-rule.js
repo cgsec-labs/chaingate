@@ -1,4 +1,4 @@
-// U-05 owner decision 10, C2: ONE rule for whether a BLOCK still applies to a package version.
+// ONE rule (the clearance rule) for whether a BLOCK still applies to a package version.
 //
 // Every path that decides whether a version may be served uses this module and nothing else: the observation and its
 // writes (witness/store.js), historical decision reads (witness/db.js getApplicableDecision), tarball enforcement
@@ -8,7 +8,7 @@
 // an actual evaluation of the evidence the BLOCK rested on. A SKIP, a missing gate, an error, a decision made by the
 // input rule (unusable or unreadable input), unrecognised text, or a policy version not listed here is NEVER a
 // clearance. Every reason must be cleared; a BLOCK applies while any reason is pending. Override rows are not part of
-// this walk: an exact override applies only while it exists (N3), and once it is revoked the walk over the other rows
+// this walk: an exact override applies only while it exists, and once it is revoked the walk over the other rows
 // gives the underlying decision.
 //
 // Classification reads the exact texts the shipped producers write (gates/content-hash.js, seed/v3/policy.js and
@@ -26,11 +26,11 @@ export const REASON = Object.freeze({
   UNCLASSIFIED: 'unclassified',
 });
 
-// 0.1.4 (cft-policy-1.2, I1): 1.2 changed no clearance semantics, so it is listed beside 1.1 (test/cli/cft014-i1-clearance
-// guards that the current identity is listed; a new identity must be added here deliberately, never by default).
+// Since 0.1.4 (cft-policy-1.2): 1.2 changed no clearance semantics, so it is listed beside 1.1 (a guard test checks
+// that the current identity is listed; a new identity must be added here deliberately, never by default).
 const POLICY_PREFIXES = Object.freeze(['cft-policy-1.0: ', 'cft-policy-1.1: ', 'cft-policy-1.2: ']);
-// D4: under policy 1.0 "no recorded advisory pins this version" could be said of a pinned version, so only 1.1 and later
-// (1.2 keeps D4) clear a pin.
+// Under policy 1.0 "no recorded advisory pins this version" could be said of a pinned version, so only 1.1 and later
+// (1.2 keeps this) clear a pin.
 const PIN_CLEARING_PREFIXES = Object.freeze(['cft-policy-1.1: ', 'cft-policy-1.2: ']);
 const INPUT_MARKERS = Object.freeze(['seed-v3:input', 'could not run']);
 const PIN_BLOCK_MARKER = 'seed-v3:known-malicious-pin: recorded advisory';

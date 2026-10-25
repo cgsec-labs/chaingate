@@ -1,21 +1,20 @@
-// 0.1.5 T1.6 entry-path-change -- a CONTRIBUTING gate in cft-policy-1.2: what npm runs or links for a version changed against its
-// LINEAGE predecessor (gates/lineage-predecessor.js, FU-2 FINAL +pipekey1: the previous version in publish order within its
+// entry-path-change (since 0.1.5) -- a CONTRIBUTING gate in cft-policy-1.2: what npm runs or links for a version changed against its
+// LINEAGE predecessor (gates/lineage-predecessor.js: the previous version in publish order within its
 // release line, and for a prerelease the previous version of its own tag there).
-// Five components, the measurement's own definitions (chaingate-ops collector/npm_capture.py _lifecycle, _bin, _main; shared
-// fixture t16-predicates-1.2, tools/corpus/fixtures/t16-predicate-cases-1.2.json; ops collector/install_scripts.py since 8f0b0536):
-//   lifecycle_added    a non-install lifecycle script (LIFECYCLE_HOOKS; preinstall/install/postinstall are T1.1) absent before
+// Five components, with the same definitions the base-rate measurement used (shared fixture t16-predicates-1.2):
+//   lifecycle_added    a non-install lifecycle script (LIFECYCLE_HOOKS; preinstall/install/postinstall belong to install-introduced) absent before
 //   lifecycle_changed  the same lifecycle script, its text differs
 //   bin_added          a bin command absent before (the string form is named after the package, as npm links it)
 //   bin_changed        the same bin command, a different path
 //   main               the entry point differs (absent or empty main = index.js; a relative main loses its leading "./" and any "/"
 //                      after it; a main starting with "/" is kept, absolute to Node; a final segment without a "." gets ".js", so
 //                      "./x" = "x" = "x.js" but "/x" != "x"; a directory move or .cjs / .mjs stays a change)
-// Measured (ops handover 11.4, base-rates-1.3, 23,456,355 versions @lin): per 10k lifecycle_added 20.47, lifecycle_changed 15.13,
-// bin_added 6.84, bin_changed 2.75, main 69.54. Contributing only (operator, 2026-10-15); naming a component is a later ruling. The
-// predicate follows ops' version string (T16_PREDICATES_VERSION), never leads it.
+// Measured base rates over 23,456,355 versions, per 10k: lifecycle_added 20.47, lifecycle_changed 15.13,
+// bin_added 6.84, bin_changed 2.75, main 69.54. Contributing only; naming a component is a later decision. The
+// predicate follows the measurement's version string (T16_PREDICATES_VERSION), never leads it.
 //
-// Reads only the served packument (`rawVersions`, `rawTimes`); the proxy always fetches the full document (npm 10/11/12 grounding
-// 2026-10-15). The detail is closed vocabulary: lifecycle names from the fixed list, bin commands as counts, never a path or text.
+// Reads only the served packument (`rawVersions`, `rawTimes`); the proxy always fetches the full document (checked against
+// npm 10, 11 and 12). The detail is closed vocabulary: lifecycle names from the fixed list, bin commands as counts, never a path or text.
 import { lineagePredecessorOf, noPredecessorReason } from './lineage-predecessor.js';
 
 export const T16_PREDICATES_VERSION = 't16-predicates-1.2';

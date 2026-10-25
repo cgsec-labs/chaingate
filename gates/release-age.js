@@ -5,7 +5,7 @@
 // version has a window before advisories catch up. A cooldown delays
 // adoption by that window.
 //
-// Spec: docs/P5.md §6 lines 473-490. This gate is commoditized by
+// This gate is commoditized by
 // npm 11.10+'s native `min-release-age` config. We keep it because:
 //   1. Works on Node 16-22 (min-release-age is Node 22.9+)
 //   2. Combines with other gates via aggregation (the warn threshold)

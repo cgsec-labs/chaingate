@@ -1,11 +1,11 @@
-// U-05 R2-2 (c): every small metadata file is read through ONE descriptor, judged by what that descriptor is, and never
+// Every small metadata file is read through ONE descriptor, judged by what that descriptor is, and never
 // read past its cap. Opening by path and then trusting the path again is what let a FIFO stall a command forever, and a
 // padded sidecar be read whole: `existsSync` and `lstat` describe whatever the path named at that moment, not what a
 // later open receives.
 //
 // On POSIX the open is non-blocking, so a FIFO with no writer, or a device, returns at once and is then refused by
 // `fstat`. Windows has neither O_NONBLOCK nor O_NOFOLLOW; there the open is plain and the same `fstat` decides. What a
-// Windows device or pipe open does is qualified natively (R2-2 §3.3), not inferred from this file.
+// Windows device or pipe open does is qualified natively, not inferred from this file.
 //
 // It lives beside the reader because the reader is a self-contained consumer of seed/v3; the CLI and the witness use it
 // from here.

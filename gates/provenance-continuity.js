@@ -16,8 +16,6 @@
 //   3. Every prior version had attestation; this one doesn't. That's
 //      the signal.
 //
-// Spec: docs/P5.md §6 lines 457-471.
-//
 // Zero-FP posture: SKIP whenever we can't prove there was a loss.
 //   - history.length < 2 → SKIP (need at least one prior observation
 //     besides the incoming one to establish a baseline)
@@ -35,7 +33,7 @@ function result(r, detail) {
 }
 
 function hasProvenance(v) {
-  // P5.1 stores provenance_present as 0/1 (SQLite boolean coercion).
+  // The witness store keeps provenance_present as 0/1 (SQLite boolean coercion).
   // Packument parser writes Boolean(attestations) which normalizes to
   // true/false in JS. Accept both shapes.
   if (v == null) return false;

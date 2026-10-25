@@ -1,6 +1,7 @@
-// 0.1.4 group 2d (O1, D-U4..D-U6): a user's pins. `chaingate pin <pkg>@<K>` withholds every version of <pkg> in K's caret
+// Since 0.1.4: a user's pins. `chaingate pin <pkg>@<K>` withholds every version of <pkg> in K's caret
 // class whose SemVer precedence is above K (prereleases included) until `chaingate unpin`. A pin is a serving overlay read
-// live from the `pins` table; it is never a stored decision (a stored user-pin BLOCK could never be cleared by C2).
+// live from the `pins` table; it is never a stored decision (a stored user-pin BLOCK could never be cleared by the
+// clearance rule in witness/decision-rule.js).
 import semver from 'semver';
 
 /** K's caret class: "<major>" for major >= 1, "0.<minor>" for 0.y (y >= 1); null for 0.0.z and invalid versions. */
@@ -26,7 +27,7 @@ export function withheldBy(pins, pkg, version) {
 }
 
 /**
- * The proxy's pin set (D-U6): read from the database and re-read when PRAGMA data_version changes (a commit by another
+ * The proxy's pin set: read from the database and re-read when PRAGMA data_version changes (a commit by another
  * connection, i.e. the CLI). A failed read keeps the last good set and is logged once per failure transition: a pin-read
  * failure never refuses an install and never drops a pin silently.
  */

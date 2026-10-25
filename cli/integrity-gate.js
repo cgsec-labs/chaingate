@@ -30,7 +30,7 @@ import { readInstallMarker, markerPath } from './legacy-seed.js';
 import { EXIT } from './constants.js';
 
 export async function assertIntegrity(paths, { startFileUrl, command, completing = false, pubkey } = {}) {
-  // An interrupted legacy seed installation (U-05 R2-2; Addendum 2 §3.2): every mutating command that passes through
+  // An interrupted legacy seed installation: every mutating command that passes through
   // this gate is refused, except the one that completes it. That exception waives ONLY this refusal: self-witness and
   // the persisted-pair signature below still run, and the completing command still verifies the incoming seed.
   const marker = readInstallMarker(paths);

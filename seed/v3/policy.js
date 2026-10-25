@@ -1,12 +1,12 @@
-// CFT-05 — the POLICY contract. Versioned SEPARATELY from the detection contract, and deliberately
+// The POLICY contract. Versioned SEPARATELY from the detection contract, and deliberately
 // so: detection says what was observed, policy says what to do about it, and the two move at
-// different speeds. A finding carries evidence and coverage and NO disposition (CFT-03 D, LOCKED).
+// different speeds. A finding carries evidence and coverage and NO disposition.
 // This module is the only place where evidence becomes an action, it never writes back into a
 // finding, and nothing in the detection path imports it.
 //
 // WHAT IS ALREADY LOCKED, and therefore is not re-decided here
 // ------------------------------------------------------------
-// The shipped pilot (`gates/index.js`, D1) fixes the shape and the arithmetic:
+// The shipped gate runner (`gates/index.js`) fixes the shape and the arithmetic:
 //
 //   * four per-gate result values: ALLOW / SKIP / WARN / BLOCK, and three dispositions:
 //     ALLOW / WARN / BLOCK;
@@ -34,13 +34,13 @@
 //   on_no_evidence      a finding exists but nothing in it was evaluated (an uncovered package, a
 //                       cold start, a stale seed).
 //
-// D1's fail-open covers ONE broken gate among several that still produced evidence. Extending it to
+// The gate runner's fail-open covers ONE broken gate among several that still produced evidence. Extending it to
 // "the whole evidence source is unusable" would be a new policy, and inventing it here is exactly
 // the move that turns missing evidence into a clean result. So this module REFUSES TO DECIDE until
 // an operator sets them, and says which ones are unset. A refusal to decide is not an ALLOW.
 
 //
-// CFT-POLICY-1.1 (U-05, D4). One change of substance, and it follows from the criterion above rather than adding a
+// CFT-POLICY-1.1. One change of substance, and it follows from the criterion above rather than adding a
 // new one: a recorded advisory naming this exact version is a fact about the ARTIFACT, not about the input, so it
 // stands on the unusable-input paths too. Under 1.0 every refusal and contract mismatch decided from
 // `on_unusable_input` alone and never consulted the pin -- under WARN a known-malicious version was only warned about,
@@ -48,9 +48,8 @@
 // input row stays beside it. A pin lookup that FAILS is recorded (`not_evaluated` policy/pin_lookup) and the input
 // rule decides; it is never read as "no advisory". Everything else in the decision table is unchanged.
 //
-// CFT-POLICY-1.2 (0.1.4; identity allocated by the operator, release doc r3 §18.5 item 3). I1 moves the identity
-// before any 0.1.4 change to the decision record, with nothing else changed (decision tables
-// 0.1.4-IMPL-DECISION-TABLES-I1-A8-20261011.md, T-2' E1/E2). Each later 0.1.4 change is enumerated there.
+// CFT-POLICY-1.2 (0.1.4). The identity moved before any 0.1.4 change to the decision record, with nothing else
+// changed; each later 0.1.4 change is marked cft-policy-1.2 below.
 import K from './contract.js';
 
 const POLICY_CONTRACT_VERSION = 'cft-policy-1.2';
@@ -65,25 +64,25 @@ const ALLOW = 'ALLOW';
 const WARN = 'WARN';
 const BLOCK = 'BLOCK';
 const SKIP = 'SKIP';
-// cft-policy-1.2 (0.1.4 group 2a, D-N1): a ROW value, "a contributing signal fired". Never a disposition: aggregate()
-// counts only BLOCK and WARN, so a NOTE row can never make a WARN on its own (r3 §18.7, §18.15).
+// cft-policy-1.2 (0.1.4): a ROW value, "a contributing signal fired". Never a disposition: aggregate()
+// counts only BLOCK and WARN, so a NOTE row can never make a WARN on its own.
 const NOTE = 'NOTE';
 const DISPOSITIONS = Object.freeze([ALLOW, WARN, BLOCK]);
-// The 1.2 role of the threshold rows (r3 §18.18: the seed strict tier is named; the loose `any` rule contributes).
-// A new identity changes these deliberately; test/seed-v3/cft014-g2a-contributing.test.js guards them.
+// The 1.2 role of the threshold rows: the seed strict tier is named; the loose `any` rule contributes.
+// A new identity changes these deliberately; the tests guard them.
 const NAMED_ROWS = Object.freeze(['seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface']);
 const CONTRIBUTING_ROWS = Object.freeze(['seed-v3:dac-trajectory:any']);
-// 0.1.4 group 3a (D-T2): the D1 runner's NAMED gates -- a top-level runner row of one of these with result WARN is a named
-// warning, exactly like a NAMED_ROWS entry (r3 §18.7 item 2, §18.11). 3b and 3c add their gates here.
-// 0.1.5 group 1 (operator ruling 2026-10-13, chaingate-ops handover §7.3): T1.4 size-jump-provenance is named -- measured at
-// 0.020 % of 24.15M corpus versions against its lineage predecessor, +8 established labelled packages beyond 0.1.4's named set.
-// 0.1.5 static checks (operator ruling 2026-10-15, chaingate-ops handover 11.1/11.4): S0 and S5 are named -- static-checks-1.2 re-measure:
-// 0 benign per 10k on 19,614 versions each; recall S0 10/1,422 + 2,731/25,196, S5 382/1,413 + 6/24,941; not-checked share <= 1 %.
+// 0.1.4: the gate runner's NAMED gates -- a top-level runner row of one of these with result WARN is a named
+// warning, exactly like a NAMED_ROWS entry.
+// 0.1.5: size-jump-provenance is named -- measured at 0.020 % of 24.15M corpus versions against its lineage predecessor,
+// +8 established labelled packages beyond 0.1.4's named set.
+// 0.1.5 static checks: S0 and S5 are named -- static-checks-1.2 re-measure: 0 benign per 10k on 19,614 versions each;
+// not-checked share <= 1 %.
 const NAMED_RUNNER_GATES = Object.freeze(['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance',
   'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target',
-  // operator rulings R7 and R9 2026-10-22 (static-checks-1.4 re-measure): S6 named as INDICATOR; S7 named on the static-checks-1.5 condition
+  // static-checks-1.4 re-measure: S6 named as an INDICATOR; S7 named on the static-checks-1.5 condition
   'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);
-// Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member, D-N4).
+// Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member).
 const POLICY_ROW_GATES = Object.freeze(['override', 'seed-v3:known-malicious-pin', 'seed-v3:input', 'seed-v3:channel-a',
   'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage']);
 const ROW_RESULTS = Object.freeze([ALLOW, WARN, BLOCK, SKIP, NOTE]);
@@ -152,7 +151,7 @@ const pinFailedRow = (err) => r(PIN_GATE, SKIP,
 const pinLookupMissing = (err) => ({ where: 'policy', name: 'pin_lookup', reason: reasonOf(err) });
 const inputResult = (choice) => (choice === 'BLOCK' ? BLOCK : (choice === 'WARN' ? WARN : SKIP));
 
-/** D1's aggregation, unchanged: any BLOCK -> BLOCK, else any WARN -> WARN, else ALLOW. */
+/** The gate runner's aggregation, unchanged: any BLOCK -> BLOCK, else any WARN -> WARN, else ALLOW. */
 function aggregate(results) {
   if (results.some((x) => x.result === BLOCK)) return BLOCK;
   if (results.some((x) => x.result === WARN)) return WARN;
@@ -164,7 +163,7 @@ function aggregate(results) {
  *
  * When the caller states that Channel-A could not be PLACED, its reason replaces the checker's.
  * The checker reports `uncovered_package` whenever it cannot find the lineage, which is a false
- * statement about a package the seed covers; the caller knows which of the FU-2 outcomes actually
+ * statement about a package the seed covers; the caller knows which placement outcome actually
  * applies and says so. The finding itself is never rewritten -- this is policy's record, not the
  * detection contract's.
  */
@@ -210,7 +209,7 @@ function thresholdResults(prefix, agg) {
 }
 
 const STALE_LISTED = 10;
-/** The A8 coverage row for a gate-supplied gap count, or null (no append placement, or k = 0). */
+/** The stale-seed coverage row for a gate-supplied gap count, or null (no append placement, or k = 0). */
 function staleSeedRow(st) {
   if (!st || typeof st !== 'object') return null;
   if (st.checked === false) {
@@ -227,14 +226,14 @@ function staleSeedRow(st) {
 /**
  * Map one finding (plus any recorded pin for the same package and version) to a disposition.
  *
- * @param {object|null} finding   a CFT-03 finding, or null when there is none
+ * @param {object|null} finding   a detection finding, or null when there is none
  * @param {object} ctx
  *   ctx.pin        a known_malicious_pins row for THIS package and version, or null
  *   ctx.pinLookupError  the error a pin lookup threw, or null (1.1): recorded, and the input rule decides
  *   ctx.refusal    the SeedRefused / CandidateRejected that prevented evaluation, or null
  *   ctx.config     the operator's answers to OPEN_CHOICES
- *   ctx.override   an override row (D1 short-circuit), or null
- *   ctx.staleSeed  (cft-policy-1.2, A8) the gate's gap count for an `append` placement, or null:
+ *   ctx.override   an override row (the gate runner's short-circuit), or null
+ *   ctx.staleSeed  (cft-policy-1.2) the gate's gap count for an `append` placement, or null:
  *                  {checked: true, k, tip, versions} or {checked: false, tip}. A coverage fact, never an alert.
  * @returns {object} a decision. `disposition` is null when policy declines to decide; it is never
  *   ALLOW merely because something could not be established.
@@ -259,7 +258,7 @@ function decide(finding, ctx = {}) {
     undecided: [],
   };
 
-  // D1: an override short-circuits to ALLOW and nothing else runs. Kept verbatim, including that it
+  // As in the gate runner, an override short-circuits to ALLOW and nothing else runs. Kept verbatim, including that it
   // outranks a pin — an operator who has pinned an exception has made a decision policy must honour
   // and record, not quietly reverse.
   if (override) {
@@ -276,7 +275,7 @@ function decide(finding, ctx = {}) {
 
   // An UNUSABLE INPUT: there is no finding to read (1), or one written under another detection contract (2).
   // `on_unusable_input` decides the input row. A recorded advisory for this exact version is not about the input:
-  // under 1.1 it comes first and BLOCKs whatever that choice says (D4), and a failed lookup is recorded beside it.
+  // under 1.1 it comes first and BLOCKs whatever that choice says, and a failed lookup is recorded beside it.
   const unusable = (detail, name) => {
     const choice = config.on_unusable_input;
     const results = [];
@@ -287,7 +286,7 @@ function decide(finding, ctx = {}) {
     if (pinLookupError) notEvaluated.push(pinLookupMissing(pinLookupError));
     return {
       ...base,
-      // A pin is a recorded fact and stands on its own, as it does when nothing was evaluated (row 8).
+      // A pin is a recorded fact and stands on its own, as it does when nothing was evaluated.
       disposition: pin ? BLOCK : (choice === 'REFUSE_TO_DECIDE' ? null : aggregate(results)),
       results,
       evidence_complete: false,
@@ -347,9 +346,9 @@ function decide(finding, ctx = {}) {
   }
   results.push(...thresholdResults('seed-v3:dac-trajectory', finding.dac_trajectory));
 
-  // 3b. STALE SEED (cft-policy-1.2, 0.1.4 A8; seed-base table R1/R7/P3, Q1). Channel-A compared an `append` release
+  // 3b. STALE SEED (cft-policy-1.2, 0.1.4). Channel-A compared an `append` release
   //     against the seed tip; registry releases between that tip and this release are not in the seed. The count is
-  //     a COVERAGE fact: a SKIP row (D1 aggregation ignores it), never in not_evaluated, never an alert. With no
+  //     a COVERAGE fact: a SKIP row (aggregation ignores it), never in not_evaluated, never an alert. With no
   //     publication times to count from it says "not checked" rather than implying k = 0.
   const stale = staleSeedRow(ctx.staleSeed);
   if (stale) results.push(stale);
@@ -379,7 +378,7 @@ function decide(finding, ctx = {}) {
       results.push(r('seed-v3:coverage', WARN, 'nothing in this finding was evaluated'));
       disposition = aggregate(results);
     }
-    // ALLOW: D1's fail-open, chosen explicitly by an operator rather than arrived at by omission.
+    // ALLOW: the gate runner's fail-open, chosen explicitly by an operator rather than arrived at by omission.
   }
   if (pinLookupError && config.on_unusable_input === 'REFUSE_TO_DECIDE') {
     // Whether an advisory names this version is unknown, and the operator has not said what that means.
@@ -402,7 +401,7 @@ function decide(finding, ctx = {}) {
 /** Look up a recorded advisory pin for one package and version. Read-only, and its own query so the
  *  detection path never has to know this table exists.
  *
- *  Seed contracts 1.1 and 1.2 key pins by NAME, so a pin is found whether or not the package is represented (D4: the
+ *  Seed contracts 1.1 and 1.2 key pins by NAME, so a pin is found whether or not the package is represented (the
  *  1.0 join made a pin row without a `packages` row invisible). A 1.0 seed keeps the 1.0 join exactly. */
 function pinFor(seed, packageName, version) {
   const byName = PIN_BY_NAME_SEED_CONTRACTS.includes(seed.meta?.seed_contract_version);
@@ -416,7 +415,7 @@ function pinFor(seed, packageName, version) {
 }
 
 /**
- * `pinFor` for callers that must not lose the result to an exception (the "safePinFor" of the D4 proposal).
+ * `pinFor` for callers that must not lose the result to an exception.
  * Looks up only an EXACT identity -- both a non-empty string -- in the seed the caller hands it, which is the seed the
  * caller accepted under its configured trust mode. Never throws: a failure is RETURNED, so it can be recorded.
  * @returns {{pin: object|null, error: Error|null, attempted: boolean}}

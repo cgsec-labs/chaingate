@@ -24,15 +24,15 @@ import { rewritePackument } from '../gates/rewriter.js';
 import { createUnstoredBlocks, validateCaps } from './unstored-blocks.js';
 import { createEvaluationTracker, EvaluationBusy } from './evaluation-tracker.js';
 import { createLogBoundary } from './log-boundary.js';
-// 0.1.4 group 2b (D-V1..D-V5): the deciding reason, the row classes, and ChainGate's npm-notice.
+// The deciding reason, the row classes, and ChainGate's npm-notice.
 import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts, policyPrefix, servedClass } from '../witness/row-class.js';
 import { buildNotice, pinNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
-// 0.1.4 group 2d (D-U3, D-U5, D-U6): the user's pins (a live serving overlay) and acceptances.
+// The user's pins (a live serving overlay) and acceptances.
 import { createPinSet, withheldBy } from '../witness/pins.js';
-// 0.1.4 group 3b (D-N3, D-N4): N1h judged at tarball time, bounded; the dependency cache's stats on /self
+// N1h judged at tarball time, bounded; the dependency cache's stats on /self
 import { judgeAtTarball } from './dependency-judge.js';
 import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cache.js';
-// 0.1.4 group 3c (D-M2..D-M4): MC while the tarball streams
+// MC while the tarball streams
 import { createTarWalker } from './tar-walk.js';
 import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
 import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
@@ -45,9 +45,9 @@ function parsedPackageJson(walk) {
   if (!walk?.ok || !walk.packageJson) return null;
   try { const pj = JSON.parse(walk.packageJson.toString('utf8').replace(/^\uFEFF/, '')); return pj !== null && typeof pj === 'object' && !Array.isArray(pj) ? pj : null; } catch { return null; }
 }
-let factsWalks = 0;                                         // 0.1.5 (R4): entry-facts-only walks in flight (ceiling MAX_FACTS_WALKS)
+let factsWalks = 0;                                         // 0.1.5: entry-facts-only walks in flight (ceiling MAX_FACTS_WALKS)
 let armedWalks = 0;                                        // 0.1.5: armed keep-list walks in flight (process-wide ceiling MAX_ARMED_WALKS)
-// 0.1.4 group 2c (D-R1, D-R2, D-R5): the install summary, the disk record and the last version without the signal.
+// The install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
 import { POLICY_CONTRACT_VERSION, NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
@@ -112,7 +112,7 @@ export function classify(pathname) {
   return { kind: 'unknown' };
 }
 
-// U-05 Amendment 2 (P4a/P5a): a version of this package is already BLOCKed and the response that removes it could not be
+// A version of this package is already BLOCKed and the response that removes it could not be
 // built or sent. The original document must not be served instead -- it carries the very version the gates refused -- so
 // this one request fails; other packages and later requests are unaffected. Headers already sent: cut the response.
 function refuseUnenforceable(res, packageName, detail) {
@@ -128,7 +128,7 @@ function refuseUnenforceable(res, packageName, detail) {
   });
 }
 
-// U-05 Amendment 3 (P3/P5b): no decision could be made and the configured failure policy refuses.
+// No decision could be made and the configured failure policy refuses.
 function refuseNoDecision(res, packageName, detail) {
   if (res.headersSent) {
     if (!res.writableEnded) res.destroy(new Error(detail));
@@ -142,7 +142,7 @@ function refuseNoDecision(res, packageName, detail) {
   });
 }
 
-// U-05 gap-closure r2 (F2): no decision could be made and the unstored-BLOCK record is FULL, under every configuration.
+// No decision could be made and the unstored-BLOCK record is FULL, under every configuration.
 function refuseFull(res, packageName, detail) {
   if (res.headersSent) {
     if (!res.writableEnded) res.destroy(new Error(detail));
@@ -156,11 +156,11 @@ function refuseFull(res, packageName, detail) {
   });
 }
 
-// U-05 Amendment 3 (Rule K): a failure decision never makes a remembered BLOCK servable.
+// A failure decision never makes a remembered BLOCK servable.
 function preserveKnownBlock(packageName, version, decision, known) {
   return {
     disposition: 'BLOCK',
-    held: { facts: factsFromBits(known?.reasons), rows: null },   // 0.1.4 2b review (dated note 5.1): the held facts
+    held: { facts: factsFromBits(known?.reasons), rows: null },   // the held facts
     results: [{ gate: 'chaingate', result: 'BLOCK',
       detail: `known BLOCK preserved: this proxy process decided BLOCK for ${packageName}@${version} and could not `
         + `store it (${known.detail}); a failure decision cannot make it servable` },
@@ -186,14 +186,14 @@ function relayResponseHeaders(upstreamHeaders) {
   for (const key of RELAY_RESPONSE_HEADERS) {
     const v = upstreamHeaders[key] ?? upstreamHeaders[key.toLowerCase()];
     if (v == null) continue;
-    // 0.1.4 group 2b (D-V5): an upstream notice is printed by npm as-is, so it is relayed only as `registry: …` and can
+    // An upstream notice is printed by npm as-is, so it is relayed only as `registry: …` and can
     // never pass for a ChainGate line.
     out[key] = key === 'npm-notice' ? sanitizeUpstreamNotice(v) : v;
   }
   return out;
 }
 
-/** D-V4: our notice beside a relayed one; a 200 carrying ours is `no-store`, or npm never prints it (A10). */
+/** Our notice beside a relayed one; a 200 carrying ours is `no-store`, or npm never prints it. */
 function withNotice(headers, notice, { noStore = true } = {}) {
   if (!notice) return headers;
   const out = { ...headers };
@@ -211,7 +211,7 @@ async function streamUpstream(res, upstream, statusCode, extraHeaders = null, ta
     return;
   }
   try {
-    // 0.1.4 group 3c (D-M2): `tap` sees a copy of every chunk; the chunk itself goes to npm unchanged and undelayed
+    // `tap` sees a copy of every chunk; the chunk itself goes to npm unchanged and undelayed
     if (tap) {
       await pipeline(upstream.body, new Transform({ transform(chunk, _enc, cb) {
         try { tap(chunk); } catch { /* the walk never affects the download */ }
@@ -240,7 +240,7 @@ function settled(res) {
 }
 
 /**
- * 0.1.5 (#15, the per-user `static_withhold` switch): hold an ARMED download in memory while the static checks read it, so a named
+ * 0.1.5 (the per-user `static_withhold` switch): hold an ARMED download in memory while the static checks read it, so a named
  * static WARN can withhold the download that reveals it. Every chunk goes to `tap` (the walker) as it arrives.
  *   { held: true, headers, body }   the whole body arrived within `cap`; nothing has been sent (the caller serves or withholds it)
  *   { held: false }                 streamed as today: a status other than 200, a Content-Length over `cap`, or the cap reached
@@ -281,7 +281,7 @@ async function holdUpstream(res, upstream, statusCode, extraHeaders, tap, cap) {
   return { held: true, headers: headersOf(), body: Buffer.concat(chunks) };
 }
 
-/** 0.1.5 (#15): the 403 of a download the user's static_withhold switch withholds (a serving choice; the decision stays WARN). */
+/** 0.1.5: the 403 of a download the user's static_withhold switch withholds (a serving choice; the decision stays WARN). */
 function staticWithheldResponse(pkg, version, checks) {
   const id = `${pkg}@${version}`;
   const detail = `${id} is withheld by your static_withhold setting: ${checks.join(', ')}; details: chaingate why ${id}; `
@@ -313,9 +313,9 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
   try {
     parsed = JSON.parse(raw.toString('utf8'));
     if (parsed && typeof parsed === 'object') {
-      rememberManifestHooks(packageName, parsed.versions);   // 3c (D-M3)
-      rememberPackumentFacts(packageName, parsed);            // 0.1.5 shadow facts (R11): dist-tags, maintainers, publishers
-      setDependencyDoc(packageName, parsed);                 // release audit R4: N1h judges from what npm already fetched
+      rememberManifestHooks(packageName, parsed.versions);   // MC: the manifest's install hooks
+      rememberPackumentFacts(packageName, parsed);            // 0.1.5 shadow facts: dist-tags, maintainers, publishers
+      setDependencyDoc(packageName, parsed);                 // N1h judges from what npm already fetched
     }
   } catch (err) {
     log?.warn?.(`[proxy] ${packageName}: non-JSON packument body: ${err.message}`);
@@ -325,7 +325,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
   let observeErr = null;
   let noDecision = false;
   if (parsed && witness) {
-    // Only the observation itself is guarded here. Reporting it comes after (U-05 Amendment 3, O1): a failure while
+    // Only the observation itself is guarded here. Reporting it comes after: a failure while
     // reporting used to land in this catch and let fallback decisions replace the ones just returned.
     try {
       observed = witness.observePackument(packageName, parsed);
@@ -349,10 +349,10 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
     }
   }
 
-  // U-05 Amendment 3 (P3): no decision at all. The configured failure policy decides; a remembered BLOCK is never
+  // No decision at all. The configured failure policy decides; a remembered BLOCK is never
   // served under any policy.
   if (noDecision) {
-    // Addendum 1 §C: while the record is FULL this is refused as such under every configuration (it says why).
+    // While the record is FULL this is refused as such under every configuration (it says why).
     if (ctx.unstored?.full) {
       refuseFull(res, packageName, `observation and its failure decision both failed: ${observeErr.message}`);
       return;
@@ -371,14 +371,14 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
     if (known.size) observed = { decisions: known };
   }
 
-  // Reading the returned decisions may itself throw; that escapes to the handler (P5b), before any decision counts.
+  // Reading the returned decisions may itself throw; that escapes to the handler, before any decision counts.
   const decisions = observed ? observed.decisions : null;
   if (decisions instanceof Map && ctx.unstored && !noDecision) {
-    // P6b: remember BLOCKs that were not stored, forget entries a newer decision replaces (Amendment 3, Table M).
+    // Remember BLOCKs that were not stored, forget entries a newer decision replaces.
     for (const [version, decision] of decisions) ctx.unstored.note(packageName, version, decision);
-    // C1 (owner decision 10): a resolving request evaluates too; its actually evaluated versions need no second evaluation.
+    // A resolving request evaluates too; its actually evaluated versions need no second evaluation.
     if (observed?.actual && ctx.tracker) ctx.tracker.markAll(packageName, observed.actual);
-    // Rule K: a failure decision never makes a remembered BLOCK servable (override checked live).
+    // A failure decision never makes a remembered BLOCK servable (override checked live).
     for (const [version, decision] of decisions) {
       if (decision?.evaluated !== false || decision.disposition === 'BLOCK') continue;
       const known = ctx.unstored.get(packageName, version);
@@ -393,10 +393,10 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
       log?.info?.(
         `[witness] ${packageName}: observed ${observed.versionsSeen} versions, +${observed.newBaselines} new`,
       );
-    } catch { /* U-05 Amendment 3 (O1): reporting can never replace the returned decisions */ }
+    } catch { /* reporting can never replace the returned decisions */ }
   }
 
-  // Rewriter branch: any BLOCK, or (2d) any version a user pin withholds → re-serialize. Otherwise serve raw bytes.
+  // Rewriter branch: any BLOCK, or any version a user pin withholds → re-serialize. Otherwise serve raw bytes.
   const hasBlock = decisions && hasBlockDisposition(decisions);
   const pins = Array.isArray(state.pins) ? state.pins : [];
   const pinnedOf = (v) => withheldBy(pins, packageName, v);
@@ -409,10 +409,10 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
       summary.dist_tag_downgrades = summary.dist_tag_downgrades.filter((d) => !d.pin);   // BLOCK moves only, below
       let tagNotice = null;
       if (changed) {
-        // D-V2: a BLOCK resting on a fact goes through the reserved fact channel, deduplicated per (package, set of
+        // A BLOCK resting on a fact goes through the reserved fact channel, deduplicated per (package, set of
         // fact-blocked versions, version) for 10 min; any other BLOCK line uses the general budget, as before.
-        // A kept or preserved BLOCK carries what it rests on in `held` (dated note 5.1): its facts, and the stored BLOCK's
-        // rows, which give the reason. Keys are per version (note 5.4): never the package's whole set.
+        // A kept or preserved BLOCK carries what it rests on in `held`: its facts, and the stored BLOCK's
+        // rows, which give the reason. Keys are per version: never the package's whole set.
         const factOf = (v) => {
           const d = decisions.get(v);
           return [...new Set([...classifyRows(d?.results).facts, ...(Array.isArray(d?.held?.facts) ? d.held.facts : [])])].sort();
@@ -425,7 +425,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
           if (facts.length) log?.reserved?.('fact', line, `${packageName}@${b.version}|${facts.join(',')}`);
           else log?.warn?.(line);
         }
-        // D-V4b: one notice when a dist-tag was moved off a version withheld for a fact (the user would have got it).
+        // One notice when a dist-tag was moved off a version withheld for a fact (the user would have got it).
         for (const d of summary.dist_tag_downgrades) {
           const facts = factOf(d.from);
           if (!facts.length) continue;
@@ -435,7 +435,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
             tail: `(dist-tag ${tag} ${to})` });
           break;
         }
-        // 2c (D-R1, D-R2, D-R6): every dist-tag moved off a withheld version is an install event (on disk when it rests on
+        // Every dist-tag moved off a withheld version is an install event (on disk when it rests on
         // a fact); withheld versions no tag pointed at are context only.
         const reasonOf = (v) => {
           const d = decisions.get(v);
@@ -445,7 +445,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
           const d = decisions.get(v);
           return policyPrefix(Array.isArray(d?.held?.rows) ? d.held.rows : d?.results);
         };
-        // dated note 7.3: the packument controls how many tags there are, so at most 20 tag events per response (`latest`
+        // The packument controls how many tags there are, so at most 20 tag events per response (`latest`
         // first; the rest counted on the last one), and one disk row per withheld version carrying its capped tag list.
         const TAG_EVENTS = 20;
         const moved = new Set(summary.dist_tag_downgrades.map((d) => d.from));
@@ -466,7 +466,7 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
               ...(mine.length > TAG_EVENTS ? { more: mine.length - TAG_EVENTS } : {}) },
             reason: reasonOf(from), policy_version: policyOf(from) });
         }
-        // 2d (D-U9): what the user's pins withheld here, per pin, as context (no exit code): versions and tag moves, capped
+        // What the user's pins withheld here, per pin, as context (no exit code): versions and tag moves, capped
         const byPin = new Map();
         for (const x of summary.pinned) byPin.set(x.k_version, [...(byPin.get(x.k_version) ?? []), x.version]);
         for (const [k, versions] of byPin) {
@@ -489,12 +489,12 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
           );
         }
         const body = Buffer.from(JSON.stringify(rewritten), 'utf8');
-        // dated note 5.5: the rewritten packument stays CACHEABLE (no-store would leave npm's stale pre-BLOCK copy for
-        // --prefer-offline); npm 10/11 then do not print this notice, and `chaingate report` (2c) carries the case.
+        // The rewritten packument stays CACHEABLE (no-store would leave npm's stale pre-BLOCK copy for
+        // --prefer-offline); npm 10/11 then do not print this notice, and `chaingate report` carries the case.
         const headers = withNotice(relayResponseHeaders(upstream.headers), tagNotice, { noStore: false });
         delete headers['content-encoding'];
         delete headers.etag; // etag would be stale against rewritten body
-        // 2d (E25): nor last-modified -- with it npm revalidates its cached REWRITTEN copy (If-Modified-Since → upstream 304)
+        // Nor last-modified -- with it npm revalidates its cached REWRITTEN copy (If-Modified-Since → upstream 304)
         // and keeps a stale view after an unpin or a cleared BLOCK; without validators it fetches again after max-age.
         delete headers['last-modified'];
         headers['content-type'] = 'application/json';
@@ -503,10 +503,10 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
         res.end(body);
         return;
       }
-      // No change means no BLOCKed version is in this document: decisions are keyed by its own version strings
-      // (U-05 Amendment 2, P4b), so serving it as received below is safe.
+      // No change means no BLOCKed version is in this document: decisions are keyed by its own version strings,
+      // so serving it as received below is safe.
     } catch (err) {
-      // U-05 Amendment 2 (P4a): this used to serve the original document ("a rewriter bug must never DoS the
+      // This used to serve the original document ("a rewriter bug must never DoS the
       // registry"), which hands npm the version that was just BLOCKed. Only this package's request fails now.
       refuseUnenforceable(res, packageName, `the BLOCK could not be applied: ${err.message}`);
       log?.warn?.(`[rewriter] ${packageName}: rewrite failed, document NOT served (a BLOCK could not be enforced): ${err.message}`);
@@ -533,11 +533,11 @@ function hasBlockDisposition(decisions) {
 // Tarball BLOCK gate. Checks gate_decisions for a recorded BLOCK against
 // (pkg, version) extracted from the tarball filename. Honors overrides.
 //
-// U-05 Amendment 3: a BLOCK this process computed but could not store (P6b) is checked FIRST -- a stored decision
+// A BLOCK this process computed but could not store is checked FIRST -- a stored decision
 // would have replaced it, so it is always the newer one -- and a failed stored-decision lookup follows the configured
-// failure policy (P6a). `state.tarballDecided` marks that the gate reached a decision (P5b).
+// failure policy. `state.tarballDecided` marks that the gate reached a decision.
 /**
- * The tarball gate while the unstored-BLOCK record is FULL (U-05 gap-closure r2, F2; Addendum 1 §C). It runs BEFORE every
+ * The tarball gate while the unstored-BLOCK record is FULL. It runs BEFORE every
  * other return, so neither a missing database nor an unparseable name, nor a stored ALLOW or WARN, nor no decision at all
  * serves a tarball: a BLOCK the record could not hold might be any of them. The one exception is an exact override that
  * is established (looked up without error). Anything that cannot be read is refused.
@@ -556,15 +556,15 @@ function enforceWhileFull(db, canonicalName, filename, log, ctx, state) {
     if (ctx.overriddenLive?.(canonicalName, version)) {
       log?.info?.(`[override] ${canonicalName}@${version}: allowing while the unstored-BLOCK record is full`);
       state.tarballDecided = true;
-      state.override = true;                                   // 2c (dated note 6.5): served under an exact override
+      state.override = true;                                   // served under an exact override
       return null;
     }
     const known = ctx.unstored?.get(canonicalName, version) ?? null;
     if (known) {
-      state.blockFacts = factsFromBits(known.reasons);    // 2c review (dated note 7.10, E23): as on the normal path
+      state.blockFacts = factsFromBits(known.reasons);    // as on the normal path
       return rememberedBlock(canonicalName, version, known);
     }
-    // Owner decision 10 (C2): the one applicable-BLOCK rule (override handled above).
+    // The one applicable-BLOCK rule (override handled above).
     const applicable = db.getApplicableDecision(canonicalName, version, { overrideLive: false });
     if (applicable.block) {
       try { state.blockFacts = pendingFacts(db.getDecisionHistory(canonicalName, version), applicable.pending); } catch { state.blockFacts = []; }
@@ -585,7 +585,7 @@ function rememberedBlock(canonicalName, version, known) {
     decided_at: known.remembered_at,
     persisted: false,
     detail: `BLOCK decided by this proxy process and NOT stored (${known.detail}); a restart forgets it`,
-    reason: known.detail,                                      // 0.1.4 group 2b (E14): what the record kept of the reason
+    reason: known.detail,                                      // what the record kept of the reason
     how_to_override: `chaingate allow ${canonicalName}@${version} --reason "<reason>"`,
   };
 }
@@ -596,13 +596,13 @@ function storedBlock(canonicalName, version, decision) {
     version,
     gates: decision.gates_fired,
     decided_at: decision.decided_at,
-    reason: decidingReason(decision.gates_fired, 'BLOCK'),       // 0.1.4 group 2b (D-V1, E14)
+    reason: decidingReason(decision.gates_fired, 'BLOCK'),       // the deciding reason
     how_to_override: `chaingate allow ${canonicalName}@${version} --reason "<reason>"`,
   };
 }
 
 /**
- * Owner decision 10 (step 1, step 5c): no evaluation covers the requested version and no BLOCK applies. The configuration's
+ * No evaluation covers the requested version and no BLOCK applies. The configuration's
  * existing "no decision could be made" semantics decide: a v3 seed with on_unusable_input BLOCK refuses; WARN, and
  * configurations without a v3 seed (the pilot gates' ALLOW declaration), serve, logged. Never marked as evaluated.
  */
@@ -621,7 +621,7 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
   if (ctx.unstored?.full) return enforceWhileFull(db, canonicalName, filename, log, ctx, state);
   if (!db) return null;
   const version = parseTarballVersion(canonicalName, filename);
-  // Owner decision 10, step 1: no exact version, so no evaluation can cover it; the configured failure semantics decide.
+  // No exact version, so no evaluation can cover it; the configured failure semantics decide.
   if (version == null) return evaluationFailed(canonicalName, filename, 'the version cannot be derived from the tarball name', log, ctx, state);
   state.tarballVersion = version;
   const known = ctx.unstored?.get(canonicalName, version) ?? null;
@@ -632,12 +632,12 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
       state.override = true;
       return null;
     }
-    state.blockFacts = factsFromBits(known.reasons);    // dated note 5.3: the held reason bits, never the newest text
+    state.blockFacts = factsFromBits(known.reasons);    // the held reason bits, never the newest text
     return rememberedBlock(canonicalName, version, known);
   }
   const lookupFailed = (err) => {
     log?.warn?.(`[tarball-gate] decision lookup failed: ${err.message}`);
-    // D-2 (owner decision 10): without a v3 seed there is no failure policy, and a lookup error is refused. D-1: an
+    // Without a v3 seed there is no failure policy, and a lookup error is refused. An
     // explicitly configured on_unusable_input WARN keeps availability; a held BLOCK was refused above.
     if (ctx.lookupErrorsRefuse ?? ctx.failuresBlock) {
       return { refuse: { status: 503, error: 'chaingate_decision_lookup_failed',
@@ -649,7 +649,7 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
     state.tarballDecided = true;
     return null;
   };
-  // An exact override applies while it exists (N3). One that cannot be read is no override, as before.
+  // An exact override applies while it exists. One that cannot be read is no override, as before.
   let override = null;
   try {
     override = db.getOverride(canonicalName, version);
@@ -662,7 +662,7 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
     state.override = true;
     return null;
   }
-  // U-05 owner decision 10 (C2): the decision that APPLIES under the one applicable-BLOCK rule (witness/decision-rule.js),
+  // The decision that APPLIES under the one applicable-BLOCK rule (witness/decision-rule.js),
   // the same rule the store uses for its writes: a later SKIP, error, input-rule or unrecognised row never clears a BLOCK.
   let applicable;
   try {
@@ -671,12 +671,12 @@ export function enforceTarballGate(db, canonicalName, filename, log, ctx = {}, s
     return lookupFailed(err);
   }
   if (applicable.block) {
-    // dated note 5.3: the reasons that still apply, each confirmed by a stored row's structural facts
+    // The reasons that still apply, each confirmed by a stored row's structural facts
     try { state.blockFacts = pendingFacts(db.getDecisionHistory(canonicalName, version), applicable.pending); } catch { state.blockFacts = []; }
     return storedBlock(canonicalName, version, applicable.block);
   }
-  state.applicable = applicable;          // 0.1.4 group 2b (D-V3): what the served version's record says
-  // Owner decision 10 (C1): no applicable BLOCK. Serve only on an evaluation this process made for this exact version.
+  state.applicable = applicable;          // what the served version's record says
+  // No applicable BLOCK. Serve only on an evaluation this process made for this exact version.
   if (state.c1?.busy) {
     return { refuse: { status: 503, error: 'chaingate_evaluation_busy',
       detail: `${canonicalName}@${version} could not be evaluated now (${state.c1.why}); a resource refusal, not a finding` } };
@@ -694,7 +694,7 @@ function defaultLogger() {
   };
 }
 
-// 0.1.4 group 2c review (dated note 7.4, E22): the internal endpoints answer only a local, non-browser request -- a loopback
+// The internal endpoints answer only a local, non-browser request -- a loopback
 // peer, a Host naming a loopback literal (so a rebinding hostname fails), no Origin, and Sec-Fetch-Site absent or `none`.
 const LOCAL_HOST_RE = /^(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|\[::1\])(?::\d{1,5})?$/i;
 export function localOnly(req) {
@@ -708,10 +708,10 @@ export function localOnly(req) {
 
 export function createProxyServer(configOverrides = {}, hooks = {}) {
   const config = loadConfig(process.env, configOverrides);
-  // Before anything is opened: bad caps refuse start-up by name (U-05 gap-closure r2).
+  // Before anything is opened: bad caps refuse start-up by name.
   const caps = validateCaps({ entries: config.unstoredBlockCapEntries, bytes: config.unstoredBlockCapBytes });
 
-  // U-05 gap-closure r2, A1: every line goes through ONE boundary. A logger that throws can no longer turn a handled
+  // Every line goes through ONE boundary. A logger that throws can no longer turn a handled
   // error into an unhandled request failure, and output is rate-bounded (proxy/log-boundary.js). `info` is a no-op in the
   // shipped logger and spends no budget. `hooks.logBudget` is for tests only.
   // Its once-a-minute tick (suppression summary, pending transitions) starts when the server listens, so a start-up that
@@ -721,14 +721,14 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   // Fail-LOUD on witness open. If the DB path is unwritable, corrupt, or
   // points at a missing parent dir we cannot auto-create, the proxy refuses
   // to start rather than running degraded. At request time the witness path
-  // is fail-open (Section 7 item 2 of docs/V2_DESIGN.md) — see the
+  // is fail-open — see the
   // observeAndSendPackument try/catch and the handler-level fallback below.
   let witness = null;
   let witnessDb = null;
   let seedV3 = null;
   let depCache = null;
   let depFetcher = null;
-  let witnessDbReal = null;               // release audit R7: reported by /_chaingate/self
+  let witnessDbReal = null;               // reported by /_chaingate/self
   if (config.witnessDbPath) {
     try {
       mkdirSync(dirname(config.witnessDbPath), { recursive: true });
@@ -839,7 +839,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     witness = createWitness({ db: witnessDb, runGates, config, logger: log });
   }
 
-  // U-05 Amendment 3. The configured failure policy (P3/P5b/P6a): only a seed-v3 gate configured with
+  // The configured failure policy: only a seed-v3 gate configured with
   // on_unusable_input BLOCK refuses when no decision can be made; pilot-only setups keep their ALLOW declaration.
   const unstored = createUnstoredBlocks({ log, caps });
   const failuresBlock = Boolean(seedV3) && config.policyOnUnusableInput === 'BLOCK';
@@ -847,15 +847,15 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     try { return Boolean(witnessDb?.getOverride(name, version)); } catch { return false; }
   };
   const counters = { observation_errors: 0 };
-  // D-2 (owner decision 10): decision-lookup errors are refused without a v3 seed too (healthy path unchanged).
+  // Decision-lookup errors are refused without a v3 seed too (healthy path unchanged).
   const lookupErrorsRefuse = failuresBlock || !seedV3;
-  // C1 (owner decision 10): the exact versions this process evaluated, and the bounded single-flight evaluations.
+  // The exact versions this process evaluated, and the bounded single-flight evaluations.
   const tracker = witness ? createEvaluationTracker(hooks.c1 ?? {}) : null;
-  // 2d (D-U6): the user's pins, read live (PRAGMA data_version), last good set kept on a read failure
+  // The user's pins, read live (PRAGMA data_version), last good set kept on a read failure
   const pinSet = witnessDb ? createPinSet(witnessDb, { log }) : null;
   const ctx = { unstored, failuresBlock, lookupErrorsRefuse, overriddenLive, counters, tracker, pins: pinSet };
 
-  // 0.1.4 group 2c (D-R1, D-R2): what this process served and refused, per install (memory), and the named and fact events
+  // What this process served and refused, per install (memory), and the named and fact events
   // also kept on disk, once per install. Neither can fail a request: a recording error is logged and counted.
   const startedAt = new Date().toISOString();
   const installs = createInstallSummary(hooks.installSummary ?? {});
@@ -866,7 +866,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     }
   }
   const seedSha = () => seedV3?.report?.content_sha256 ?? null;
-  // `event` goes to the summary; `disk` (or null) is written once per install and disk event (dated note 7.1): its claim is
+  // `event` goes to the summary; `disk` (or null) is written once per install and disk event: its claim is
   // keyed by its own kind and package@version, so no other event can use it up. `event` null: a disk row only.
   function noteInstall(req, event, disk = null) {
     const who = { session: req.headers['npm-session'], client: req.socket?.remoteAddress };
@@ -879,7 +879,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
       return;
     }
     if (!disk || !witnessDb) return;
-    const claim = `${disk.kind}|${disk.package_name}@${disk.version}${disk.diskKey ? `|${disk.diskKey}` : ''}`;   // note 5.4
+    const claim = `${disk.kind}|${disk.package_name}@${disk.version}${disk.diskKey ? `|${disk.diskKey}` : ''}`;   // keyed per version
     if (!installs.claimDisk(recorded.key, claim)) return;
     try {
       const { diskKey: _k, ...row } = disk;
@@ -891,7 +891,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   }
 
   /**
-   * C1: evaluate a package exactly as a resolving request would (the same upstream client, metadata and observation),
+   * Evaluate a package exactly as a resolving request would (the same upstream client, metadata and observation),
    * without serving its document. Returns { ok } or { ok: false, why }. Marks only the versions actually evaluated.
    */
   async function evaluatePackage(rawName, canonicalName, authorization) {
@@ -909,9 +909,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     try {
       parsed = JSON.parse(Buffer.from(await upstream.body.arrayBuffer()).toString('utf8'));
       if (parsed && typeof parsed === 'object') {
-        rememberManifestHooks(canonicalName, parsed.versions);   // 3c (D-M3)
-        rememberPackumentFacts(canonicalName, parsed);            // 0.1.5 shadow facts (R11)
-        setDependencyDoc(canonicalName, parsed);                 // release audit R4
+        rememberManifestHooks(canonicalName, parsed.versions);   // MC: the manifest's install hooks
+        rememberPackumentFacts(canonicalName, parsed);            // 0.1.5 shadow facts
+        setDependencyDoc(canonicalName, parsed);                 // N1h judges from this document
       }
     } catch (err) {
       return { ok: false, why: `the metadata could not be read (${err.message})` };
@@ -948,10 +948,10 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     // Internal self-attestation endpoint for `chaingate doctor` — lets the CLI
     // confirm the running proxy matches the installed CLI. Bound to the same
     // 127.0.0.1 interface as the rest of the proxy; exposes no secrets.
-    // 0.1.4 group 2c (D-R1, E19, dated note 6.9): the install summary for `chaingate report`. It lists installed package
+    // The install summary for `chaingate report`. It lists installed package
     // names, so only a loopback peer gets it.
     if ((url.pathname === '/_chaingate/report' || url.pathname === '/_chaingate/self') && !localOnly(req)) {
-      // dated note 7.4 (E22): a loopback peer is not enough -- a browser page whose name resolves to 127.0.0.1 is one
+      // A loopback peer is not enough -- a browser page whose name resolves to 127.0.0.1 is one
       // (DNS rebinding). Both endpoints also need a loopback Host and no browser-origin headers.
       writeJson(res, 404, { error: 'not_found', path: url.pathname });
       return;
@@ -993,7 +993,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           schema_version: seedV3.meta?.schema_version ?? null,
           corpus_snapshot_digest: seedV3.meta?.corpus_snapshot_digest ?? null,
           contract_version: seedV3.meta?.contract_version ?? null,
-          // 0.1.4 A7: how old the history behind every seed comparison is. The seed binds it (SEED_BINDING_KEYS);
+          // 0.1.4: how old the history behind every seed comparison is. The seed binds it (SEED_BINDING_KEYS);
           // null when the seed does not carry it, never a guessed date.
           history_cutoff: seedV3.meta?.history_cutoff ?? null,
           policy: {
@@ -1003,13 +1003,13 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           config_source: config.configSource ?? null,
         } : null,
         unstored_blocks: unstored.describe(),
-        // 0.1.4 group 2d (E26): whether this process enforces the user's pins, and what it holds
+        // Whether this process enforces the user's pins, and what it holds
         pins: pinSet ? pinSet.stats() : { enforced: false, count: 0, generation: 0, last_error: 'no witness database' },
-        // release audit R7: the database this process reads, so `pin`/`accept`/`unpin` can tell whether it applies their write
+        // The database this process reads, so `pin`/`accept`/`unpin` can tell whether it applies their write
         witness_db: witnessDb ? witnessDbReal : null,
-        dependency_cache: dependencyCacheStats(),                 // 0.1.4 group 3b (E34)
+        dependency_cache: dependencyCacheStats(),                 // N1h's dependency cache
         evaluation: tracker ? tracker.stats() : null,
-        // U-05 gap-closure r2, Addendum 1 §B: the process's decision-storage state, from its own signals.
+        // The process's decision-storage state, from its own signals.
         storage: storageReport({ health: witness?.storageHealth?.() ?? null, count: unstored.count,
           full: Boolean(unstored.full), observationErrors: counters.observation_errors }),
         logging: (({ emitted, suppressed, truncated, failures, transitions, transitions_suppressed, reserved }) => ({ emitted,
@@ -1026,12 +1026,12 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     }
 
     const canonicalName = normalizePackageName(route.name);
-    const state = {};            // U-05 Amendment 2 (P5a): set when a BLOCK was computed for this request
+    const state = {};            // set when a BLOCK was computed for this request
     state.note = (event, disk) => noteInstall(req, event, disk);
 
     try {
       if (route.kind === 'packument') {
-        // 2d (D-U5): a pinned package is fetched without conditional headers -- a 304 would leave npm on its cached
+        // A pinned package is fetched without conditional headers -- a 304 would leave npm on its cached
         // document from before the pin.
         state.pins = pinSet ? pinSet.forPackage(canonicalName) : [];
         const requestHeaders = state.pins.length ? Object.fromEntries(Object.entries(req.headers)
@@ -1042,7 +1042,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         });
         await observeAndSendPackument(res, upstream, witness, canonicalName, log, state, ctx);
       } else {
-        // Owner decision 10 (C1): a version this process has not evaluated is evaluated BEFORE the gate decides --
+        // A version this process has not evaluated is evaluated BEFORE the gate decides --
         // single flight per package, bounded -- unless a held BLOCK or a live exact override already decides it, or the
         // record is FULL (its own rules refuse).
         const version = witness && tracker && !unstored.full ? parseTarballVersion(canonicalName, route.filename) : null;
@@ -1058,10 +1058,10 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           }
         } else if (version != null && !unstored.get(canonicalName, version) && !overriddenLive(canonicalName, version)
           && manifestHooksFor(canonicalName, version) === undefined) {
-          // Release audit R3 (G4 tables dated note 4): the version was evaluated, but the registry manifest MC compares against
-          // is no longer in the hook map. Re-run C1 to refill it -- unless MC is already final for this version. Best effort:
+          // The version was evaluated, but the registry manifest MC compares against
+          // is no longer in the hook map. Re-run the evaluation to refill it -- unless MC is already final for this version. Best effort:
           // a failure here changes neither the stored record nor the serve decision; MC then records "not checked".
-          // G4 dated note 5 (W4): nor for a version that will not be served (an applicable BLOCK, or one the user's pin withholds)
+          // Nor for a version that will not be served (an applicable BLOCK, or one the user's pin withholds)
           let final = true;
           try {
             const app = witnessDb.getApplicableDecision(canonicalName, version, { overrideLive: false });
@@ -1084,7 +1084,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           return;
         }
         if (blocked) {
-          // D-V4: a refusal resting on a fact names it in npm's own output (a 403 is never cached, so npm prints it).
+          // A refusal resting on a fact names it in npm's own output (a 403 is never cached, so npm prints it).
           const facts = Array.isArray(state.blockFacts) ? state.blockFacts : [];
           const reason = blocked.reason ?? blocked.detail ?? null;
           const policy = Array.isArray(blocked.gates) ? policyPrefix(blocked.gates) : null;
@@ -1095,7 +1095,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           writeJson(res, 403, { error: 'blocked_by_chaingate', ...blocked }, notice ? { 'npm-notice': notice } : {});
           return;
         }
-        // 2d (D-U5): after the BLOCK gate (a BLOCK keeps its own reason) and the override (a pin wins over it), a version the
+        // After the BLOCK gate (a BLOCK keeps its own reason) and the override (a pin wins over it), a version the
         // user's pin withholds is refused.
         const pin = state.tarballVersion != null && pinSet ? withheldBy(pinSet.forPackage(canonicalName), canonicalName, state.tarballVersion) : null;
         if (pin) {
@@ -1108,23 +1108,23 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             detail }, notice ? { 'npm-notice': notice } : {});
           return;
         }
-        // 0.1.4 group 3b (D-N3): N1h's pending dependencies are fetched and judged now, before the notice is decided.
+        // N1h's pending dependencies are fetched and judged now, before the notice is decided.
         if (state.applicable?.latest && !state.override && state.tarballVersion != null && witnessDb) {
           try {
             const outcome = await judgeAtTarball({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion,
               latest: state.applicable.latest, fetchPackument, config, authorization: req.headers.authorization,
               budgetMs: hooks.dependencyBudgetMs, log });
-            // written, or a concurrent writer won (G3 dated note 3.6): either way the response follows the record as it is now
+            // written, or a concurrent writer won: either way the response follows the record as it is now
             if (outcome) state.applicable = witnessDb.getApplicableDecision(canonicalName, state.tarballVersion, { overrideLive: false });
           } catch (err) {
             log?.warn?.(`[n1h] ${canonicalName}@${state.tarballVersion}: not judged at download (${err.message})`);
           }
         }
-        // D-V3: a named WARN is said at the moment its tarball is fetched: a reserved log line and npm's own output.
+        // A named WARN is said at the moment its tarball is fetched: a reserved log line and npm's own output.
         let named = [];
         const latest = state.applicable?.latest;
         if (latest && latest.disposition === 'WARN') named = classifyRows(latest.gates_fired).named;
-        // 2d (D-U3): an acceptance covering every named row of the decision applied now quiets the notice (the response is
+        // An acceptance covering every named row of the decision applied now quiets the notice (the response is
         // then cacheable again); a later or different named signal is not accepted.
         let accepted = false;
         if (named.length && state.tarballVersion && witnessDb) {
@@ -1139,7 +1139,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           log?.reserved?.('named', `[gate] ${canonicalName}@${state.tarballVersion}: WARN named ${named.join(', ')} `
             + `(${decidingReason(latest.gates_fired, 'WARN')})${accepted ? ' (accepted)' : ''}`, `${canonicalName}@${state.tarballVersion}`);
         }
-        // 0.1.5 (#15): with the static_withhold switch on, a version whose record carries a named static WARN the user has not
+        // 0.1.5: with the static_withhold switch on, a version whose record carries a named static WARN the user has not
         // accepted is withheld at every download, as a pin withholds (`chaingate accept` releases it). Off: served with its notice.
         if (config.staticWithhold && latest && state.tarballVersion != null && !state.override && !accepted) {
           const checks = withholdingChecks(latest.gates_fired);
@@ -1158,9 +1158,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           requestHeaders: req.headers,
         });
         if (upstream.statusCode === 200) {
-          // 2c (D-R1, D-R5): what was served, classed from the record the gate applied; K for a named warning, now. Served
-          // WITHOUT this process's evaluation (a failed C1 under a serving failure policy, or no derivable version): not
-          // checked, never the older stored row (dated note 7.2, 7.9).
+          // What was served, classed from the record the gate applied; K for a named warning, now. Served
+          // WITHOUT this process's evaluation (a failed evaluation under a serving failure policy, or no derivable version): not
+          // checked, never the older stored row.
           const unevaluated = state.c1 && !state.c1.ok ? `served without an evaluation (${state.c1.why})`
             : (state.tarballVersion == null ? 'served without an evaluation (the version cannot be derived from the tarball name)' : null);
           const failed = { class: 'not-checked', coverage: 'failed', named: [], contributing: [] };
@@ -1183,13 +1183,13 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
               history_cutoff: seedV3?.meta?.history_cutoff ?? null, ...(accepted ? { accepted: true } : {}) },
             reason, policy_version: policy, k_version: k } : null);
         }
-        // 0.1.4 group 3c (D-M2): walk a copy of the stream unless the record already holds a determinate MC outcome
-        // only onto a record the CURRENT runner wrote (it carries install-introduced), never after a failed C1 (dated note 4)
+        // Walk a copy of the stream unless the record already holds a determinate MC outcome;
+        // only onto a record the CURRENT runner wrote (it carries install-introduced), never after a failed evaluation
         const current = state.applicable?.latest?.gates_fired?.some?.((g) => g && g.gate === 'install-introduced');
         const walkLatest = upstream.statusCode === 200 && state.tarballVersion != null && !state.override && witnessDb
           && current && !(state.c1 && !state.c1.ok) ? state.applicable.latest : null;
-        // 0.1.5 static checks (step 3; ruling 2026-10-13): the keep list is ARMED by a named WARN row, the identity-break NOTE, the
-        // entry-path-change NOTE (ruling R1 2026-10-21) or the seed's coverage WARN, from the registry manifest remembered with the
+        // 0.1.5 static checks: the keep list is ARMED by a named WARN row, the identity-break NOTE, the
+        // entry-path-change NOTE or the seed's coverage WARN, from the registry manifest remembered with the
         // hook map; a settled static outcome is never walked for again (tarballs are immutable per version), a "not armed" / "no
         // manifest" / ceiling outcome is retried when a later download is armed. The walk stays on a copy of the stream; the download
         // is never held.
@@ -1203,7 +1203,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           else { armedWalks += 1; armedSlot = true; staticWhy = 'armed'; keepOpts = { keep: keepListFor(staticManifest).paths }; }
         }
         const mcWalk = Boolean(walkLatest && (!mcDeterminate(walkLatest) || staticDue));
-        // 0.1.5 entry facts (operator ruling R4 2026-10-21): EVERY served version, armed or not, has its main and bin facts stored
+        // 0.1.5 entry facts: EVERY served version, armed or not, has its main and bin facts stored
         // once (witness.db entry_facts), for S7's predecessor. An armed walk keeps them already; any other walk keeps only them,
         // under its own ceiling (MAX_FACTS_WALKS); past it, or on a storage error, the version is tried again at its next download.
         let factsDue = false; let factsSlot = false; let factsManifest;
@@ -1220,11 +1220,11 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             keepOpts = { keep: factsManifest === undefined ? (pj) => entryKeepFor(pj) : entryKeepFor(factsManifest) };
           }
         }
-        // 0.1.5 shadow facts (R11, 8b): the facts walk also tallies every file's size by class, for the next version's size change
+        // 0.1.5 shadow facts: the facts walk also tallies every file's size by class, for the next version's size change
         const shapeTally = factsDue ? createShapeTally() : null;
         if (shapeTally) keepOpts = { ...keepOpts, onFile: shapeTally.onFile };
-        // 0.1.5 static-checks-1.6 (R11): an ARMED walk also reads every file's first 2 MiB for recon's member facts and streams a hook
-        // target over the keep cap through the base64 counter (rule 7); facts only, stored beside the entry facts, never a row
+        // 0.1.5 static-checks-1.6: an ARMED walk also reads every file's first 2 MiB for the member facts and streams a hook
+        // target over the keep cap through the base64 counter; facts only, stored beside the entry facts, never a row
         const memberTally = staticWhy === 'armed' ? createMemberTally() : null;
         if (memberTally) keepOpts = { ...keepOpts, onMember: memberTally.onMember, memberWindow: FACTS_LIMITS.windowBytes, shareOf: makeBase64Share };
         const walker = mcWalk || factsDue ? createTarWalker(keepOpts) : null;
@@ -1232,7 +1232,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         const tap = walker ? (c) => walker.write(c) : null;
         let held = null;
         try {
-          // 0.1.5 (#15): with the user's static_withhold switch on, an ARMED download is held (up to 8 MiB) while the checks read it
+          // 0.1.5: with the user's static_withhold switch on, an ARMED download is held (up to 8 MiB) while the checks read it
           if (config.staticWithhold && armedSlot && walker) {
             held = await holdUpstream(res, upstream, upstream.statusCode, headerFn, tap, STATIC_WITHHOLD_CAP_BYTES);
           } else await streamUpstream(res, upstream, upstream.statusCode, headerFn, tap);
@@ -1249,7 +1249,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         let factsWrote = false; let factsShape = null;
         if (walk && factsDue && (walk.ok || (res.writableFinished && !/fell behind/.test(String(walk.reason))))) {
           try {
-            // R8 (2026-10-22): the proxy's own facts time for this download, stored with the facts (the first-week confirming measure)
+            // the proxy's own facts time for this download, stored with the facts
             const t0 = performance.now();
             const ef = entryFactsOf({ manifest: factsManifest ?? null, packageJson: walk.ok ? parsedPackageJson(walk) : null, walk });
             const factsMs = Number((performance.now() - t0).toFixed(3));
@@ -1261,7 +1261,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           }
         }
         if (walk && mcWalk) {
-          // S7's predecessor (R3): the last version this proxy served before this one; a read failure is "not checked", never a cold start
+          // S7's predecessor: the last version this proxy served before this one; a read failure is "not checked", never a cold start
           const predecessorFacts = (pkg, v) => {
             try { return witnessDb.predecessorEntryFacts(pkg, v); } catch (err) {
               log?.warn?.(`[facts] ${pkg}@${v}: predecessor not readable (${err.message})`); return 'unreadable';
@@ -1274,7 +1274,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
               : staticWhy === 'no-manifest' ? noManifestRows(armed)
                 : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
                   : unarmedRows('no named row, no identity-break, no entry-path-change, no coverage gap')).map(withRole)]);
-          // 0.1.5 (#15): a held download is served or withheld only now, after the walk; withheld only for a named static WARN
+          // 0.1.5: a held download is served or withheld only now, after the walk; withheld only for a named static WARN
           // the user has not accepted (while every check is contributing this never happens, and the held bytes are served)
           let staticHold = null;
           if (held?.held) {
@@ -1305,7 +1305,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           if (res.writableFinished || staticHold) {
             try {
               const [row, ...sRows] = rowsOfWalk();
-              // the late rows that are a NEW named WARN: MC's, and (0.1.5, S0 and S5 named 2026-10-15) a named static check's
+              // the late rows that are a NEW named WARN: MC's, and (since 0.1.5, S0 and S5) a named static check's
               const changed = (r) => { const prev = walkLatest.gates_fired?.find?.((g) => g && g.gate === r.gate); return !(prev && prev.result === r.result && prev.detail === r.detail); };
               const lateNamed = [row, ...sRows].filter((r) => r.result === 'WARN' && (r.gate === MC_GATE || NAMED_RUNNER_GATES.includes(r.gate)) && changed(r));
               const outcome = recordLate({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, rows: [row, ...sRows] });
@@ -1320,7 +1320,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 const now = witnessDb.getLatestDecision(canonicalName, state.tarballVersion);
                 const reason = decidingReason(now.gates_fired, 'WARN');
                 const cls = servedClass(now.gates_fired);
-                let k = null;                                          // G3 dated note 5.4: K for the late event too
+                let k = null;                                          // K for the late event too
                 try { k = lastVersionWithoutSignal(witnessDb, canonicalName, state.tarballVersion); } catch { k = null; }
                 noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion, ...cls, reason,
                   policy: policyPrefix(now.gates_fired), notice: false, k, late: true },
@@ -1332,14 +1332,14 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             } catch (err) {
               log?.warn?.(`[mc] ${canonicalName}@${state.tarballVersion}: not recorded (${err.message})`);
             }
-            // 0.1.5 static-checks-1.6 (R11): the armed walk's facts, once per version, when its rows are recorded; no row reads them
+            // 0.1.5 static-checks-1.6: the armed walk's facts, once per version, when its rows are recorded; no row reads them
             if (memberTally) {
               try {
                 if (!witnessDb.staticFactsFor(canonicalName, state.tarballVersion)) {
                   const t = memberTally.result(); const t1 = performance.now();
                   const sf = staticFactsOf({ manifest: staticManifest, packageJson: walk.ok ? parsedPackageJson(walk) : null, walk,
                     members: t.members, membersOver: t.over });
-                  // R12: the time 1.6 added to this walk (the walker's memberMs plus staticFactsOf), beside facts_ms; no bar in 0.1.5
+                  // the time 1.6 added to this walk (the walker's memberMs plus staticFactsOf), beside facts_ms; no bar in 0.1.5
                   const ms = (Number.isFinite(walk.memberMs) ? walk.memberMs : 0) + performance.now() - t1;
                   witnessDb.recordStaticFacts(canonicalName, state.tarballVersion, publicStaticFacts(sf), Number(ms.toFixed(3)));
                 }
@@ -1349,7 +1349,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             }
           }
         }
-        // 0.1.5 shadow facts (operator ruling R11 2026-10-24): rules 3, 5 (transition), 8 (known owner) and 8b, computed once per served
+        // 0.1.5 shadow facts: the dist-tag, sign-transition, known-owner and size-change facts, computed once per served
         // version after its first download's rows are final, stored beside its entry facts and shown in `why` and `report` (a later
         // download reads them back). Record only: nothing here is a runner row, so no verdict, tier or notice depends on it.
         if (upstream.statusCode === 200 && state.tarballVersion != null && witnessDb) {
@@ -1379,13 +1379,13 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         writeJson(res, 502, { error: 'upstream_unreachable', detail: err.message });
         return;
       }
-      // Fail-open (Section 7 item 2): an unexpected internal error must
+      // Fail-open: an unexpected internal error must
       // not break `npm install`. Log loudly, then attempt a raw upstream
       // passthrough that bypasses the witness entirely. If headers are
       // already sent we can't recover — just destroy the socket so the
       // client sees a clean failure instead of a half-written response.
-      // U-05 Amendment 3 (P5b): before any decision exists, the configured failure policy decides, and a remembered
-      // BLOCK is never passed through. Once a decision exists the passthrough is unchanged (Amendment 2 covers BLOCK).
+      // Before any decision exists, the configured failure policy decides, and a remembered
+      // BLOCK is never passed through. Once a decision exists the passthrough is unchanged (a computed BLOCK is refused below).
       let refusal = null;
       if (state.blockComputed) refusal = 'a BLOCK was computed';
       else if (route.kind === 'packument' && !state.decided) {
@@ -1409,7 +1409,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         return;
       }
       if (state.blockComputed) {
-        // U-05 Amendment 2 (P5a): a raw passthrough would serve the version that was just BLOCKed.
+        // A raw passthrough would serve the version that was just BLOCKed.
         refuseUnenforceable(res, canonicalName, `internal error after the BLOCK was computed: ${err.message}`);
         return;
       }
@@ -1421,7 +1421,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         return;
       }
       if (refusal === 'full') {
-        // U-05 gap-closure r2 (F2): defence in depth -- the FULL gate itself refuses anything it cannot read.
+        // Defence in depth -- the FULL gate itself refuses anything it cannot read.
         if (route.kind === 'packument') refuseFull(res, canonicalName, `internal error before a decision: ${err.message}`);
         else {
           writeJson(res, 503, { error: 'chaingate_storage_degraded', package: canonicalName,
@@ -1469,7 +1469,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     }
   };
 
-  // The last guard (U-05 gap-closure r2, A1): whatever escapes the handler -- a response that cannot be written inside
+  // The last guard: whatever escapes the handler -- a response that cannot be written inside
   // its own catch, for example -- ends this one request without a logger and without an unhandled rejection.
   const finalGuard = (res, err) => {
     try {

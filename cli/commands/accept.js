@@ -1,4 +1,4 @@
-// `chaingate accept <package>@<version>` | `--revoke <package>@<version>` | `--list` -- 0.1.4 group 2d (O2, D-U2).
+// `chaingate accept <package>@<version>` | `--revoke <package>@<version>` | `--list` -- since 0.1.4.
 //
 // Records that you accept a NAMED warning for one exact version: ChainGate stops sending npm a notice for it while the
 // version's record shows only the named signals you accepted (a different or later named signal warns again). It never
@@ -59,7 +59,7 @@ export default async function accept(args) {
     const snap = decisionSnapshot(db, t.name, t.version);
     if (opts.revoke) {
       if (!db.getAcceptance(t.name, t.version)) { console.log(`No acceptance recorded for ${id}.`); return EXIT.OK; }
-      // dated note 8.3: the action and its log are one transaction
+      // the action and its log are one transaction
       try {
         db.db.transaction(() => {
           db.deleteAcceptance(t.name, t.version);
@@ -70,7 +70,7 @@ export default async function accept(args) {
         return EXIT.ERROR;
       }
       console.log(fmt.ok(`Acceptance revoked: ${id}. ChainGate sends npm its notice again while the warning stands.`));
-      const other = await otherDatabaseLine(paths.witnessDb);         // release audit R7
+      const other = await otherDatabaseLine(paths.witnessDb);         // the running proxy may read another database
       if (other) console.log(fmt.yellow(`  ${other}`));
       return EXIT.OK;
     }
@@ -100,7 +100,7 @@ export default async function accept(args) {
     console.log(fmt.dim('  ChainGate stops sending npm a notice for this version while its record shows only these signals.'));
     console.log(fmt.dim('  This does not override a BLOCK: a later advisory for this version still blocks it.'));
     console.log(fmt.dim(`  Undo: chaingate accept --revoke ${id}`));
-    const other = await otherDatabaseLine(paths.witnessDb);           // release audit R7
+    const other = await otherDatabaseLine(paths.witnessDb);           // the running proxy may read another database
     if (other) console.log(fmt.yellow(`  ${other}`));
   } finally {
     db.close();

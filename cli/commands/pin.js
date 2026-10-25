@@ -1,4 +1,4 @@
-// `chaingate pin <package>@<K>` | `--list` -- 0.1.4 group 2d (O1, D-U4).
+// `chaingate pin <package>@<K>` | `--list` (since 0.1.4).
 //
 // Keeps <package> on K within K's caret class: every version of it in that class above K (prereleases included, later
 // releases included) is withheld until `chaingate unpin <package>`. Other majors still resolve. The pin is a live serving
@@ -35,9 +35,9 @@ export function proxyPort(env = process.env) {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT;
 }
 
-// Release audit R7 (G4 tables dated note 4): a proxy that names its witness database applies a write only to that database.
+// A proxy that names its witness database applies a write only to that database.
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
-/** Two real paths name one file: case-insensitively on Windows and macOS (their default file systems), exactly elsewhere (W3). */
+/** Two real paths name one file: case-insensitively on Windows and macOS (their default file systems), exactly elsewhere. */
 export function samePath(a, b, platform = process.platform) {
   return platform === 'win32' || platform === 'darwin' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
@@ -57,14 +57,14 @@ export async function otherDatabaseLine(dbPath) {
   return other ? notAppliedLine(other) : null;
 }
 
-/** Whether the running proxy enforces pins, in words (D-U4); `dbPath`: the database the pin was written to (R7). */
+/** Whether the running proxy enforces pins, in words; `dbPath`: the database the pin was written to. */
 export async function enforcementLine(dbPath = null) {
   const self = await fetchSelf(DEFAULT_HOST, proxyPort(), 1500);
   const other = dbPath ? otherDatabase(self, dbPath) : null;
   if (other) return `recorded; ${notAppliedLine(other)}`;
   const pins = self.ok && self.json.service === 'chaingate-proxy' ? self.json.pins : null;
   if (pins?.enforced === true && pins.last_error != null) {
-    // dated note 8.4: enforcing in principle, but its pins read is failing (it holds its last good set)
+    // enforcing in principle, but its pins read is failing (it holds its last good set)
     return `recorded; the running proxy cannot read its pins right now (${String(pins.last_error).replace(/[^\x20-\x7e]/g, '').slice(0, 200)}), `
       + 'so it is not in force yet.';
   }
@@ -125,7 +125,7 @@ export default async function pin(args) {
     const pinRow = { package_name: t.name, class_key: cls, k_version: t.version };
     const withheld = history.map((h) => h.version).filter((v) => withheldBy([pinRow], t.name, v)).sort(semver.compare);
     const conflicts = db.listOverrides().filter((o) => o.package_name === t.name && withheldBy([pinRow], t.name, o.version));
-    // dated note 8.3: the pin and its log are one transaction
+    // the pin and its log are one transaction
     try {
       db.db.transaction(() => {
         db.upsertPin(pinRow);

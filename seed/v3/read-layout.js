@@ -1,4 +1,4 @@
-// G10 EXPERIMENTAL read layout `g10-rl1` (dispatch 2026-10-08 §3; unpublished development runtime only). A seed MAY carry
+// EXPERIMENTAL read layout `g10-rl1` (unpublished development runtime only). A seed MAY carry
 // one DERIVED table beside its canonical relations, declared in seed_metadata (read_layout, read_layout_digest,
 // read_layout_recipe). For every package with >= 1,000 lineages whose every lineage has exactly the five contract groups,
 // one row holds the package's distinct verbatim initial_state texts (`dict`, first appearance: lineages by ord, groups by

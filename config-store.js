@@ -18,7 +18,7 @@ export const CONFIG_VERSION = 1;
 
 export const TRUST_MODES = Object.freeze(['authenticated', 'unsigned-development']);
 
-// The two genuinely unlocked policy choices (CFT-05 §3), and the values a gate that ENFORCES can
+// The two genuinely unlocked policy choices, and the values a gate that ENFORCES can
 // act on. `REFUSE_TO_DECIDE` is not among them: it produces no disposition, and the runner cannot
 // tell that apart from permission.
 export const POLICY_VALUES = Object.freeze({
@@ -82,7 +82,7 @@ export function validateConfig(cfg, file = '(in memory)') {
     resolved[k] = v;
   }
 
-  // U-05 gap-closure r2: optional bounds on the proxy's in-memory record of BLOCKs it could not store. Only their type is
+  // Optional bounds on the proxy's in-memory record of BLOCKs it could not store. Only their type is
   // checked here; the proxy checks the ranges when it starts and refuses to start, by name, on a bad value.
   const caps = {};
   for (const [key, out] of [['unstored_block_cap_entries', 'entries'], ['unstored_block_cap_bytes', 'bytes']]) {
@@ -92,7 +92,7 @@ export function validateConfig(cfg, file = '(in memory)') {
     caps[out] = v;
   }
 
-  // 0.1.5 (#15): the per-user switch that holds an armed download while the tarball static checks read it. Off by default;
+  // 0.1.5: the per-user switch that holds an armed download while the tarball static checks read it. Off by default;
   // anything but a boolean refuses, so a typo can never switch it on or off silently.
   const sw = cfg.static_withhold;
   if (sw !== undefined && sw !== null && typeof sw !== 'boolean') {
@@ -124,7 +124,7 @@ export function readConfigStrict(file) {
   if (!existsSync(file)) return null;
   let parsed;
   try {
-    // one non-blocking descriptor, a regular file of at most CAPS.config bytes (U-05 R2-2 (c))
+    // one non-blocking descriptor, a regular file of at most CAPS.config bytes
     parsed = JSON.parse(readBounded(file, CAPS.config).toString('utf8'));
   } catch (err) {
     throw new ConfigUnreadable(file, err instanceof FileRefused ? err.why : err.message);

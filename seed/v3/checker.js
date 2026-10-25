@@ -53,15 +53,15 @@ function loadSeedMeta(db) {
   return out;
 }
 
-// Package loading is set-based (G10 performance, 2026-10-07): ONE statement per table for the whole package, never one
+// Package loading is set-based, for performance: ONE statement per table for the whole package, never one
 // per lineage (the per-lineage form ran 3 statements per lineage: 6,566 for google-closure-compiler). Loading stays
 // eager and complete. Each per-lineage row order is the one the per-lineage statements produced (lineage_state in its
 // primary-key order (grp); events ORDER BY ord, grp; spine ORDER BY ord), and rows are parsed and assembled lineage by
 // lineage in `ORDER BY ord`, so the loaded package -- and the first malformed row a load meets -- are unchanged.
 // Statements are prepared lazily, in the order the per-lineage loader prepared them, and reused per connection;
-// they hold no data between calls. The four bulk statements return rows as ARRAYS (raw mode, G10 2026-10-08): the same
+// they hold no data between calls. The four bulk statements return rows as ARRAYS (raw mode): the same
 // values in the same order, without materialising one object per row; columns are read by position (LOAD_COLS).
-// G10 2026-10-08 (EXPERIMENTAL read layout g10-rl1, seed/v3/read-layout.js): the package lookup also returns the seed's
+// EXPERIMENTAL read layout g10-rl1 (seed/v3/read-layout.js): the package lookup also returns the seed's
 // declared read layout (one scalar subquery, no extra statement); a database without seed_metadata keeps the original
 // lookup (`packageLegacy`), so a legacy seed is read exactly as before. For a package with >= RL1_MIN_LINEAGES lineages
 // in a seed that declares g10-rl1, its initial states come from the ONE derived row (`rl1`) instead of one row per lineage
@@ -220,7 +220,7 @@ function predecessorOf(pv, lv, c) {
 }
 
 // ---------------------------------------------------------------------------
-// Channel-A (FU-2 lineage predecessor)
+// Channel-A (lineage predecessor)
 // ---------------------------------------------------------------------------
 function channelA(pv, c) {
   const lv = pv.lineages.get(c.lineage_id) || null;

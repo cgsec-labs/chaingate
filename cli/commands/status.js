@@ -32,7 +32,7 @@ export default async function status(args) {
   try {
     const a = resolveActiveBundle(paths.base);
     if (a) {
-      // bounded and non-blocking (U-05 R2-2 (c)): a FIFO or an oversized manifest is reported, never waited on
+      // bounded and non-blocking: a FIFO or an oversized manifest is reported, never waited on
       let m = {}; let manifestError = null;
       try { m = JSON.parse(readBounded(bundleFiles(a.dir).manifest, CAPS.manifest).toString('utf8')); } catch (e) {
         manifestError = e instanceof FileRefused ? e.why : e.message;
@@ -46,7 +46,7 @@ export default async function status(args) {
     seedV3 = { active: false, broken: true, link: err.link };
   }
 
-  // An interrupted activation (U-05 R2-2 (b)): reported, never recovered here.
+  // An interrupted activation: reported, never recovered here.
   const intent = readActivationIntent(paths.base);
   if (intent.state !== 'none') {
     seedV3.pending_intent = intent.state === 'pending';
@@ -61,7 +61,7 @@ export default async function status(args) {
     const recent = db.getRecentDecisions(5);
     const seedVersion = db.getSeedMetadata('seed_version');
     const seedExported = db.getSeedMetadata('exported_at');
-    // The proxy process: three-state liveness, and what it says about itself (U-05 gap-closure r2, Addendum 1 §B). Its
+    // The proxy process: three-state liveness, and what it says about itself. Its
     // in-memory BLOCK count is the PROCESS's state; the decision totals above are what the database holds.
     const pidRecord = readPidRecord(paths.pidFile);
     const pid = pidRecord?.state === 'alive' ? pidRecord.pid : null;

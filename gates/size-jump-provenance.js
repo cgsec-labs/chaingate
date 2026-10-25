@@ -1,17 +1,16 @@
-// 0.1.5 group 1 (T1.4) size-jump-provenance -- a NAMED gate in cft-policy-1.2: "a payload bundled into the tarball, published
+// 0.1.5 size-jump-provenance -- a NAMED gate in cft-policy-1.2: "a payload bundled into the tarball, published
 // from outside the repository's CI". The candidate's dist.unpackedSize at or above 5x its LINEAGE predecessor's
-// (gates/lineage-predecessor.js, FU-2 FINAL +pipekey1: the previous version in publish order within its release line, and
+// (gates/lineage-predecessor.js: the previous version in publish order within its release line, and
 // for a prerelease the previous version of its own tag there) AND the
 // candidate's provenance to the repository broke against that predecessor: its gitHead is absent where the predecessor had
 // one, or its repository URL differs.
 //
-// Measured before it was written (chaingate-ops, docs/operator-runbooks/pin-admission-1.1-handover-20261013.md §7.1-§7.3,
-// tools/corpus/base_rates.py over 24,154,424 corpus versions, 2026-10-13, FU-2 lineage baseline): fires on 0.020 % of
+// Measured before it was written (over 24,154,424 corpus versions, against the lineage predecessor): fires on 0.020 % of
 // versions (1 per 6,083 established versions) and on the first malicious version of 8 established labelled packages that no
 // named rule of 0.1.4 reaches (leo-*, creditcard.js, mbt, node-env-resolver; 57.4 % -> 64.8 % of 108 established labelled
 // packages), all plain releases. Against gates/predecessor.js the same rule fires 5x more often with no recall gain
 // (canary/nightly prereleases compared with an old stable), which is why this gate uses the lineage predecessor.
-// Operator ruling 2026-10-13: NAMED, conditional on this lineage re-measure, which held (§7.3).
+// The gate is NAMED on the strength of this lineage re-measure.
 //
 // Reads only the served packument (`rawVersions`, `rawTimes`): history-independent, like the other Tier 1 gates.
 // Deterministic. Nothing here is a judgement of the code; a release that bundles its build output and moves its repository

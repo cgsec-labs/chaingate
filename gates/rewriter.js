@@ -5,7 +5,7 @@
 // `time{}`, and dist-tags downgraded to the highest remaining
 // non-blocked candidate.
 //
-// Contract (locked in docs/P5.md §3 lines 109-124 and §6 line 138):
+// Contract:
 //
 //   rewritePackument(packument, decisions) → {
 //     packument,                 // new object, input is NOT mutated
@@ -36,7 +36,7 @@
 //      npm packuments contain historical oddities we should not drop.
 
 import semver from 'semver';
-// 0.1.4 group 2b (D-V1, A1): the deciding reason replaces the first non-empty detail.
+// Since 0.1.4: the deciding reason replaces the first non-empty detail.
 import { decidingReason } from '../witness/row-class.js';
 import { caretClass } from '../witness/pins.js';
 
@@ -55,7 +55,7 @@ function pickHighestCandidate(versionStrings, { nonPrereleaseOnly, classKey = nu
 }
 
 /**
- * `pinned(version)` (0.1.4 group 2d, D-U5): the user pin that withholds a version, or null. A pin-withheld version is removed
+ * `pinned(version)` (since 0.1.4): the user pin that withholds a version, or null. A pin-withheld version is removed
  * like a BLOCKed one, but it is no BLOCK (summary.pinned, never summary.blocked); a version that is also BLOCKed is
  * removed as BLOCKed and keeps its reason. A dist-tag on a pin-withheld version moves within the pin's caret class only.
  */
@@ -85,7 +85,7 @@ export function rewritePackument(packument, decisions, { pinned = null } = {}) {
 
   const newVersions = {};
   const blockedSet = new Set();
-  const pinnedSet = new Map();                 // version -> the pin withholding it (2d)
+  const pinnedSet = new Map();                 // version -> the pin withholding it
   let anyBlock = false;
 
   for (const [v, entry] of Object.entries(originalVersions)) {
@@ -140,7 +140,7 @@ export function rewritePackument(packument, decisions, { pinned = null } = {}) {
       }
       const pin = pinnedSet.get(target);
       if (pin) {
-        // 2d (D-U5): within the pin's class only, never across majors; K itself remains unless it is BLOCKed
+        // Within the pin's class only, never across majors; K itself remains unless it is BLOCKed
         const inClass = pickHighestCandidate(remaining, { nonPrereleaseOnly: tag === 'latest', classKey: pin.class_key });
         if (inClass != null) newTags[tag] = inClass;
         summary.dist_tag_downgrades.push({ tag, from: target, to: inClass, pin: { k_version: pin.k_version, class_key: pin.class_key } });
@@ -150,7 +150,7 @@ export function rewritePackument(packument, decisions, { pinned = null } = {}) {
         newTags[tag] = target;
         continue;
       }
-      // 2d review (dated note 8.1): a BLOCKed target a user pin would also withhold moves within the pin's class (trap 7);
+      // A BLOCKed target a user pin would also withhold moves within the pin's class;
       // it stays a BLOCK move (its fact, its reason).
       const pinOfTarget = typeof pinned === 'function' ? pinned(target) : null;
       const candidate = pickHighestCandidate(remaining, {

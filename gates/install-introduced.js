@@ -1,16 +1,15 @@
-// T1.1 install-introduced (L1 + L1i) -- a NAMED gate in cft-policy-1.2 (r3 §18.7 item 2, §18.8 item 4, §18.10; group 3
-// tables D-T1). The counted rule, reproduced exactly: validate_a1.py `eval_rule` over validate.py `hooks`
-// (PROTOCOL 78878f55…, amendment A1 ecb06386…: 0 / 2,982 benign under the 24 h window).
+// install-introduced (L1 + L1i) -- a NAMED gate in cft-policy-1.2. The counted rule, reproduced exactly as it was
+// measured (0 / 2,982 benign under the 24 h window).
 //
 // For the candidate published at c, over the served packument (`versions` and `time`):
 //   settled set = other versions published at or before c - 24 h; on a COLD START (empty) the plain set = other versions
-//                 published before c (§18.10 clarification); neither -> not evaluable (SKIP)
+//                 published before c; neither -> not evaluable (SKIP)
 //   hooks       = preinstall / install / postinstall with Python truthiness; ever = a version in the set had one
 //   L1          = the candidate has a hook, and not ever
 //   L1i         = the candidate's gypfile is truthy, it has no install/preinstall hook, and not ever (the counted form:
 //                 ever counts hooks only)
 // A version whose time does not parse is in no set (the counted code raises on one; the registry writes ISO times). The
-// detail names the set used and its size (G3 dated note 2.4).
+// detail names the set used and its size.
 import { pyTruthy } from '../seed/v3/packument.js';
 
 export const SETTLED_MS = 24 * 3_600_000;
@@ -67,7 +66,7 @@ function countUpTo(sorted, x, strict) {
 
 export function evaluateL1(versions, times, version) {
   if (!versions || typeof versions !== 'object' || !Object.hasOwn(versions, version)) return { skip: 'the version is not in the served metadata' };
-  if (!times || typeof times !== 'object') return { skip: 'no publication time for this version' };    // note 2.2
+  if (!times || typeof times !== 'object') return { skip: 'no publication time for this version' };
   const idx = indexFor(versions, times);
   const c = idx.time.get(version);
   if (c === undefined) return { skip: 'no publication time for this version' };
@@ -86,7 +85,7 @@ export function evaluateL1(versions, times, version) {
   return { L1: cur.length > 0 && !ever, L1i: gyp && !ever, hooks: cur, used };
 }
 
-// G4 D-C1 (spec B1/B18): each hook named with its command -- publisher text, so sanitised (control and bidi characters
+// each hook named with its command -- publisher text, so sanitised (control and bidi characters
 // stripped) and capped at 80 characters; a non-string value is shown by its JSON type.
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
 function commandOf(v) {

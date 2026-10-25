@@ -9,7 +9,7 @@
 //                      candidate_from_row over the SAME rows. This is the path a live consumer walks,
 //                      and neither of the other two covers it.
 //
-// QUALIFICATION vs ordinary development: a CFT acceptance run must be handed the gated artifact. With
+// QUALIFICATION vs ordinary development: an acceptance run must be handed the gated artifact. With
 // `--qualify` (or CFT_QUALIFY=1) a missing CFT04_CANDIDATE is a FAILURE, not a skip. Optional skips
 // are fine while developing; they are not fine when the result is used as qualification.
 

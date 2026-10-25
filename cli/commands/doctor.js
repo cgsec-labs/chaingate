@@ -45,11 +45,11 @@ async function fetchProxySelf(host, port, timeoutMs = 1500) {
 //                     informational only, e.g. --no-seed install lacks
 //                     .sha256/.sig; pre-publish chaingate isn't yet in the
 //                     witness store)
-//   (absent)        — hard pass/fail in the pre-V2 operational sense (exit 0 or 1)
+//   (absent)        — hard pass/fail in the plain operational sense (exit 0 or 1)
 //
 // Ordering: tamper > non-severity-fails > unverifiable > OK. 'skipped'
 // coexists with OK as a no-op for exit determination.
-/** 0.1.4 group 4 (G4 D-C2, spec A11): failed checks only -- a skipped check is never a failure. */
+/** Since 0.1.4: failed checks only -- a skipped check is never a failure. */
 export function failedCount(checks) {
   return checks.filter((c) => !c.pass && c.severity !== 'skipped').length;
 }
@@ -180,7 +180,7 @@ export default async function doctor(args) {
   checks.push({ name: 'domain-version-count', pass: true,
     detail: 'from-packument (internal: package-scoped, derived per document; not an operator setting)' });
 
-  // U-05 R2-2 (b): an interrupted activation, and leftovers of interrupted seed commands. Read-only: doctor takes no
+  // An interrupted activation, and leftovers of interrupted seed commands. Read-only: doctor takes no
   // lock and repairs nothing; the next seed command recovers and cleans under the lock. Shown only when present.
   {
     const ri = readActivationIntent(paths.base);
@@ -234,7 +234,7 @@ export default async function doctor(args) {
     checks.push({ name: 'witness-db', pass, detail });
   }
 
-  // 3. Proxy PID alive. Three answers (U-05 gap-closure r2): a refused liveness check is reported as exactly that.
+  // 3. Proxy PID alive. Three answers: a refused liveness check is reported as exactly that.
   const pidRecord = readPidRecord(paths.pidFile);
   {
     const st = pidRecord?.state;
@@ -248,7 +248,7 @@ export default async function doctor(args) {
     });
   }
 
-  // 4. Proxy port responding (0.1.5 #4: CHAINGATE_PORT when set, the variable the proxy reads, as report and pin do)
+  // 4. Proxy port responding (since 0.1.5: CHAINGATE_PORT when set, the variable the proxy reads, as report and pin do)
   const port = proxyPort(process.env);
   {
     const responding = await isPortInUse(port, DEFAULT_HOST);
@@ -280,7 +280,7 @@ export default async function doctor(args) {
   //    Ed25519 key" — the trust anchor that matters post-install. Install-time
   //    bundle hashing still happens via verifySeed in init/update-seed.
   {
-    // An interrupted legacy installation is read FIRST (U-05 R2-2; Addendum 2 §3.2): while it is pending the pair on
+    // An interrupted legacy installation is read FIRST: while it is pending the pair on
     // disk may be the old one, a partial one or the new one, and none of those describes what is installed.
     const marker = readInstallMarker(paths);
     if (marker.state === 'pending') {
@@ -430,7 +430,7 @@ export default async function doctor(args) {
     }
   }
 
-  // 9. The running proxy's decision-storage state (U-05 gap-closure r2, Addendum 1 §B): BLOCKs held only in memory, FULL,
+  // 9. The running proxy's decision-storage state: BLOCKs held only in memory, FULL,
   //    and the write evidence. Persisted decisions are the witness-db check's; this reads the process.
   checks.push(witnessStorageCheck({ pid: pidRecord, self: selfDoc }));
 

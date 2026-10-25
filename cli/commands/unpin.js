@@ -1,4 +1,4 @@
-// `chaingate unpin <package> [<major> | 0.<minor>]` -- 0.1.4 group 2d (O1, D-U4): removes the package's pins (every
+// `chaingate unpin <package> [<major> | 0.<minor>]` (since 0.1.4): removes the package's pins (every
 // class, or the one named).
 import { existsSync } from 'node:fs';
 import { fmt } from '../format.js';
@@ -38,7 +38,7 @@ export default async function unpin(args) {
     db.applySchema();
     const removed = db.listPins().filter((p) => p.package_name === name && (classKey == null || p.class_key === classKey));
     if (!removed.length) { console.log(`No pin for ${name}${classKey ? ` in ${classLabel(classKey)}` : ''}.`); return EXIT.OK; }
-    // dated note 8.3: the removal and its log are one transaction
+    // the removal and its log are one transaction
     try {
       db.db.transaction(() => {
         db.deletePins(name, classKey);
@@ -53,7 +53,7 @@ export default async function unpin(args) {
     console.log(fmt.ok(`Unpinned ${name}: ${removed.map((p) => `${p.k_version} (${classLabel(p.class_key)})`).join(', ')}.`));
     console.log(fmt.dim('  npm may keep using metadata it cached (up to its max-age, usually 5 minutes); '
       + '`npm install --prefer-online` refreshes it now.'));
-    const other = await otherDatabaseLine(paths.witnessDb);           // release audit R7
+    const other = await otherDatabaseLine(paths.witnessDb);           // the proxy may read another database
     if (other) console.log(fmt.yellow(`  ${other}`));
   } finally {
     db.close();

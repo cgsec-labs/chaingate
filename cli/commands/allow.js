@@ -51,17 +51,17 @@ export default async function allow(args) {
 
   const db = openWitnessDB(paths.witnessDb);
   try {
-    db.applySchema();                                          // 2d: the adjudication log exists on every writer
+    db.applySchema();                                          // the adjudication log exists on every writer
     const snap = decisionSnapshot(db, parsed.name, parsed.version);
     db.insertOverride(parsed.name, parsed.version, opts.reason);
-    // 0.1.4 group 2d (D-U8): the action is logged; a log failure never undoes the override
+    // Since 0.1.4: the action is logged; a log failure never undoes the override
     try { adjudicate(db, { action: 'allow', pkg: parsed.name, version: parsed.version, snapshot: snap }); } catch (err) {
       console.error(fmt.dim(`  (the action could not be logged: ${err.message})`));
     }
     console.log(fmt.ok(`Override recorded: ${parsed.name}@${parsed.version}`));
     console.log(fmt.dim(`  Reason: ${opts.reason}`));
     console.log(fmt.dim('  Takes effect on next install (no restart needed).'));
-    // D-U7: a pin that withholds this version wins in serving; say so, delete nothing
+    // A pin that withholds this version wins in serving; say so, delete nothing
     const pin = withheldBy(db.listPins(), parsed.name, parsed.version);
     if (pin) {
       console.log(fmt.yellow(`  conflict: your pin on ${parsed.name} (${pin.k_version}) withholds ${parsed.name}@${parsed.version}; `

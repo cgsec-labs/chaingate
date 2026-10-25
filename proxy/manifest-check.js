@@ -1,4 +1,4 @@
-// 0.1.4 group 3c (D-M1, D-M3, D-M4): MC -- the tarball's package.json hooks against the registry manifest's, as counted
+// MC -- the tarball's package.json hooks against the registry manifest's, as counted
 // (validate.py tar_checks: `MC = hooks(tarball package.json) != hooks(manifest)`, the hook DICTS with their values; a tarball
 // with no root package.json reads as {}). The registry manifest's hooks come from an in-memory map that every observation
 // fills; the outcome is written as an `install-manifest-mismatch` row when the download's stream has ended.
@@ -27,7 +27,7 @@ const canonical = (x, d = 0) => {
 };
 export const manifestMismatch = (th, mh) => canonical(th) !== canonical(mh);
 
-// ---- the registry manifests' hooks, per package, as last observed by this process (D-M3) ----
+// ---- the registry manifests' hooks, per package, as last observed by this process ----
 const observed = new Map();               // package -> { versions: Set, hooked: Map(version -> dict), entries: Map(version -> { main, bin }) }; LRU order
 const TEXT_CAP = 200;
 const cap = (s) => (typeof s === 'string' ? s.slice(0, TEXT_CAP) : null);
@@ -64,7 +64,7 @@ export function manifestEntryFor(pkg, version) {
 }
 export function forgetManifestHooks() { observed.clear(); }
 
-// The entry name is publisher text: control and bidi characters stripped, capped at 80 characters (as G4 D-C1).
+// The entry name is publisher text: control and bidi characters stripped, capped at 80 characters.
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
 const shownName = (n) => { const x = String(n ?? '').replace(UNSAFE, ''); return x.length > 80 ? `${x.slice(0, 80)}…` : x; };
 const keys = (d) => Object.keys(d).sort().join(', ') || 'no install hook';
@@ -73,7 +73,7 @@ const keys = (d) => Object.keys(d).sort().join(', ') || 'no install hook';
 function viewHooks(buf) {
   let pj = {};
   if (buf) {
-    // a UTF-8 BOM is dropped first, as Python's json.loads(bytes) and npm both do (G3 dated note 5.2)
+    // a UTF-8 BOM is dropped first, as Python's json.loads(bytes) and npm both do
     const text = buf.toString('utf8').replace(/^\uFEFF/, '');
     try { pj = JSON.parse(text); } catch { return { unread: true }; }
   }
@@ -81,7 +81,7 @@ function viewHooks(buf) {
 }
 
 /**
- * The MC row for a finished walk (D-M1, D-M4; G4 dated notes 4 and 5). Compared: the Linux view (the counted read; its detail
+ * The MC row for a finished walk. Compared: the Linux view (the counted read; its detail
  * text unchanged), then each other exact view (macOS, Windows) that installs a different entry, then each approximate
  * candidate on its own. Any mismatch is a WARN naming where; a WARN wins over "not checked" (an unreadable Linux view, or a
  * hook value nested too deeply), which wins over ALLOW.
@@ -124,7 +124,7 @@ const aggregate = (results) => (results.some((r) => r?.result === 'BLOCK') ? 'BL
   : (results.some((r) => r?.result === 'WARN') ? 'WARN' : 'ALLOW'));
 
 /**
- * 0.1.5 (static checks step 2): write several LATE rows -- rows a walk yields after the download was served (MC, the static checks)
+ * 0.1.5: write several LATE rows -- rows a walk yields after the download was served (MC, the static checks)
  * -- into ONE new decision row when any of them changed: each incoming row replaces its gate's earlier row, every other row is kept.
  * 'wrote' | 'raced' (another decision landed meanwhile) | false (nothing changed, or no rows).
  */

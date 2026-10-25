@@ -1,10 +1,10 @@
-// `chaingate report [--all | --since <dur>] [--json] [--scope user|project]` -- 0.1.4 group 2c (D-R3, E21).
+// `chaingate report [--all | --since <dur>] [--json] [--scope user|project]` (since 0.1.4).
 //
 // With a running proxy: its latest install that fetched a tarball (`--all`: every install it holds), from
 // `/_chaingate/report`. Without one: the disk record (named warnings served, refusals and tag moves resting on a fact) of
 // the last 24 h (`--since` to change), saying that the per-install summary is held only by a running proxy. A ChainGate
 // proxy that answers without a summary (an older version, a timeout, an oversized answer) is named as such, and the disk
-// view is then incomplete (dated note 7.6). The proxy is reached at CHAINGATE_PORT when set (the variable the proxy itself
+// view is then incomplete. The proxy is reached at CHAINGATE_PORT when set (the variable the proxy itself
 // reads), else the default port.
 //
 // Exit: 0 nothing named, refused or tag-moved, and the record complete; 2 named warnings; 3 a refusal or a tag moved off a
@@ -43,7 +43,7 @@ function portFromEnv(env) {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT;
 }
 
-/** Write and wait until stdout has taken it: on a pipe stdout may be asynchronous, and the CLI exits right after (7.8). */
+/** Write and wait until stdout has taken it: on a pipe stdout may be asynchronous, and the CLI exits right after. */
 const write = (text) => new Promise((resolve) => { process.stdout.write(`${text}\n`, () => resolve()); });
 
 async function emit(opts, source, payload, rendered) {

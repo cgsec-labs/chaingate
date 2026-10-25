@@ -1,6 +1,6 @@
 // ChainGate seed v3 — offline consumer: open, verify, check, why.
 //
-// The package entry point for reading a schema-v3 seed. It implements the CFT-04 runtime-consumption
+// The package entry point for reading a schema-v3 seed. It implements the runtime-consumption
 // contract: compatibility is declared AND checked, trust is authenticated by default, the seed is
 // opened read-only with no network access, `check` always re-evaluates, coverage is an outcome rather
 // than an absence, and `why` is a pure function of the finding.

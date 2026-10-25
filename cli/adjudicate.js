@@ -1,4 +1,4 @@
-// 0.1.4 group 2d (D-U8, V2): one adjudication row per user action, with the version's applicable decision at that moment
+// Since 0.1.4: one adjudication row per user action, with the version's applicable decision at that moment
 // COPIED into it (classes, decision id, policy identity) -- never recomputed later.
 import { classify, policyPrefix } from '../witness/row-class.js';
 

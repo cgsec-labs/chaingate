@@ -1,15 +1,14 @@
-// 0.1.5 group 1 (T1.5) identity-break -- "a publisher this package has never had, publishing from a different toolchain,
+// identity-break (0.1.5) -- "a publisher this package has never had, publishing from a different toolchain,
 // account set or repository": the candidate's `_npmUser.email` appears in no version of the served packument published
 // before it, AND at least two of these broke against the predecessor (gates/predecessor.js: the highest lower release of
 // the same major, published before): the maintainers' e-mail set differs; `_npmVersion` is lower (a tool downgrade, as
-// T1.3 counts it); the repository URL differs; gitHead is absent where the predecessor had one.
+// publish-tool-change counts it); the repository URL differs; gitHead is absent where the predecessor had one.
 //
-// Measured before it was written (chaingate-ops, docs/operator-runbooks/pin-admission-1.1-handover-20261013.md §7.1,
-// 24,152,465 corpus versions, publish-order baseline): 0.057 % of versions (1 per 1,890 established versions); the first
-// malicious version of 37 more labelled packages than 0.1.4's named rules, 36 of them the 2017 crossenv typosquats (a
-// placeholder version, then the attacker's) and one established package. Operator ruling 2026-10-13: CONTRIBUTING in 0.1.5
-// -- a detail row beside a named warning and in `chaingate why`, never a warning on its own -- pending the lineage
-// re-measure (§7.2, base-rates-1.2 `@rt`).
+// Measured before it was written (24,152,465 corpus versions, publish-order baseline): 0.057 % of versions (1 per 1,890
+// established versions); the first malicious version of 37 more labelled packages than 0.1.4's named rules, 36 of them the
+// 2017 crossenv typosquats (a placeholder version, then the attacker's) and one established package. CONTRIBUTING in 0.1.5
+// -- a detail row beside a named warning and in `chaingate why`, never a warning on its own -- pending a lineage
+// re-measure.
 //
 // Reads only the served packument: history-independent. The identity parts are the ones the seed's Channel-A publisher
 // group counts as ONE group; this row counts them individually, which is why it fires where Channel-A's 3-of-5 does not.

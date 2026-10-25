@@ -1,8 +1,8 @@
-// 0.1.4 group 3c (D-M2): a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers. It keeps the root
+// Since 0.1.4: a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers. It keeps the root
 // package.json entries and skips every other content byte. It never touches the bytes npm receives: the caller feeds it a
 // copy of each chunk.
 //
-// It reads the archive the way npm's extractor does (G4 tables dated notes 4 and 5): pacote over node-tar 7.5.11 (npm 10.9.7)
+// It reads the archive the way npm's extractor does: pacote over node-tar 7.5.11 (npm 10.9.7)
 // and 7.5.19 (npm 11.19.0).
 //   Framing and names as node-tar: a header is valid only with the unsigned checksum; a header node-tar rejects (bad checksum,
 //   empty path, a link without a link name or a non-link with one, an invalid base-256 number) is skipped by ONE block and
@@ -19,21 +19,21 @@
 //   Windows file system MAY also map there (Unicode case folds, the 8.3 name, trailing dots or spaces) are separate
 //   candidates that never replace a view's entry: MC compares each of them on its own, so they can only add a detection.
 // Past a cap, on a gunzip error or a truncated archive, the outcome is "not checked", with the reason.
-// 0.1.5 static checks step 1: an optional KEEP LIST. `createTarWalker({ keep })` also keeps the bodies of at most `maxKeep` named
+// 0.1.5 static checks: an optional KEEP LIST. `createTarWalker({ keep })` also keeps the bodies of at most `maxKeep` named
 // files (`maxKeepBytes` each) on the Linux view -- the files the manifest points npm at (main, bin, install-hook targets) -- exactly
 // as it keeps the root package.json; every other byte is still skipped. `keep` is a list of package-relative paths known before
 // the first byte (the registry manifest), or a function of the parsed root package.json applied when that entry completes (entries
 // that preceded it are stated as not kept). The result then carries `files` [{ path, buf, name, platformsNotChecked }] and `notKept`
 // [{ path, reason, size? }] (size: the header size of a target not kept for a cap, static-checks-1.2 S5); without `keep` the result is unchanged, key for key. Where macOS or Windows would install ANOTHER entry at a
 // kept path (a case alias, a backslash separator), that platform is listed in platformsNotChecked: the body read is the Linux one.
-// 0.1.5 shadow facts (R11, 8b): an optional `onFile(path, size)` is called for each regular file on the Linux view, its header size;
+// 0.1.5 shadow facts: an optional `onFile(path, size)` is called for each regular file on the Linux view, its header size;
 // the result is unchanged, key for key.
-// 0.1.5 static-checks-1.6 (R11 (b), the input recon's facts read): an optional `onMember(path, size, window)` is called as each regular
+// 0.1.5 static-checks-1.6: an optional `onMember(path, size, window)` is called as each regular
 // file on the Linux view completes, with its header size and its first `memberWindow` bytes (only those are held, one member at a
 // time; every duplicate is reported, the caller keeps the last); an optional `shareOf()` makes a streaming counter ({ push, end }) that
 // reads the WHOLE body of each keep-list target over the kept-file cap, its result on that not-kept entry as `base64`. With either, the
 // result also carries `memberMs`: the time the member windows, the onMember calls and the counter's calls spent, in milliseconds to
-// three places (operator ruling R12 2026-10-25: what 1.6 adds to an armed walk; no bar in 0.1.5). Without either the result is
+// three places (what 1.6 adds to an armed walk; no time limit in 0.1.5). Without either the result is
 // unchanged, key for key.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
@@ -149,7 +149,7 @@ export function createTarWalker(opts = {}) {
   const shareOf = typeof o.shareOf === 'function' ? o.shareOf : null;
   let member = null;                                       // { path, size, chunks, got }: the member window being read
   let share = null;                                        // { entry, counter }: an over-cap keep target streamed whole
-  let memberMs = 0;                                        // the time the two above spent (R12)
+  let memberMs = 0;                                        // the time the two above spent
   let keepTargets = Array.isArray(keepOpt) ? null : (typeof keepOpt === 'function' ? null : new Set());
   const keepOrder = []; const kept = new Map(); const notKept = []; const aliases = new Map();
   const seenBefore = new Set(); let seenOverflow = false;
@@ -297,7 +297,7 @@ export function createTarWalker(opts = {}) {
     ex = null;                                               // a pending extended header applies to this entry only
     collect = null;
     if (type === '0' || type === '7') {                      // pacote installs File / OldFile / ContiguousFile
-      // 0.1.5 shadow facts (R11, 8b): every regular file's Linux-view path and header size, to the caller's tally (constant memory)
+      // 0.1.5 shadow facts: every regular file's Linux-view path and header size, to the caller's tally (constant memory)
       if (onFile) { const lx = writtenRel(entryPath, false); if (lx != null) try { onFile(lx, size); } catch { /* a tally never fails the walk */ } }
       const tg = installTargets(entryPath);
       if (tg.exact.length || tg.approx.length) {
@@ -319,7 +319,7 @@ export function createTarWalker(opts = {}) {
           noteAliases(entryPath, lx);
         }
       }
-      // 1.6 (R11): this member's window for the caller's member facts, read beside whatever else collects its body
+      // static-checks-1.6: this member's window for the caller's member facts, read beside whatever else collects its body
       if (onMember) { const lx = writtenRel(entryPath, false); if (lx != null) member = { path: lx, size, chunks: [], got: 0 }; }
     }
     return size;

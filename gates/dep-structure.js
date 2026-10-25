@@ -6,7 +6,7 @@
 // Legitimate refactors add deps, so this is WARN — aggregation with
 // other gates decides whether to escalate to BLOCK.
 //
-// Spec: docs/P5.md §6 lines 421-437. Implementation notes:
+// Implementation notes:
 //
 //   - We intentionally compare ONLY `dependencies`, not dev/peer/optional.
 //     Build-time deps don't ship to end users and are low blast-radius.
