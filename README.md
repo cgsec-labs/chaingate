@@ -223,7 +223,9 @@ For a suspect download, the tarball checks also record:
   paths counted apart;
 - a hook command or file that writes under an AI coding agent's configuration folder (such as `~/.claude`, `~/.cursor`
   or `~/.codex`);
-- a tarball with no network, file, process, environment, execution or encoding use at all.
+- a tarball with no network, file, process, environment, execution or encoding use at all;
+- after the download, whether the registry's provenance record names the same source repository as the package metadata
+  (the record's signature is not checked), or whether the version served before had provenance and this one has none.
 
 `chaingate why <pkg>@<ver>` prints them under "Recorded facts" and "Static check facts", `chaingate report --json`
 carries them, and the report text names a version with a notable fact.

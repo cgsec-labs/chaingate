@@ -15,7 +15,7 @@ import { explain } from '../../seed/v3/explain.js';
 import { CHECK_SCHEMA_IDS, EXIT_TOOL_ERROR, recordCompatibility } from '../check-record.js';
 import { runCheck, parseTarget } from './check.js';
 import { decisionSnapshot, adjudicate } from '../adjudicate.js';
-import { shadowLines, staticFactsLines, SHADOW_NOTE } from '../../proxy/shadow-facts.js';
+import { shadowLines, staticFactsLines, repoClaimLine, SHADOW_NOTE } from '../../proxy/shadow-facts.js';
 
 export const UNBOUND_LABEL = 'CACHED — UNBOUND: produced without recorded seed/rule/policy identities; '
   + 'not a current evaluation';
@@ -95,9 +95,10 @@ function showCached(parsed, opts) {
     // 0.1.5 shadow facts: recorded once per served version; record only, no verdict reads them
     const shadow = db.shadowFactsFor(parsed.name, parsed.version);
     const staticFacts = typeof db.staticFactsFor === 'function' ? db.staticFactsFor(parsed.name, parsed.version) : null;   // static-checks-1.6, armed versions
+    const repoClaim = typeof db.repoClaimFor === 'function' ? db.repoClaimFor(parsed.name, parsed.version) : null;         // armed versions
     if (opts.json) {
       console.log(JSON.stringify({ label: 'CACHED-UNBOUND', note: UNBOUND_LABEL,
-        package: parsed.name, version: parsed.version, cached: row || null, applicable: applies, shadow_facts: shadow, static_facts: staticFacts }, null, 2));
+        package: parsed.name, version: parsed.version, cached: row || null, applicable: applies, shadow_facts: shadow, static_facts: staticFacts, repo_claim: repoClaim }, null, 2));
     } else {
       console.log(fmt.yellow ? fmt.yellow(UNBOUND_LABEL) : UNBOUND_LABEL);
       if (!row) {
@@ -113,6 +114,7 @@ function showCached(parsed, opts) {
       if (shadow) {
         let lines = [];
         try { lines = shadowLines(shadow); } catch { lines = ['not readable']; }
+        if (repoClaim) { try { lines.push(repoClaimLine(repoClaim)); } catch { lines.push('repository claim: not readable'); } }
         console.log(`  Recorded facts (${shadow.version ?? 'unknown'}; ${SHADOW_NOTE}):`);
         for (const l of lines) console.log(`    ${l}`);
       }

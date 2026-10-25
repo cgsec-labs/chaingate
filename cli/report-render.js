@@ -6,7 +6,7 @@
 // nothing else to report > 0. Every string from a record is stripped of control characters (C0, DEL, C1)
 // and bidi/format controls, and capped; copyable commands are printed only for identities notice.js validates.
 import { identity, labelFor } from '../proxy/notice.js';
-import { shadowLines, staticFactsLines, notable, SHADOW_NOTE } from '../proxy/shadow-facts.js';
+import { shadowLines, staticFactsLines, repoClaimLine, notable, SHADOW_NOTE } from '../proxy/shadow-facts.js';
 
 // C0, DEL, C1, and the bidi/format controls (U+061C, U+200B-U+200F, U+202A-U+202E, U+2060-U+2069, U+FEFF)
 export const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
@@ -226,7 +226,9 @@ function renderInstall(inst, cutoff) {
     try {
       // static-checks-1.6: an armed version's static facts are listed with it, notable or not (armed versions are few)
       const sx = e.static_facts && typeof e.static_facts === 'object' ? `; ${clean(e.static_facts.facts?.version ?? 'static checks', 40)} facts: ${staticFactsLines(e.static_facts).map((l) => clean(l, 400)).join('; ')}` : '';
-      if (notable(e.facts) || sx) factLines.push(`  ${shownId(e.package, e.version)}: ${shadowLines(e.facts).map((l) => clean(l, 400)).join('; ')}${sx}`);
+      // the repository claim of an armed version, with its other facts
+      const rc = e.repo_claim && typeof e.repo_claim === 'object' ? `; ${clean(repoClaimLine(e.repo_claim), 400)}` : '';
+      if (notable(e.facts) || sx || rc) factLines.push(`  ${shownId(e.package, e.version)}: ${shadowLines(e.facts).map((l) => clean(l, 400)).join('; ')}${rc}${sx}`);
     } catch { /* malformed: not shown */ }
   }
   if (factLines.length) {

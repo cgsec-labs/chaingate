@@ -9,6 +9,7 @@ import { loadConfig } from './config.js';
 import {
   fetchPackument,
   fetchTarball,
+  fetchAttestationBundle,
   RELAY_RESPONSE_HEADERS,
   UpstreamTimeoutError,
   UpstreamError,
@@ -39,7 +40,7 @@ import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSe
   withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, FACTS_LIMITS, makeBase64Share, createMemberTally,
   staticFactsOf } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
-import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf, publicStaticFacts } from './shadow-facts.js';
+import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf, publicStaticFacts, repoClaimFact, REPO_CLAIM_LIMITS } from './shadow-facts.js';
 /** 0.1.5: the walk's root package.json (Linux view) parsed for the static checks, or null; a UTF-8 BOM is dropped as npm does. */
 function parsedPackageJson(walk) {
   if (!walk?.ok || !walk.packageJson) return null;
@@ -47,6 +48,7 @@ function parsedPackageJson(walk) {
 }
 let factsWalks = 0;                                         // 0.1.5: entry-facts-only walks in flight (ceiling MAX_FACTS_WALKS)
 let armedWalks = 0;                                        // 0.1.5: armed keep-list walks in flight (process-wide ceiling MAX_ARMED_WALKS)
+let claimFetches = 0;                                      // 0.1.5: attestation bundle fetches in flight (REPO_CLAIM_LIMITS.maxInFlight)
 // The install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
 import { lastVersionWithoutSignal } from '../witness/last-without-signal.js';
@@ -1362,9 +1364,31 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 predecessor: pred ? { version: pred.version, shape: pred.shape, named: named(pred.version) } : null,
                 named: named(state.tarballVersion) ?? [] });
               witnessDb.recordShadowFacts(canonicalName, state.tarballVersion, facts);
+              // an armed version's repository claim, once, after its response is finished: the one attestation bundle fetch,
+              // bounded in time, bytes and fetches in flight; a failure is recorded as NOT_FETCHED with its reason
+              if (staticWhy === 'armed' && !witnessDb.repoClaimFor(canonicalName, state.tarballVersion)) {
+                await settled(res);
+                if (res.writableFinished) {
+                  const t2 = performance.now();
+                  const limit = config.attestationMaxInFlight ?? REPO_CLAIM_LIMITS.maxInFlight;
+                  const rc = await repoClaimFact({ memo: packumentFactsFor(canonicalName), name: canonicalName, version: state.tarballVersion,
+                    predecessor: pred?.version ?? null,
+                    fetchBundle: async (n, v) => {
+                      if (claimFetches >= limit) return { ok: false, reason: 'too many provenance fetches in flight' };
+                      claimFetches += 1;
+                      try {
+                        return await fetchAttestationBundle(n, v, { config, timeoutMs: config.attestationTimeoutMs ?? REPO_CLAIM_LIMITS.timeoutMs,
+                          maxBytes: config.attestationMaxBytes ?? REPO_CLAIM_LIMITS.maxBytes });
+                      } finally { claimFetches -= 1; }
+                    } });
+                  witnessDb.recordRepoClaim(canonicalName, state.tarballVersion, rc, Number((performance.now() - t2).toFixed(3)));
+                }
+              }
             }
             const sx = facts ? witnessDb.staticFactsFor(canonicalName, state.tarballVersion) : null;   // static-checks-1.6, armed versions only
-            if (facts) noteInstall(req, { kind: 'facts', package: canonicalName, version: state.tarballVersion, facts, ...(sx ? { static_facts: sx } : {}) });
+            const rc = facts ? witnessDb.repoClaimFor(canonicalName, state.tarballVersion) : null;      // the repository claim, armed versions only
+            if (facts) noteInstall(req, { kind: 'facts', package: canonicalName, version: state.tarballVersion, facts, ...(sx ? { static_facts: sx } : {}),
+              ...(rc ? { repo_claim: rc } : {}) });
           } catch (err) {
             log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: shadow facts not recorded (${err.message})`);
           }

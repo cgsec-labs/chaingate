@@ -69,7 +69,8 @@ function pickRelayHeaders(src, allowed) {
   return out;
 }
 
-async function upstreamRequest(url, { headers = {}, config }) {
+// bounds: { headersTimeout, bodyTimeout, maxRedirections, signal } in place of the configured ones (the attestation fetch's tighter bounds)
+async function upstreamRequest(url, { headers = {}, config, bounds = {} }) {
   try {
     return await request(url, {
       method: 'GET',
@@ -81,6 +82,7 @@ async function upstreamRequest(url, { headers = {}, config }) {
       headersTimeout: config.headersTimeoutMs,
       bodyTimeout: config.bodyTimeoutMs,
       maxRedirections: 2,
+      ...bounds,
       dispatcher: upstreamAgent,
     });
   } catch (err) {
@@ -113,6 +115,42 @@ export async function fetchTarball(rawName, filename, { config, requestHeaders =
   const relay = pickRelayHeaders(requestHeaders, RELAY_REQUEST_HEADERS);
   relay.accept = 'application/octet-stream, */*';
   return upstreamRequest(url, { headers: relay, config });
+}
+
+// The registry's attestation bundle of one version, for the repository claim recorded beside an armed version's facts. Bounded in
+// time (the whole request) and bytes, no redirect followed, and no request header of the user's relayed (it is a public endpoint).
+// Never throws: { ok: true, bytes } or { ok: false, reason }.
+export async function fetchAttestationBundle(rawName, version, { config, timeoutMs, maxBytes }) {
+  const name = decodeURIComponent(rawName);
+  const spec = name.startsWith('@') ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name);
+  const url = buildUrl(config.upstream, `-/npm/v1/attestations/${spec}@${encodeURIComponent(version)}`);
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let res = null;
+  try {
+    res = await upstreamRequest(url, { headers: { 'accept-encoding': 'identity' }, config,
+      bounds: { headersTimeout: timeoutMs, bodyTimeout: timeoutMs, maxRedirections: 0, signal: ac.signal } });
+    res.body.on('error', () => { /* the body is dropped below; its abort is not an error of the proxy */ });
+    if (res.statusCode !== 200) return { ok: false, reason: `HTTP ${res.statusCode}` };
+    const len = Number(res.headers['content-length']);
+    if (Number.isFinite(len) && len > maxBytes) return { ok: false, reason: `the bundle exceeds ${maxBytes} bytes` };
+    const chunks = []; let total = 0;
+    for await (const c of res.body) {
+      total += c.length;
+      if (total > maxBytes) return { ok: false, reason: `the bundle exceeds ${maxBytes} bytes` };
+      chunks.push(c);
+    }
+    return { ok: true, bytes: Buffer.concat(chunks) };
+  } catch (err) {
+    if (ac.signal.aborted || err instanceof UpstreamTimeoutError || err instanceof undiciErrors.BodyTimeoutError) {
+      return { ok: false, reason: `timeout after ${timeoutMs} ms` };
+    }
+    const msg = String(err?.message ?? err).slice(0, 160);
+    return { ok: false, reason: err instanceof UpstreamError ? msg : `the bundle was not read: ${msg}` };
+  } finally {
+    clearTimeout(timer);
+    try { if (res?.body && !res.body.destroyed) res.body.destroy(); } catch { /* already closed */ }
+  }
 }
 
 export { RELAY_RESPONSE_HEADERS };

@@ -172,7 +172,9 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudi
 -- recorded facts (dist-tags, sign transitions, known owner, size change), written once after its first download's rows are final.
 -- Record only: no verdict reads them. static_facts = the static-checks-1.6 facts of an armed walk (proxy/static-checks.js
 -- staticFactsOf), written once when its rows are recorded. Record only likewise. static_facts_ms = the time that walk's 1.6 work spent (the member windows
--- and tally, the streamed share and staticFactsOf), in milliseconds, written with static_facts.
+-- and tally, the streamed share and staticFactsOf), in milliseconds, written with static_facts. repo_claim = an armed version's
+-- repository claim (proxy/shadow-facts.js repoClaimFact: its attestation bundle's repository against its package metadata's), written
+-- once after its first download; record only likewise. repo_claim_ms = the time it took, the bundle fetch included, in milliseconds.
 CREATE TABLE IF NOT EXISTS entry_fact_versions (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     package_name          TEXT NOT NULL,
@@ -186,6 +188,8 @@ CREATE TABLE IF NOT EXISTS entry_fact_versions (
     shadow                TEXT,
     static_facts          TEXT,
     static_facts_ms       REAL,
+    repo_claim            TEXT,
+    repo_claim_ms         REAL,
     UNIQUE (package_name, version)
 );
 CREATE TABLE IF NOT EXISTS entry_facts (
@@ -283,6 +287,8 @@ export class WitnessDB {
     // 0.1.5: shape, shadow and static_facts likewise
     for (const c of ['shape', 'shadow', 'static_facts']) if (efv.length && !efv.includes(c)) this.db.exec(`ALTER TABLE entry_fact_versions ADD COLUMN ${c} TEXT`);
     if (efv.length && !efv.includes('static_facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN static_facts_ms REAL');
+    if (efv.length && !efv.includes('repo_claim')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN repo_claim TEXT');
+    if (efv.length && !efv.includes('repo_claim_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN repo_claim_ms REAL');
     this._prepare();
     return this;
   }
@@ -556,6 +562,7 @@ export class WitnessDB {
         VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms, @shape)`),
       shadowSet: this.db.prepare('UPDATE entry_fact_versions SET shadow = @shadow WHERE package_name = @p AND version = @v AND shadow IS NULL'),
       staticSet: this.db.prepare('UPDATE entry_fact_versions SET static_facts = @x, static_facts_ms = @ms WHERE package_name = @p AND version = @v AND static_facts IS NULL'),
+      claimSet: this.db.prepare('UPDATE entry_fact_versions SET repo_claim = @x, repo_claim_ms = @ms WHERE package_name = @p AND version = @v AND repo_claim IS NULL'),
       insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
         VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
       prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = @p AND version <> @v AND id <
@@ -639,6 +646,22 @@ export class WitnessDB {
     try {
       const r = this.db.prepare('SELECT static_facts FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
       return r && typeof r.static_facts === 'string' ? JSON.parse(r.static_facts) : null;
+    } catch { return null; }
+  }
+
+  /** 0.1.5: store an armed version's repository claim and the time it took (ms, or NULL), once; 1 when written, 0 when already
+   *  stored or no entry facts row exists. */
+  recordRepoClaim(packageName, version, x, ms = null) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return st.claimSet.run({ p: packageName, v: version, x: JSON.stringify(x), ms: Number.isFinite(ms) ? ms : null }).changes;
+  }
+
+  /** 0.1.5: a version's stored repository claim, or null (none, a database without the column, or not readable). Never throws. */
+  repoClaimFor(packageName, version) {
+    try {
+      const r = this.db.prepare('SELECT repo_claim FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
+      return r && typeof r.repo_claim === 'string' ? JSON.parse(r.repo_claim) : null;
     } catch { return null; }
   }
 

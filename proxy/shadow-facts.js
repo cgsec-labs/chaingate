@@ -10,6 +10,8 @@
 //            format (only when this version ships both a CommonJS and an ES module form), other files. The root package.json is
 //            not counted (its version field always changes).
 // Rule 8's fourth form ("maintains other packages already in scope") needs state across packages and is not computed here.
+// The repository claim (repoClaimFact) is recorded for an ARMED version only: the build workflow repository its registry attestation
+// bundle names, against its `repository` field in the package metadata. The bundle's signature is not verified.
 
 export const SHADOW_FACTS_VERSION = 'shadow-facts-1.0';
 export const SHADOW_NOTE = 'recorded only: no verdict, tier or notice depends on it';
@@ -49,15 +51,16 @@ export function rememberPackumentFacts(pkg, doc) {
     if (n) maint.add(n);
   }
   const time = isObj(doc.time) ? doc.time : {};
-  const pubs = new Map();
+  const pubs = new Map(); const repos = new Map();
   for (const [v, man] of Object.entries(isObj(doc.versions) ? doc.versions : {})) {
     const u = isObj(man) && isObj(man._npmUser) ? man._npmUser : null;
     const e = u ? emailKey(u.email) : null; const n = u ? nameKey(u.name) : null;
     pubs.set(v, { k: e ?? n, e, n, name: u && typeof u.name === 'string' ? shown(u.name) : null,
-      t: typeof time[v] === 'string' ? Date.parse(time[v]) : NaN });
+      t: typeof time[v] === 'string' ? Date.parse(time[v]) : NaN, att: isObj(man) && isObj(man.dist) && isObj(man.dist.attestations),
+      repo: isObj(man) ? repoKeyOf(man.repository, repos) : null });
   }
   memo.delete(pkg);
-  memo.set(pkg, { tags, maint, pubs });
+  memo.set(pkg, { name: pkg, tags, maint, pubs });
   while (memo.size > MAX_PACKAGES) memo.delete(memo.keys().next().value);
 }
 /** The remembered metadata of pkg, or undefined. */
@@ -146,6 +149,105 @@ export function shadowFactsOf({ memo: m, version, shape, predecessor, named }) {
     size: sizeAttributionFact(shape, predecessor ? { version: predecessor.version, shape: predecessor.shape } : null) };
 }
 
+// ---- the repository claim: the attestation bundle's build workflow repository vs this version's `repository` field
+export const REPO_CLAIM_VERSION = 'repo-claim-1.0';
+/** The bounds of the one attestation fetch per armed version: time, bytes, fetches in flight. */
+export const REPO_CLAIM_LIMITS = Object.freeze({ timeoutMs: 5000, maxBytes: 1 << 20, maxInFlight: 4 });
+const SHORT_HOST = { github: 'github.com', gitlab: 'gitlab.com', bitbucket: 'bitbucket.org' };
+/** One key per repository: host/owner/repo, lower case, for every npm `repository` spelling (a string or { url }): git+, .git, ssh,
+ *  scp-like, `github:o/r` and the bare `o/r` shorthand. GitHub keeps owner/repo (a /tree/... tail dropped); other hosts keep the path
+ *  up to `/-/`. null when it is not a repository URL this proxy reads. The offline scanner reads them the same way. */
+export function normRepoUrl(x) {
+  let u = isObj(x) ? x.url : x; if (typeof u !== 'string') return null; u = u.trim(); if (!u || u.length > 500) return null;
+  let m = /^(github|gitlab|bitbucket):([A-Za-z0-9][\w.-]*)\/([\w.-]+?)(?:\.git)?$/i.exec(u);
+  if (m) return `${SHORT_HOST[m[1].toLowerCase()]}/${m[2]}/${m[3]}`.toLowerCase();
+  m = /^([A-Za-z0-9][\w.-]*)\/([\w.-]+?)(?:\.git)?$/.exec(u); if (m) return `github.com/${m[1]}/${m[2]}`.toLowerCase();   // npm's bare shorthand is GitHub
+  u = u.replace(/^git\+/i, ''); let host; let path;
+  m = /^(?:(?:ssh|git):\/\/)?[\w.+-]+@([\w.-]+)[:/](.+)$/.exec(u);
+  if (m) { host = m[1]; path = m[2].replace(/[?#].*$/, ''); } else {
+    let url; try { url = new URL(u); } catch { return null; }
+    if (!['https:', 'http:', 'git:', 'ssh:'].includes(url.protocol)) return null; host = url.hostname; path = url.pathname; }
+  host = String(host).toLowerCase().replace(/^www\./, ''); const segs = path.split('/').filter(Boolean); if (segs.length < 2 || !/^[a-z0-9.-]+$/.test(host)) return null;
+  const cut = host === 'github.com' ? 2 : (segs.indexOf('-') > 1 ? segs.indexOf('-') : segs.length);
+  const parts = segs.slice(0, cut); parts[parts.length - 1] = parts[parts.length - 1].replace(/\.git$/i, '');
+  if (parts.some((p) => p === '.' || p === '..' || !p)) return null;
+  return `${host}/${parts.join('/')}`.toLowerCase();
+}
+// a version's repository as remembered: its key, '' when the field is there but not read, null when there is none; one string per
+// distinct key within a package (most versions share one)
+function repoKeyOf(x, repos) {
+  if (x == null) return null;
+  const k = normRepoUrl(x) ?? '';
+  if (!repos.has(k)) repos.set(k, k);
+  return repos.get(k);
+}
+
+const SLSA_V1 = 'https://slsa.dev/provenance/v1';
+const SLSA_V02 = 'https://slsa.dev/provenance/v0.2';
+const clip = (x, n) => (x.length > n ? x.slice(0, n) : x);
+/** The repository the first SLSA provenance statement of an attestation bundle names (v1: the build workflow's repository; v0.2: the
+ *  source address without its ref), clipped to 200 characters, or the reason there is none. The payload is decoded, never verified. */
+export function attestationRepository(bytes) {
+  let doc; try { doc = JSON.parse(Buffer.from(bytes).toString('utf8')); } catch { return { repository: null, reason: 'the bundle is not JSON' }; }
+  const list = isObj(doc) && Array.isArray(doc.attestations) ? doc.attestations : [];
+  if (!list.length) return { repository: null, reason: 'no attestations in the bundle' };
+  for (const a of list) {
+    const pt = isObj(a) && typeof a.predicateType === 'string' ? a.predicateType : null;
+    if (pt !== SLSA_V1 && pt !== SLSA_V02) continue;
+    let st = null;
+    try { st = JSON.parse(Buffer.from(String(a.bundle?.dsseEnvelope?.payload), 'base64').toString('utf8')); } catch { st = null; }
+    if (!isObj(st)) continue;
+    const pred = isObj(st.predicate) ? st.predicate : {};
+    let repo = null;
+    if (pt === SLSA_V1) {
+      const w = pred.buildDefinition?.externalParameters?.workflow;
+      repo = isObj(w) && typeof w.repository === 'string' && w.repository ? w.repository : null;
+    } else {
+      const uri = pred.invocation?.configSource?.uri;
+      const m = /^git\+(.+?)(?:@(.+))?$/.exec(typeof uri === 'string' ? uri : '');
+      repo = m ? m[1] : null;
+    }
+    return repo ? { repository: clip(repo, 200), reason: null } : { repository: null, reason: 'the provenance names no repository' };
+  }
+  return { repository: null, reason: 'no SLSA provenance in the bundle (a publish attestation only, or not decodable)' };
+}
+
+/** The repository claim of one armed version. predecessor: the version this proxy served before, or null. fetchBundle(name, version)
+ *  resolves { ok: true, bytes } or { ok: false, reason }; it is called only when this version has an attestation. Never throws. */
+export async function repoClaimFact({ memo: m, name, version, predecessor = null, fetchBundle }) {
+  const vs = predecessor ?? null;
+  const out = (outcome, extra = {}) => ({ version: REPO_CLAIM_VERSION, outcome, attestation_repository: null, packument_repository: null, vs, ...extra });
+  const nf = (reason, extra = {}) => out('NOT_FETCHED', { reason: clip(String(reason), 200), ...extra });
+  if (!m) return nf(NOT_AT_HAND);
+  const p = m.pubs.get(version);
+  if (!p) return nf('the version is not in the package metadata');
+  const pRepo = p.repo || null;
+  if (!p.att) return out(vs && m.pubs.get(vs)?.att ? 'ABSENT' : 'NONE', { packument_repository: pRepo });
+  let r;
+  try { r = await fetchBundle(name ?? m.name, version); } catch (err) { return nf(`the bundle was not read: ${err?.message ?? err}`, { packument_repository: pRepo }); }
+  if (!r?.ok) return nf(r?.reason ?? 'the bundle was not read', { packument_repository: pRepo });
+  const a = attestationRepository(r.bytes);
+  if (!a.repository) return nf(a.reason, { packument_repository: pRepo });
+  const aRepo = normRepoUrl(a.repository);
+  if (!aRepo) return nf('the provenance repository is not a URL this proxy reads', { packument_repository: pRepo });
+  if (p.repo === null) return nf('the package metadata has no repository field', { attestation_repository: aRepo });
+  if (!pRepo) return nf('the package metadata repository field is not a URL this proxy reads', { attestation_repository: aRepo });
+  return out(aRepo === pRepo ? 'MATCH' : 'MISMATCH', { attestation_repository: aRepo, packument_repository: pRepo });
+}
+
+/** The repository claim as `why` and `report` print it. */
+export function repoClaimLine(rc) {
+  const a = shown(rc?.attestation_repository); const pr = shown(rc?.packument_repository); const vs = shown(rc?.vs);
+  switch (rc?.outcome) {
+    case 'MATCH': return `repository claim matches, unverified: ${a} (the provenance and the package metadata; the signature is not checked)`;
+    case 'MISMATCH': return `repository claim differs: the provenance names ${a}, the package metadata ${pr} (the signature is not checked)`;
+    case 'ABSENT': return `provenance dropped: ${vs} (${BASIS}) had provenance, this version has none`;
+    case 'NONE': return rc.vs ? `no provenance on this release or the one before (${vs}, ${BASIS})` : `no provenance on this release (${COLD})`;
+    case 'NOT_FETCHED': return `repository claim not read (${shown(rc.reason) || 'no reason recorded'})`;
+    default: return 'repository claim: not recorded';
+  }
+}
+
 // ---- what `why` and `report` print
 const signed = (n) => (n > 0 ? `+${n}` : String(n));
 const COLD = 'no earlier version served by this proxy';
@@ -211,4 +313,5 @@ export function notable(f) {
 }
 
 export default { SHADOW_FACTS_VERSION, SHADOW_NOTE, publicStaticFacts, MAX_PACKAGES, rememberPackumentFacts, packumentFactsFor, forgetPackumentFacts,
-  distTagFact, knownOwnerFact, fileClass, createShapeTally, sizeAttributionFact, transitionFact, shadowFactsOf, shadowLines, staticFactsLines, notable };
+  distTagFact, knownOwnerFact, fileClass, createShapeTally, sizeAttributionFact, transitionFact, shadowFactsOf, shadowLines, staticFactsLines, notable,
+  REPO_CLAIM_VERSION, REPO_CLAIM_LIMITS, normRepoUrl, attestationRepository, repoClaimFact, repoClaimLine };
