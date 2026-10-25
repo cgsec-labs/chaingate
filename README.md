@@ -128,7 +128,7 @@ those checks can make a warning:
     is the previous version in the release's line; for a prerelease it is the previous version of its own tag (a
     `-canary` is compared with the last canary). The first version of a new tag has none, and the rule says it is not
     evaluable. A holding package npm publishes in place of removed malware is never used as the version before;
-  - the tarball static checks **S0** and **S5** (below).
+  - the tarball static checks **S0**, **S5**, **S6** and **S7** (below).
 - **Contributing rows are detail.** These are publisher change, new dependency, provenance dropped, release age, scope
   boundary, size jump of 2x or more, npm-version downgrade, the seed contract's loose rule, the tarball static checks S1
   to S4 (below), and two checks added in 0.1.5:
@@ -156,10 +156,11 @@ Some named rows are checked when npm downloads the tarball:
   but npm installs a tarball it already holds from its own cache without asking ChainGate, so this machine may never
   print it.
 
-**Tarball checks (0.1.5).** On a download whose version already carries a named WARN row, the identity-break note, or the
-seed's coverage warning (nothing in the finding could be evaluated: a package the seed has never seen), the same walk also
-keeps the bodies of the files the registry manifest points npm at -- the install-hook targets, `main`, up to 4 `bin`
-targets; at most 6 files of 1 MiB each -- and runs six checks over them, S0-S4 each a conjunction of two facts about one file, S5 a single fact:
+**Tarball checks (0.1.5).** On a download whose version already carries a named WARN row, the identity-break note, the
+entry-path-change note, or the seed's coverage warning (nothing in the finding could be evaluated: a package the seed has
+never seen), the same walk also keeps the bodies of the files the registry manifest points npm at -- the install-hook
+targets, `main`, up to 4 `bin` targets; at most 6 files of 1 MiB each -- and runs eight checks over them. S0 to S4 and S6
+each need two or more facts about one file, S5 is a single fact, and S7 compares the entry files with an earlier version:
 - **S0** an install-hook command carries a fetch (curl, wget, Invoke-WebRequest, certutil -urlcache, bitsadmin) and an
   execute or decode (a pipe into a shell or interpreter, powershell -enc, base64 -d, eval, iex), or runs a network tool
   (curl, wget, nc; nslookup, dig, host or ping only with command substitution) that sends data out (command substitution,
@@ -171,24 +172,68 @@ targets; at most 6 files of 1 MiB each -- and runs six checks over them, S0-S4 e
   a known exfiltration host (a raw IP or a POST to another host is recorded, never enough on its own);
 - **S4** an entry file overrides `XMLHttpRequest.prototype.send`, `window.fetch` or `window.ethereum.request` and carries
   two or more cryptocurrency-address regexes;
-- **S5** a hook target is over the 1 MiB file cap (its size is read from the archive header; its body is not read).
-S0 and S5 are named: a WARN from either is a warning. The download that reveals it has already been served, so
-`chaingate report` lists it at once and the next download that reaches ChainGate carries the npm notice ("an install
-script downloads code to run or sends data to an outside host"; "an install script runs a file too large to read").
-They were named after a measurement found no false alarm on either in 19,614 ordinary package versions. S1 to S4 are
-contributing rows: recorded as notes, shown in `chaingate why` and `chaingate report --json`, never a warning on their
-own. A row names the markers that matched, the file and its size -- never the file's content. The marker lists are
-constants under the version `static-checks-1.3`, the same lists the operator's recon tool runs. A download the
+- **S5** a hook target is over the 1 MiB file cap (its size is read from the archive header; its body is not read);
+- **S6** a hook target makes a network call (an HTTP request, fetch, a socket, a WebSocket, XMLHttpRequest or axios) and
+  reads what identifies this machine (its host name, user or network interfaces, a dump of the whole environment, or the
+  variables USER, USERNAME, LOGNAME, HOSTNAME or COMPUTERNAME), with no execution sink in the same file: a beacon. A URL
+  written in the file is not a network call, and reading other environment variables is not identification;
+- **S7** `main` or a `bin` file gained a capability that the same file of the version this proxy served before did not
+  have: a decode or obfuscation marker other than the `Function` constructor, or a network call together with an
+  execution sink other than `Function`. Both versions' files must have been read and the earlier one must not be empty.
+  Every gain, `Function` included, stays on the row as a fact. On the first version of a package this proxy serves
+  there is nothing to compare, and the row says so; when either version's file could not be read (over the cap, or a
+  refused archive), the row is "not checked", never a clean result. To compare, the proxy records what `main` and the
+  `bin` files can do (a summary, never their content) for each version it serves, keeping the newest 3 versions per
+  package.
+
+S0, S5, S6 and S7 are named: a WARN from any of them is a warning. The download that reveals it has already been
+served, so `chaingate report` lists it at once and the next download that reaches ChainGate carries the npm notice:
+- S0: "an install script downloads code to run or sends data to an outside host";
+- S5: "an install script runs a file too large to read";
+- S6: "an install script sends details about this machine to the network";
+- S7: "its entry file gained a capability its previous version did not have".
+
+They were named after a measurement over about 19,600 ordinary package versions: S0, S5 and S6 raised no false alarm
+there, and S7 as named fired on 2 of them (about 1 in 10,000). At runtime S7 compares with the version this proxy served before, not with the version the registry lists before
+it, so its rate on your machine may differ. S1 to S4 are contributing rows: recorded as notes, shown in `chaingate why`
+and `chaingate report --json`, never a warning on their own. A row names the markers that matched, the file and its
+size -- never the file's content. The marker lists are constants under the version `static-checks-1.6`, the same lists
+the maintainers' offline scanner runs. A download the
 rule did not arm records "not armed"; a file that is binary, over the cap, absent, or named only by the tarball's own
 `package.json` is "not checked" and says so; a check that found no eligible file to read says "no eligible file in the
 tarball". A tarball whose download was armed is examined once: the outcome rides every
 later record of that version.
 
 **Holding a suspect download until it is checked (optional).** With the `static_withhold` setting on
-(`"static_withhold": true` in ChainGate's `config.json`), the proxy holds an armed download in memory, up to 8 MiB, while the static checks read it. If S0 or S5
-fires, npm receives HTTP 403 `withheld_by_static_check`, naming the check and `chaingate why <pkg>@<ver>`, and the
+(`"static_withhold": true` in ChainGate's `config.json`), the proxy holds an armed download in memory, up to 8 MiB, while the static checks read it. If S0, S5,
+S6 or S7 fires, npm receives HTTP 403 `withheld_by_static_check`, naming the check and `chaingate why <pkg>@<ver>`, and the
 package is not installed. The recorded decision stays WARN: withholding is a choice about serving, not a different
 verdict. A download over 8 MiB is served and recorded as it is without the switch. The switch is off by default.
+
+**Recorded facts (0.1.5).** Beside the rows, the proxy records facts that change no verdict, no warning and no notice.
+They are there to be read and counted first; using any of them to decide is a later change. For each version it serves,
+once, after its first download's rows are final:
+- whether it is the `latest` dist-tag, and which tags point at it;
+- for each named sign on it, whether the version this proxy served before already had it ("not new since <version>");
+- whether its publisher is a known owner: a listed maintainer, an earlier publisher, or the publisher of most earlier
+  versions;
+- where a size change against the version served before came from: documentation, source maps, declaration files, a
+  second module format, or other files.
+
+For an armed download, the static checks (`static-checks-1.6`) also record:
+- each long base64 or hex run in a file: its length, how many different characters it uses, and what its decoded first
+  bytes are (WebAssembly, PNG, gzip or a web font);
+- for a hook target over the 1 MiB cap, which the walk reads through once without keeping it: the share of the file in
+  base64 runs and what the first run decodes to;
+- dynamic-code and raw-IP matches, with those under `test/`, `__tests__/`, `fixtures/`, `vendor/` or `node_modules/`
+  paths counted apart;
+- a hook command or file that writes under an AI coding agent's configuration folder (such as `~/.claude`, `~/.cursor`
+  or `~/.codex`);
+- a tarball with no network, file, process, environment, execution or encoding use at all.
+
+`chaingate why <pkg>@<ver>` prints them under "Recorded facts" and "Static check facts" (`--json`: `shadow_facts`,
+`static_facts`), `chaingate report --json` carries them, and the report text names a version with a notable fact. The
+time the proxy spent computing them is stored beside them in its witness store (`facts_ms`, `static_facts_ms`).
 
 A "not evaluable" N1h or "not checked" MC outcome is kept in the record (`chaingate why <pkg>@<ver>`). npm does not print
 it. The report counts a release as checked when another named rule (install-introduced or the seed's strict tier) gave
@@ -198,9 +243,9 @@ a result, and as not checked only when no named rule did.
 `check`.
 
 Since 0.1.5, `chaingate check <pkg>@<ver> --packument <file> --tarball <file>` also reads that local archive offline -- the
-manifest check and the five tarball checks above, the keep list from the packument's manifest -- and reports their rows in the
-record's `tarball` member (`chaingate.check/4`, which is `/3` plus that one optional member). Those rows never change the
-decision or the exit code in 0.1.5: a CI job that wants to gate on them reads `tarball.disposition`.
+manifest check and the tarball checks above, the keep list from the packument's manifest -- and reports their rows in the
+record's `tarball` member (`chaingate.check/4`, which is `/3` plus that one optional member). Offline there is no earlier
+version to compare, so S7 says it is not applicable. Those rows never change the decision or the exit code in 0.1.5: a CI job that wants to gate on them reads `tarball.disposition`.
 
 A check against a seed of contract `cft-seed-v3-contract-1.2` also writes `chaingate.check/4`, with or without
 `--tarball`: only `/4` carries that seed contract and its placement `new-family-cold-start`, the first prerelease of a new
