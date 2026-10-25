@@ -428,3 +428,40 @@ test('T3 end to end: the armed version carries static_facts_ms beside facts_ms, 
     } finally { r.close(); }
   });
 });
+
+// ------------------------------------------------------------------ (H) the stored and shown facts in plain words (operator 2026-10-25)
+// What the proxy stores and prints carries no internal wording. Recon's block in proxy/static-checks.js stays byte for byte (its two
+// notes included); the proxy replaces those two notes with plain ones when it stores the facts, and its own heading note is plain.
+const INTERNAL = /operator|ruling|recon|\bR11\b/i;
+test('T4 publicStaticFacts gives the block with plain notes and nothing else changed; SHADOW_NOTE is plain; the module\'s own block is unchanged', async () => {
+  const S = await SC(); const SF = await import('../../proxy/shadow-facts.js');
+  assert.doesNotMatch(SF.SHADOW_NOTE, INTERNAL); assert.match(SF.SHADOW_NOTE, /no verdict, tier or notice depends on it/);
+  const { walk, members, man, pj } = await armedWalk({ 'install.js': `${WASM}${FILL}`, 'index.js': 'module.exports = 1;\n', 'test/a.js': 'eval("1");\n' }, MAN({ postinstall: 'node install.js' }));
+  const x = S.staticFactsOf({ manifest: man, packageJson: pj, walk, members });
+  assert.equal(x.facts.note, S.FACTS_NOTE, 'the module\'s block is recon\'s, unchanged');
+  const y = SF.publicStaticFacts(x);
+  assert.doesNotMatch(JSON.stringify(y), INTERNAL, JSON.stringify(y).slice(0, 400));
+  assert.match(y.facts.note, /recorded only/); assert.match(y.facts.excluded_paths.note, /dynamic code/);
+  const strip = (o) => { const c = structuredClone(o); delete c.facts.note; if (c.facts.excluded_paths) delete c.facts.excluded_paths.note; return c; };
+  assert.deepEqual(strip(y), strip(x));
+  assert.equal(x.facts.note, S.FACTS_NOTE, 'the input is not changed in place');
+  const nc = SF.publicStaticFacts(S.staticFactsOf({ manifest: man, packageJson: pj, walk, members: undefined }));
+  assert.doesNotMatch(JSON.stringify(nc), INTERNAL); assert.equal(nc.facts.status, 'NOT_CHECKED');
+  assert.equal(SF.publicStaticFacts(null), null);
+});
+
+test('T5 end to end: the stored static facts, `why` (text and --json) and the report carry no internal wording', async () => {
+  await withProxy({}, async ({ base, proxy, dbPath, dir }) => {
+    await get(`${base}/z`); await get(`${base}/z/-/z-1.1.0.tgz`);
+    const x = await eventually(() => proxy.witnessDb.staticFactsFor('z', '1.1.0')); await settle();
+    assert.doesNotMatch(JSON.stringify(x), INTERNAL);
+    const w = await runCli(['why', 'z@1.1.0'], { CHAINGATE_WITNESS_DB: dbPath, HOME: dir });
+    assert.match(w.out, /Static check facts/); assert.doesNotMatch(w.out, INTERNAL, w.out);
+    const j = await runCli(['why', 'z@1.1.0', '--json'], { CHAINGATE_WITNESS_DB: dbPath, HOME: dir });
+    assert.doesNotMatch(j.out, INTERNAL);
+    const r = (await get(`${base}/_chaingate/report`)).body.toString('utf8');
+    assert.doesNotMatch(r, INTERNAL);
+    const { renderReport } = await import('../../cli/report-render.js');
+    assert.doesNotMatch(renderReport(JSON.parse(r), { source: 'proxy' }).text, INTERNAL);
+  });
+});
