@@ -1336,9 +1336,12 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             if (memberTally) {
               try {
                 if (!witnessDb.staticFactsFor(canonicalName, state.tarballVersion)) {
-                  const t = memberTally.result();
-                  witnessDb.recordStaticFacts(canonicalName, state.tarballVersion, staticFactsOf({ manifest: staticManifest,
-                    packageJson: walk.ok ? parsedPackageJson(walk) : null, walk, members: t.members, membersOver: t.over }));
+                  const t = memberTally.result(); const t1 = performance.now();
+                  const sf = staticFactsOf({ manifest: staticManifest, packageJson: walk.ok ? parsedPackageJson(walk) : null, walk,
+                    members: t.members, membersOver: t.over });
+                  // R12: the time 1.6 added to this walk (the walker's memberMs plus staticFactsOf), beside facts_ms; no bar in 0.1.5
+                  const ms = (Number.isFinite(walk.memberMs) ? walk.memberMs : 0) + performance.now() - t1;
+                  witnessDb.recordStaticFacts(canonicalName, state.tarballVersion, sf, Number(ms.toFixed(3)));
                 }
               } catch (err) {
                 log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: static facts not recorded (${err.message})`);

@@ -31,8 +31,10 @@
 // 0.1.5 static-checks-1.6 (R11 (b), the input recon's facts read): an optional `onMember(path, size, window)` is called as each regular
 // file on the Linux view completes, with its header size and its first `memberWindow` bytes (only those are held, one member at a
 // time; every duplicate is reported, the caller keeps the last); an optional `shareOf()` makes a streaming counter ({ push, end }) that
-// reads the WHOLE body of each keep-list target over the kept-file cap, its result on that not-kept entry as `base64`. Without either
-// the result is unchanged, key for key.
+// reads the WHOLE body of each keep-list target over the kept-file cap, its result on that not-kept entry as `base64`. With either, the
+// result also carries `memberMs`: the time the member windows, the onMember calls and the counter's calls spent, in milliseconds to
+// three places (operator ruling R12 2026-10-25: what 1.6 adds to an armed walk; no bar in 0.1.5). Without either the result is
+// unchanged, key for key.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
 
@@ -147,6 +149,7 @@ export function createTarWalker(opts = {}) {
   const shareOf = typeof o.shareOf === 'function' ? o.shareOf : null;
   let member = null;                                       // { path, size, chunks, got }: the member window being read
   let share = null;                                        // { entry, counter }: an over-cap keep target streamed whole
+  let memberMs = 0;                                        // the time the two above spent (R12)
   let keepTargets = Array.isArray(keepOpt) ? null : (typeof keepOpt === 'function' ? null : new Set());
   const keepOrder = []; const kept = new Map(); const notKept = []; const aliases = new Map();
   const seenBefore = new Set(); let seenOverflow = false;
@@ -206,8 +209,11 @@ export function createTarWalker(opts = {}) {
 
   /** The end of a regular file's body: its window to onMember, its streamed share to its not-kept entry (neither ever fails the walk). */
   function endMember() {
+    if (!member && !share) return;
+    const t0 = performance.now();
     if (member) { const m = member; member = null; try { onMember(m.path, m.size, Buffer.concat(m.chunks)); } catch { /* a member tally never fails the walk */ } }
     if (share) { const x = share; share = null; try { x.entry.base64 = x.counter.end(); } catch { /* likewise */ } }
+    memberMs += performance.now() - t0;
   }
   function complete() {
     endMember();
@@ -343,8 +349,12 @@ export function createTarWalker(opts = {}) {
       if (state === 'content') {
         const take = Math.min(remaining, buf.length - off);
         if (collect) collect.chunks.push(Buffer.from(buf.subarray(off, off + take)));
-        if (member && member.got < memberWindow) { const t = Math.min(take, memberWindow - member.got); member.chunks.push(Buffer.from(buf.subarray(off, off + t))); member.got += t; }
-        if (share) try { share.counter.push(buf.subarray(off, off + take)); } catch { share = null; }
+        if ((member && member.got < memberWindow) || share) {
+          const t0 = performance.now();
+          if (member && member.got < memberWindow) { const t = Math.min(take, memberWindow - member.got); member.chunks.push(Buffer.from(buf.subarray(off, off + t))); member.got += t; }
+          if (share) try { share.counter.push(buf.subarray(off, off + take)); } catch { share = null; }
+          memberMs += performance.now() - t0;
+        }
         off += take; remaining -= take;
         if (remaining === 0) {
           try { complete(); } catch (err) {
@@ -398,7 +408,8 @@ export function createTarWalker(opts = {}) {
       if (!failed && !ended) { gunzip.end(); await settled; }
       if (failed) return { ok: false, reason: failed };
       const done = () => ({ ok: true, packageJson: views.linux?.buf ?? null, views: grouped(),
-        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })), ...(keepGiven ? keepResult() : {}) });
+        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })), ...(keepGiven ? keepResult() : {}),
+        ...(onMember || shareOf ? { memberMs: Number(memberMs.toFixed(3)) } : {}) });
       if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return done(); }   // the end is final
       if (state !== 'header' || pending.length) return { ok: false, reason: 'tar: truncated archive' };
       return done();
