@@ -71,3 +71,23 @@ test('D8 the README, SECURITY.md and SEEDS.md carry no internal labels: rule cod
   }
   for (const re of [/\bcorpus\b/i, /\bshadow\b/i]) assert.doesNotMatch(words('README.md'), re, `README.md: ${re}`);
 });
+
+test('D9 the strings the runtime prints carry no internal rule or plan codes (operator 2026-10-25)', () => {
+  // code lines only (comments are prose); proxy/static-checks.js mirrors the offline scanner byte for byte, and its two notes are
+  // replaced with plain ones before the facts are stored or shown (proxy/shadow-facts.js publicStaticFacts, T4/T5)
+  const codes = /FU-2|— D1\b|\bD1 (?:fails|SKIPs|does)|operator ruling|recon pattern|\bU-05\b|dated note/;
+  const files = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = `${d}/${e.name}`; if (e.isDirectory()) walk(p); else if (p.endsWith('.js')) files.push(p); } };
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  for (const d of ['cli', 'gates', 'proxy', 'witness', 'seed', 'patterns']) walk(`${root}${d}`);
+  const hits = [];
+  for (const f of files) {
+    if (f.endsWith('proxy/static-checks.js')) continue;
+    fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => {
+      const t = l.trim();
+      if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+      if (codes.test(l.split(' // ')[0])) hits.push(`${f.slice(root.length)}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(hits, []);
+});

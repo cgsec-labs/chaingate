@@ -13,6 +13,7 @@ import { openWitnessDB } from '../../witness/db.js';
 import { explain } from '../../seed/v3/explain.js';
 import { syntheticCases, buildSyntheticSeed, PROXY_POLICY } from './u01-cases.mjs';
 import { decisionG2a } from './cft014-g2a-transform.mjs';
+import { plainWording } from './cft015-plain-wording.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
@@ -85,7 +86,7 @@ test('check CLI: every PROXY_POLICY synthetic golden, exit code follows the disp
   let n = 0;
   for (const g of GOLD.records.filter((r) => r.policy.on_unusable_input === 'BLOCK')) {
     const { status, rec } = checkJson(HOST, g.id);
-    const gd = decisionG2a(g.decision).decision;    // 0.1.4 group 2a E6/E7, from the golden's own rows
+    const gd = plainWording(decisionG2a(g.decision).decision);    // 0.1.4 group 2a E6/E7, then the 0.1.5 plain wording
     assert.equal(status, EXIT[gd.disposition], `${g.id}: exit`);
     assert.equal(rec.decision.disposition, gd.disposition, g.id);
     assert.deepEqual(rec.decision.results, gd.results, g.id);

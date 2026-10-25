@@ -167,12 +167,12 @@ test('FU-2 E4/E5: a stub or a release with no publication time holds no predeces
     const stub = placeOf(seed, '0.0.1-security');
     assert.strictEqual(stub.kind, G.PLACEMENTS.INELIGIBLE_STUB);
     assert.strictEqual(stub.channel_a_usable, false);
-    assert.match(stub.reason, /E4/);
+    assert.match(stub.reason, /takedown stub: it is excluded/); assert.doesNotMatch(stub.reason, /FU-2/);
 
     const noTime = placeOf(seed, '1.2.0', null);
     assert.strictEqual(noTime.kind, G.PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME);
     assert.strictEqual(noTime.channel_a_usable, false);
-    assert.match(noTime.reason, /E5/);
+    assert.match(noTime.reason, /no publication time: /); assert.doesNotMatch(noTime.reason, /FU-2/);
   } finally { seed.close(); }
 });
 
@@ -285,7 +285,7 @@ test('several lineages sharing a major, or a CalVer collapse, are UNRESOLVED and
   try {
     const p = placeOf(calver, '2025.1.0', BASE_S + 9_000_000);
     assert.strictEqual(p.kind, G.PLACEMENTS.UNRESOLVED);
-    assert.match(p.reason, /E1 CalVer collapse/);
+    assert.match(p.reason, /CalVer collapse rule/); assert.doesNotMatch(p.reason, /FU-2/);
   } finally { calver.close(); }
 });
 

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import G from '../../seed/v3/gate.js';
 import { buildSeed, openFixtureSeed, docFor, gateInput, after, BASE_S } from './u05-fixtures.mjs';
 
-const STUB_REASON = /0\.0\.x-security takedown stub \(FU-2 E4\)/;
+const STUB_REASON = /0\.0\.x-security takedown stub: it is excluded/;   // 0.1.5: plain wording, no rule code
 const ts = Math.floor(Date.parse(after()) / 1000);
 
 test('T-S absent package + stub candidate -> ineligible-stub with the E4 reason; a non-stub stays uncovered-package', () => {
