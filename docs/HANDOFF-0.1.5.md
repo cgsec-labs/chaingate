@@ -178,7 +178,7 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
   the `report` facts event carries `static_facts`, and the report text lists an armed version with its static facts. No exit code changes.
 - The version string changes S7's predecessor rule only for facts stored by a 1.5 build ("stored by static-checks-1.5, not
   static-checks-1.6"): no released build stores entry facts, so no user store is affected.
-- Read from witness.db:
+- Read from witness.db (armed walks only, not all downloads: a frequency read here is per armed walk):
 
       sqlite3 ~/.chaingate/witness.db "SELECT package_name, version, static_facts FROM entry_fact_versions WHERE static_facts IS NOT NULL"
 
@@ -186,7 +186,7 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
 - Candidate final code commit: `1966cd6`. It becomes final when recon's parity check against the 41 vectors passes on it. Then README
   and release notes, release checks, and the v3.2 re-issue (R6) against it.
 
-## Final code commit: 1966cd6 (2026-10-25)
+## Recon parity on 1966cd6 (2026-10-25; named final at df1e9da, retired by R12 in the next section)
 
 - Recon's parity check of the mirror PASSED (recon lane, 2026-10-25, on dc373ef; `proxy/static-checks.js` sha256 df56a279): the
   constants byte-equal to recon's (c4c1e0c0); the facts block equal to recon v6.14's line for line after the three declared
@@ -194,6 +194,36 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
   both sides (shares also at chunk sizes 3 and 64); a seeded random comparison over 3,000 packages (69,574 calls) differs 0. The one
   difference is the declared one: a path with control or bidi characters is shown stripped. The 20,000-member cap is a declared
   deviation (recon has none; its largest frozen case is 1,656 members).
-- Every commit after `1966cd6` is docs only (`docs/` is not in the npm package). The v3.2 re-issue (R6) is against `1966cd6`.
+- `1966cd6` was named the final code commit at df1e9da. The review session's verdict, sent before that naming reached it, made the
+  armed-walk time a condition first, and the operator ruled it (R12): `1966cd6` is NOT the final code commit (next section).
+- Recon v6.14 (static-checks-1.6) went live on 2026-10-25 at 10:38Z after this check and ops' drift check (12.4).
+
+## Final code commit: 44113b7 (2026-10-25; operator ruling R12, the 1.6 cost timer)
+
+- R12: 1966cd6 retired for the 1.6 cost timer, operator 2026-10-25.
+- The review session accepted the three choices above (facts on armed walks only; stored in `static_facts`, never a row, the S5 row
+  text unchanged; the 20,000-member cap with its NOT_CHECKED reason), with one condition, which the operator ruled (R12): measure
+  what 1.6 adds to the armed path, as R8 did for R4. The member work runs inside the walker, synchronous on the event loop every
+  other download shares, bounded by the 2 MiB window and `MAX_ARMED_WALKS`; recon measured memberFacts at about 1.5 s CPU on a 482 MB
+  decompressed archive (16 percent more unit CPU).
+- Tests first `083e6b2` (T1 to T3; W1 and W2 compare the walk result without the one added key). Code `44113b7`, touching
+  `proxy/tar-walk.js`, `proxy/server.js` and `witness/db.js` only. `proxy/static-checks.js` is unchanged at sha256 df56a279, so
+  recon's parity record on dc373ef stands and was not re-run.
+- Timed, in milliseconds to three places: the walker's member windows (each file's first 2 MiB copied out), its `onMember` calls
+  (recon's memberFacts) and its share counter's `push` and `end` calls (a hook target over the keep cap), as the walk result's
+  `memberMs` (present only when either is given); the proxy adds `staticFactsOf`. The sum is stored once with the facts as
+  `entry_fact_versions.static_facts_ms`, beside `facts_ms`; NULL on a version not walked armed (the column is added to an existing
+  store on open). The facts block has no timing field; every row is unchanged.
+- No bar is set on it in 0.1.5: the facts change no outcome. The first week gives the number and the operator rules on it.
+- Sampling: the static facts and `static_facts_ms` are over ARMED walks only, not over all downloads; `facts_ms` (R8) is over every
+  walk that read entry facts. The first-week read:
+
+      sqlite3 ~/.chaingate/witness.db "SELECT package_name, version, served_at, facts_ms, static_facts_ms
+        FROM entry_fact_versions WHERE static_facts_ms IS NOT NULL ORDER BY served_at"
+
+- Full suite at `44113b7` on a non-root host, Node 22.23.4: 1,606 tests, 1,565 pass, 0 fail, 41 skipped; protected paths unchanged.
+- Final code commit: `44113b7`. Every later commit is docs only (`docs/` is not in the npm package). The v3.2 re-issue (R6) is
+  against `44113b7`.
 - Next, each on the operator's word: README and release notes (the 2026-10-23 review note for README lines 175 and 181, now
-  static-checks-1.6 and the shadow facts), the release commit and release checks, the package sha256 sent once to the v3.2 session.
+  static-checks-1.6, the shadow facts and this time), the release commit and release checks, the package sha256 sent once to the
+  v3.2 session.
