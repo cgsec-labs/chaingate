@@ -185,3 +185,15 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
 - Full suite at `1966cd6` on a non-root host, Node 22.23.4: 1,603 tests, 1,562 pass, 0 fail, 41 skipped; protected paths unchanged.
 - Candidate final code commit: `1966cd6`. It becomes final when recon's parity check against the 41 vectors passes on it. Then README
   and release notes, release checks, and the v3.2 re-issue (R6) against it.
+
+## Final code commit: 1966cd6 (2026-10-25)
+
+- Recon's parity check of the mirror PASSED (recon lane, 2026-10-25, on dc373ef; `proxy/static-checks.js` sha256 df56a279): the
+  constants byte-equal to recon's (c4c1e0c0); the facts block equal to recon v6.14's line for line after the three declared
+  substitutions; 42 shared non-function exports differ 0; 83 of 83 regex literals equal; the 41 vectors and the 16 S7 vectors pass on
+  both sides (shares also at chunk sizes 3 and 64); a seeded random comparison over 3,000 packages (69,574 calls) differs 0. The one
+  difference is the declared one: a path with control or bidi characters is shown stripped. The 20,000-member cap is a declared
+  deviation (recon has none; its largest frozen case is 1,656 members).
+- Every commit after `1966cd6` is docs only (`docs/` is not in the npm package). The v3.2 re-issue (R6) is against `1966cd6`.
+- Next, each on the operator's word: README and release notes (the 2026-10-23 review note for README lines 175 and 181, now
+  static-checks-1.6 and the shadow facts), the release commit and release checks, the package sha256 sent once to the v3.2 session.
