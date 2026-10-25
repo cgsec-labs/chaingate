@@ -174,7 +174,7 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
     S5 row text is unchanged.
   - At most 20,000 member records per walk (`MAX_FACTS_MEMBERS`; recon refuses an archive over 100,000 files); past it the block is
     NOT_CHECKED "more than 20000 archive members: member facts not kept".
-- Shown: `why` prints "Static check facts (static-checks-1.6; recorded only ...)" under the recorded facts (`--json`: `static_facts`);
+- Shown: `why` prints "Static check facts (static-checks-1.6; recorded only: no verdict, tier or notice depends on it (operator ruling R11)):" under the recorded facts (`--json`: `static_facts`);
   the `report` facts event carries `static_facts`, and the report text lists an armed version with its static facts. No exit code changes.
 - The version string changes S7's predecessor rule only for facts stored by a 1.5 build ("stored by static-checks-1.5, not
   static-checks-1.6"): no released build stores entry facts, so no user store is affected.
