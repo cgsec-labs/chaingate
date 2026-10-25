@@ -11,7 +11,7 @@ const words = (f) => read(f).replace(/\s+/g, ' ');
 
 test('D1 the README names size-jump-provenance as a named rule, with both of its facts and the predecessor it compares', () => {
   const r = words('README.md');
-  assert.match(r, /\*\*size-jump-provenance\*\*/);
+  assert.match(r, /\*\*a size jump with a broken repository link\*\*/);
   assert.match(r, /at least 5 times/);
   assert.match(r, /gitHead/);
   assert.match(r, /previous version of its own tag/);
@@ -20,10 +20,10 @@ test('D1 the README names size-jump-provenance as a named rule, with both of its
 
 test('D2 the README lists identity-break and entry-path-change as contributing, and S1 to S4 (not five) as the contributing static checks', () => {
   const r = words('README.md');
-  assert.match(r, /\*\*identity-break\*\*/);
-  assert.match(r, /\*\*entry-path-change\*\*/);
+  assert.match(r, /\*\*a publisher break\*\*/);
+  assert.match(r, /\*\*an entry point change\*\*/);
   assert.doesNotMatch(r, /the five tarball static checks/);
-  assert.match(r, /tarball static checks S1 to S4/);
+  assert.match(r, /The other tarball checks are contributing notes/);
 });
 
 test('D3 the README describes the static_withhold switch: off by default, 8 MiB, a 403, the decision stays WARN', () => {
@@ -59,6 +59,12 @@ test('D7 the 0.1.5 README points at seed-v3.2-full as a .gz, says it needs 0.1.5
   assert.match(r, /seed-v3\.2-full needs ChainGate 0\.1\.5 or later/);
   assert.doesNotMatch(r, /releases\/tag\/seed-v3\.1-full/, 'the published seed the README sends users to is v3.2');
   assert.match(r, /\$ chaingate init --seed \.\/seed-v3\.2\/chaingate-seed-v3\.db\.gz/);
-  assert.match(r, /\*\*Tested platforms\.\*\* 0\.1\.5 ran its full test suite/);
+  assert.match(r, /\*\*Supported platforms\.\*\*/);
   assert.doesNotMatch(r, /In 0\.1\.4 it warns|evaluates the seed only in 0\.1\.4|In 0\.1\.4 `check`/, 'no current-behaviour sentence still says 0.1.4');
+});
+
+test('D8 the README and SECURITY.md carry no internal labels: rule codes, policy and contract identifiers, marker-list versions, research or process terms (operator 2026-10-25)', () => {
+  const labels = [/cft-policy/, /cft-seed/, /\bN1h\b/, /\bMC\b/, /\bS[0-7]\b/, /static-checks-\d/, /qualification of/, /\boperator\b/i, /\brecon\b/i];
+  for (const f of ['README.md', 'SECURITY.md']) for (const re of labels) assert.doesNotMatch(words(f), re, `${f}: ${re}`);
+  for (const re of [/\bcorpus\b/i, /\bshadow\b/i]) assert.doesNotMatch(words('README.md'), re, `README.md: ${re}`);
 });
