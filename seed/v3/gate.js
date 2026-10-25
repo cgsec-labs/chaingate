@@ -152,7 +152,7 @@ function compareToRecorded(candidateS, recordedS) {
   return 'ambiguous';
 }
 
-const stubReason = (version) => `${version} is a 0.0.x-security takedown stub (FU-2 E4): it is excluded `
+const stubReason = (version) => `${version} is a 0.0.x-security takedown stub: it is excluded `
   + 'from lineage grouping and can hold no predecessor';
 
 const PLACEMENTS = Object.freeze({
@@ -212,7 +212,7 @@ function resolvePlacement(seed, packageName, version, publishedS, { holdingDescr
   if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
   if (publishedS === null || publishedS === undefined) {
     return no(PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME,
-      'the release has no publication time (FU-2 E5): it is excluded from lineage grouping and '
+      'the release has no publication time: it is excluded from lineage grouping and '
       + 'cannot be ordered against any predecessor');
   }
 
@@ -229,7 +229,7 @@ function resolvePlacement(seed, packageName, version, publishedS, { holdingDescr
   const major = majorOf(version);
   if (isCalverYear(major) || lineages.some((l) => l.lineage_key === CALVER_KEY)) {
     return no(PLACEMENTS.UNRESOLVED,
-      `lineage key for major ${major} depends on the FU-2 E1 CalVer collapse, which is computed `
+      `lineage key for major ${major} depends on the CalVer collapse rule, which is computed `
       + "from the package's full distinct-major publish sequence and is not stored in the seed");
   }
 
@@ -277,12 +277,12 @@ function placeRl2(lineages, version, publishedS, { holdingDescription = false } 
       + 'is excluded from lineage grouping and holds no predecessor');
   }
   if (publishedS === null || publishedS === undefined) {
-    return no(PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME, 'the release has no publication time (FU-2 E5): it cannot be ordered');
+    return no(PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME, 'the release has no publication time: it cannot be ordered');
   }
   if (!lineages.length) return no(PLACEMENTS.UNCOVERED_PACKAGE, 'the seed records no lineage for this package');
   const major = majorOf(version);
   if (isCalverYear(major) || lineages.some((l) => l.lineage_key === CALVER_KEY)) {
-    return no(PLACEMENTS.UNRESOLVED, `the lineage key for major ${major} depends on the FU-2 E1 CalVer collapse, which the `
+    return no(PLACEMENTS.UNRESOLVED, `the lineage key for major ${major} depends on the CalVer collapse rule, which the `
       + 'seed does not store');
   }
   const key = lineages.filter((l) => l.lineage_key === major);

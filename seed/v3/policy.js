@@ -96,7 +96,7 @@ const OPEN_CHOICES = Object.freeze({
       WARN: 'proceed, but never silently: the decision records that nothing was checked',
       REFUSE_TO_DECIDE: 'return no disposition at all and let the caller decide; the default',
     },
-    why_open: 'D1 fails open for ONE broken gate among several that still produced evidence. It '
+    why_open: 'The gate runner fails open for ONE broken gate among several that still produced evidence. It '
       + 'never ruled on the whole evidence source being unusable.',
   },
   on_no_evidence: {
@@ -104,10 +104,10 @@ const OPEN_CHOICES = Object.freeze({
       + 'stale seed). What then?',
     values: {
       WARN: 'surface it: a release nobody could check is not a release that checked out',
-      ALLOW: 'treat absence of evidence as absence of a problem, as D1 does for a skipped gate',
+      ALLOW: 'treat absence of evidence as absence of a problem, as the gate runner does for a skipped gate',
       REFUSE_TO_DECIDE: 'return no disposition at all; the default',
     },
-    why_open: 'D1 SKIPs a gate it cannot run and lets the rest decide. Here there is no rest.',
+    why_open: 'The gate runner SKIPs a gate it cannot run and lets the rest decide. Here there is no rest.',
   },
 });
 const OPEN_CHOICE_KEYS = Object.freeze(Object.keys(OPEN_CHOICES));
@@ -196,7 +196,7 @@ function thresholdResults(prefix, agg) {
         + '(contributing in cft-policy-1.2: shown beside a named row, never a warning on its own)'));
     } else if (t.threshold_determinacy === 'determinate' && t.threshold_result === true) {
       out.push(r(name, WARN, `${agg.n_broke}/${agg.M} witnesses broke, threshold ${t.threshold} `
-        + '(threshold over history: warns, never blocks — D1)'));
+        + '(threshold over history: warns, never blocks)'));
     } else if (t.threshold_determinacy === 'determinate') {
       out.push(r(name, ALLOW, `${agg.n_broke}/${agg.M} broke, threshold ${t.threshold} cannot be `
         + `reached (retained interval [${lo}, ${hi}])`));
