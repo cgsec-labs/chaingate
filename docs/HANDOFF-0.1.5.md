@@ -270,3 +270,14 @@ Order: recon's v6.13 swap (unchanged, now) -> owner (b) and recon (a) in paralle
 - Full suite at `7e981c8` on a non-root host, Node.js 22.23.4: 1,610 tests, 1,569 pass, 0 fail, 41 skipped; protected paths
   unchanged.
 - Main: squash, as the operator chose; this file leaves the tree before the squash commit.
+
+## Operator ruling 2026-10-25 (R13; relayed by the review session: "implement the suggestion", "Yes")
+
+R13 Rule 4a of the triage noise-reduction consult, revision 2026-10-25 (chaingate-ops `g10-c2-pin-admission-1.1` @ac95df5, `docs/design/triage-noise-rules-20261023.md`), enters 0.1.5 as a SHADOW FACT under the R11 discipline: no verdict, tier or notice depends on it. 7e981c8 is no longer the final code commit; the final code commit is named after this work, and the R6 re-issue waits for it.
+
+- (b) 0.1.5 owner, in `proxy/shadow-facts.js` (the mirrored module stays at df56a279), tests first: on an ARMED first download, after the response, fetch the attestation bundle from the registry (`/-/npm/v1/attestations/<pkg>@<ver>`), decode the DSSE payload, read `externalParameters.workflow.repository`, compare with the packument `repository` field, and record one of MATCH, MISMATCH, ABSENT (the version this proxy served before had an attestation and this one has none), NONE (neither has one), or NOT_FETCHED with the reason (non-200, timeout, undecodable). No signature verification and no commit-author lookup (recon-only). Stored with the recorded facts, shown in `why` and `report` as a fact in plain words ("repository claim matches, unverified" / "repository claim differs" / "provenance dropped"), the fetch time stored beside it as the other facts' times are. Then the new final code commit is named here; README's recorded-facts list gains the one line; non-root suite.
+- (a) Recon lane, in parallel and outside the 0.1.5 package: the recon-only rules 1, 2, 4 in full, 8c, 8e, 8f, 8g as facts on the card first (no LOOK FIRST change), under the lane's own bump and swap procedure; re-tiering on any of them is a later ruling read against handover 12.3.
+- (c) Ops: 4a's MATCH/MISMATCH/ABSENT counts join the facts read from the witness store in the first weeks of 0.1.5; nothing else changes.
+- (d) v3.2: unchanged; the re-issue runs against the final code commit when it is named.
+
+Coverage after R13: every rule of the consult is encoded as a fact: 6, 7, 8a, 8d, 8h in static-checks-1.6 (recon live, proxy mirror); 3, 5 (transition half), 8 (known-owner half), 8b and 4a in shadow-facts (proxy); 1, 2, 4, 8c, 8e-8g on recon's card. Nothing re-tiers in 0.1.5 (the recall gate, 12.3, stands). The consult's 10-25 status line ("3, 5, 8, 8b not encoded anywhere") is corrected by this record: they are in the proxy at ca67eef.
