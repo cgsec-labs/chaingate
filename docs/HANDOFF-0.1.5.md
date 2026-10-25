@@ -281,3 +281,22 @@ R13 Rule 4a of the triage noise-reduction consult, revision 2026-10-25 (chaingat
 - (d) v3.2: unchanged; the re-issue runs against the final code commit when it is named.
 
 Coverage after R13: every rule of the consult is encoded as a fact: 6, 7, 8a, 8d, 8h in static-checks-1.6 (recon live, proxy mirror); 3, 5 (transition half), 8 (known-owner half), 8b and 4a in shadow-facts (proxy); 1, 2, 4, 8c, 8e-8g on recon's card. Nothing re-tiers in 0.1.5 (the recall gate, 12.3, stands). The consult's 10-25 status line ("3, 5, 8, 8b not encoded anywhere") is corrected by this record: they are in the proxy at ca67eef.
+
+## Final code commit: c0b52d3 (2026-10-26; R13 part (b), the repository claim)
+
+- 7e981c8 is retired for this. Tests `999f500` (failing first: 10 of 10), code `c0b52d3`. `proxy/static-checks.js` untouched
+  (df56a279), so recon's parity record stands.
+- Where: `proxy/shadow-facts.js` (`normRepoUrl`, `attestationRepository`, `repoClaimFact`, `repoClaimLine`, version
+  `repo-claim-1.0`); the fetch in `proxy/registry.js` `fetchAttestationBundle`, through the one upstream call site; the store in
+  `witness/db.js` (`entry_fact_versions.repo_claim` and `repo_claim_ms`, guarded ALTER for older tables); `why`, `report` and the
+  report text show it; README's recorded-facts list has the one line.
+- When: an armed version's first download, after its rows and shadow facts are recorded and its response is finished (`settled`);
+  once per version. An unarmed version is never fetched.
+- Compared as recon v6.15 does (chaingate-ops `g10-c2-recon-v6.15` @7cb4f58, `triage-facts.mjs` normRepoUrl/repoClaim): the same
+  normal form (host/owner/repo, lower case), the first SLSA v1 or v0.2 statement, ABSENT/NONE read from `dist.attestations` with no
+  fetch. The one planned difference: "previous" is the version this proxy served before, not recon's primary baseline.
+- Bounds: 5 s for the whole request, 1 MiB (declared or streamed), 4 fetches in flight process-wide, no redirect, no user header
+  relayed (the user's token is not sent). Every failure is NOT_FETCHED with its reason; nothing here can fail or delay a download.
+- Full suite at `c0b52d3`'s tree on a non-root host, Node.js 22.23.4: 1,620 tests, 1,579 pass, 0 fail, 41 skipped; protected paths
+  unchanged. (A first run failed one guard test, the single upstream call site; fixed before the commit.)
+- Next, as before: the R6 re-issue against this commit (v3.2 session), then the release sequence; main is a squash.
