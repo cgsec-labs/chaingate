@@ -63,8 +63,11 @@ test('D7 the 0.1.5 README points at seed-v3.2-full as a .gz, says it needs 0.1.5
   assert.doesNotMatch(r, /In 0\.1\.4 it warns|evaluates the seed only in 0\.1\.4|In 0\.1\.4 `check`/, 'no current-behaviour sentence still says 0.1.4');
 });
 
-test('D8 the README and SECURITY.md carry no internal labels: rule codes, policy and contract identifiers, marker-list versions, research or process terms (operator 2026-10-25)', () => {
+test('D8 the README, SECURITY.md and SEEDS.md carry no internal labels: rule codes, policy and contract identifiers, marker-list versions, research or process terms (operator 2026-10-25)', () => {
   const labels = [/cft-policy/, /cft-seed/, /\bN1h\b/, /\bMC\b/, /\bS[0-7]\b/, /static-checks-\d/, /qualification of/, /\boperator\b/i, /\brecon\b/i];
-  for (const f of ['README.md', 'SECURITY.md']) for (const re of labels) assert.doesNotMatch(words(f), re, `${f}: ${re}`);
+  for (const f of ['README.md', 'SECURITY.md', 'SEEDS.md']) for (const re of [...labels, /\bg10-/, /\bcorpus\b/i]) {
+    if (f === 'SECURITY.md' && /corpus/.test(re.source)) continue;   // SECURITY.md names the seed's corpus snapshot identifier
+    assert.doesNotMatch(words(f), re, `${f}: ${re}`);
+  }
   for (const re of [/\bcorpus\b/i, /\bshadow\b/i]) assert.doesNotMatch(words('README.md'), re, `README.md: ${re}`);
 });
