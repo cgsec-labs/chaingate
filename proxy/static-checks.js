@@ -47,6 +47,14 @@
 // triage noise-reduction rules 6, 7, 8a, 8d and 8h), recon's facts code as written (memberFacts, staticFacts, makeBase64Share and their
 // constants). They are computed on an armed walk and stored beside the version's entry facts, never a row: no outcome, indicator,
 // gate, class or notice reads them (staticFactsOf below; proxy/tar-walk.js reads the member windows and streams an over-cap hook target).
+// static-checks-1.7 (operator 2026-10-26) is recon's v6.16 mirrored: the API network sinks 'http-request' and 'net-connect' also read a
+// call on a NAME BOUND to the module (BOUND_CALLS, boundModuleCall): <id> = ...require(M)...; then <id>.f( (the beacon.cjs ternary
+// `lib = c ? require('https') : require('http')`), require(M).f( direct, import <id> | * as <id> from M; then <id>.f(, and the
+// destructured { f } / { f: local } = require(M) or import { f [as local] } from M; then a bare call. The 1.6 literal-receiver regexes
+// stay and are tried first; the names stay (a call that moved from https.request( to lib.request( is not an S7 gain); url-literal stays
+// excluded; every other constant, check, gate, role, notice and limit is unchanged. Each scan is linear (BOUND_LIMITS). Not read: a
+// binding split across lines, a module held in an object property or passed to a function, a dynamic import(), and a name bound in
+// one file and called in another.
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -57,7 +65,7 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.6';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.7';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -115,9 +123,60 @@ export const EXEC_MARKERS = [
   ['pipe-to-interpreter', /(?<!\|)\|(?!\|)\s*(?:sudo\s+(?:-\S+\s+)*)?(?:node|bun|deno|python[23]?|perl|ruby)\b(?![-.])/],   // `|| node-gyp rebuild` is neither
   ['eval', /\beval\b/],
 ];
+/** v6.16 static-checks-1.7: the bound-module call forms. Per sink: the modules (with or without node:) and the calls each one names. */
+export const BOUND_CALLS = Object.freeze({
+  'http-request': Object.freeze([Object.freeze({ mod: 'https?|http2', fns: 'request|get' })]),
+  'net-connect': Object.freeze([Object.freeze({ mod: 'net', fns: 'connect|createConnection' }), Object.freeze({ mod: 'tls', fns: 'connect' }), Object.freeze({ mod: 'dgram', fns: 'createSocket' })]),
+});
+/** How far back from a require(M) / from M a binding is looked for (characters): an assignment, an import clause, a destructuring brace. */
+export const BOUND_LIMITS = Object.freeze({ assignLookback: 160, importLookback: 240, braceChars: 200 });
+const BID = String.raw`[A-Za-z_$][\w$]*`;
+const ASSIGN = new RegExp(String.raw`(?<![\w$.])(${BID})\s*=(?![=>])`, 'g');
+const DESTRUCTURE_TAIL = new RegExp(String.raw`\{([^{}]{0,${BOUND_LIMITS.braceChars}})\}\s*=\s*$`);
+const BARE_CALL = new RegExp(String.raw`(?<![\w$.])(${BID})\s*\(`, 'g');
+const FN_DECL_TAIL = /\bfunction\s*\*?\s*$/;
+const boundSpec = ({ mod, fns }) => {
+  const M = String.raw`['"\x60](?:node:)?(?:${mod})['"\x60]`;
+  return { mod: new RegExp(M), direct: new RegExp(String.raw`\brequire\s*\(\s*${M}\s*\)\s*\.\s*(?:${fns})\s*\(`),
+    req: new RegExp(String.raw`\brequire\s*\(\s*${M}\s*\)`, 'g'), from: new RegExp(String.raw`\bfrom\s*${M}`, 'g'),
+    member: new RegExp(String.raw`(?<![\w$.])(${BID})\s*\.\s*(?:${fns})\s*\(`, 'g'), fn: new RegExp(String.raw`^(?:${fns})$`) };
+};
+/** The statement text before index i, back to ; { } or a line break, at most n characters. */
+const stmtBefore = (s, i, n) => { let k = i - 1; const lo = Math.max(0, i - n); while (k >= lo && !';{}\n'.includes(s[k])) k -= 1; return s.slice(k + 1, i); };
+/** The local names a destructuring list binds to the named calls: `f`, `f: local` (require) or `f as local` (import). */
+const localsOf = (list, form, fn) => list.split(',').map((t) => t.trim()).flatMap((t) => {
+  const m = form === 'import' ? new RegExp(String.raw`^(${BID})(?:\s+as\s+(${BID}))?$`).exec(t) : new RegExp(String.raw`^(${BID})\s*(?::\s*(${BID}))?\s*(?:=[\s\S]*)?$`).exec(t);
+  return m && fn.test(m[1]) ? [m[2] ?? m[1]] : [];
+});
+/** v6.16 static-checks-1.7, pure and linear: does s call one of the named functions on a name bound to the module (BOUND_CALLS)? */
+export function boundModuleCall(s, calls) {
+  if (typeof s !== 'string') return false;
+  for (const sp of calls.map(boundSpec)) {
+    if (!sp.mod.test(s)) continue;
+    if (sp.direct.test(s)) return true;
+    const bound = new Set(); const locals = new Set();
+    for (const m of s.matchAll(sp.req)) {
+      const a = [...stmtBefore(s, m.index, BOUND_LIMITS.assignLookback).matchAll(ASSIGN)].pop(); if (a) bound.add(a[1]);
+      const d = DESTRUCTURE_TAIL.exec(s.slice(Math.max(0, m.index - BOUND_LIMITS.braceChars - 40), m.index)); if (d) for (const n of localsOf(d[1], 'require', sp.fn)) locals.add(n);
+    }
+    for (const m of s.matchAll(sp.from)) {
+      const seg = s.slice(Math.max(0, m.index - BOUND_LIMITS.importLookback), m.index); const k = seg.lastIndexOf('import');
+      if (k < 0 || /[\w$]/.test(seg[k - 1] ?? '') || seg.slice(k).includes(';')) continue;
+      const clause = seg.slice(k + 6);
+      const ns = new RegExp(String.raw`\*\s*as\s+(${BID})`).exec(clause); if (ns) bound.add(ns[1]);
+      const def = new RegExp(String.raw`^\s+(${BID})\s*(?:,|$)`).exec(clause); if (def) bound.add(def[1]);
+      const br = /\{([^{}]*)\}/.exec(clause); if (br) for (const n of localsOf(br[1], 'import', sp.fn)) locals.add(n);
+    }
+    if (bound.size) for (const m of s.matchAll(sp.member)) if (bound.has(m[1])) return true;
+    if (locals.size) for (const m of s.matchAll(BARE_CALL)) if (locals.has(m[1]) && !FN_DECL_TAIL.test(s.slice(Math.max(0, m.index - 16), m.index))) return true;
+  }
+  return false;
+}
+/** A sink that reads its 1.6 literal-receiver regex first, then the bound forms (names() and IO_TOKENS call test only). */
+const sinkWithBound = (re, calls) => Object.freeze({ test: (s) => re.test(s) || boundModuleCall(s, calls), literal: re, bound: calls, toString: () => `${re} | bound` });
 export const NET_SINKS = [
-  ['http-request', /\b(?:https?|http2)\.(?:request|get)\s*\(/], ['fetch', /\bfetch\s*\(/],
-  ['net-connect', /\bnet\.(?:connect|createConnection)\s*\(|\btls\.connect\s*\(|\bdgram\.createSocket\s*\(/],
+  ['http-request', sinkWithBound(/\b(?:https?|http2)\.(?:request|get)\s*\(/, BOUND_CALLS['http-request'])], ['fetch', /\bfetch\s*\(/],   // 1.7: + bound forms
+  ['net-connect', sinkWithBound(/\bnet\.(?:connect|createConnection)\s*\(|\btls\.connect\s*\(|\bdgram\.createSocket\s*\(/, BOUND_CALLS['net-connect'])],   // 1.7: + bound forms
   ['websocket', /\bnew\s+WebSocket\s*\(/], ['xhr', /\bnew\s+XMLHttpRequest\s*\(/], ['axios', /\baxios(?:\.\w+)?\s*\(/],
   ['url-literal', /https?:\/\/[^\s'"`]{3,}/],
 ];
