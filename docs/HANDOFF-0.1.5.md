@@ -300,3 +300,26 @@ Coverage after R13: every rule of the consult is encoded as a fact: 6, 7, 8a, 8d
 - Full suite at `c0b52d3`'s tree on a non-root host, Node.js 22.23.4: 1,620 tests, 1,579 pass, 0 fail, 41 skipped; protected paths
   unchanged. (A first run failed one guard test, the single upstream call site; fixed before the commit.)
 - Next, as before: the R6 re-issue against this commit (v3.2 session), then the release sequence; main is a squash.
+
+## Final code commit: 05b808a (2026-10-26; undici 6.29.1, the operator's choice)
+
+- c0b52d3 is retired for this; nothing was re-issued against it. Commit `05b808a59e0e3ef884ac9ef30d6c327271d7dd6c` changes only
+  `package.json` and `package-lock.json`: undici 6.28.1 to 6.29.1 (patch release; fixes the advisories published 2026-10-23, one
+  of which reaches the proxy: a malicious HTTPS upstream crashing it through TLS renegotiation). The lockfile's root `engines` now
+  matches package.json. `proxy/static-checks.js` untouched (df56a279).
+- Why now: CI run 40281617314 on cdf3482 failed 1 of 36 jobs (unit / macos-15 / node 24 / npm latest, test W7) on undici's
+  uncatchable `assert(!this.paused)` at socket end (undici issue 5360); the job passed on re-run. That crash is fixed only in
+  undici 8.4.1 and later (Node >= 22.19), so it stays a known issue for 0.1.5 (0.1.4 has it too) and goes to 0.1.6. Looking at it
+  showed the 6.28.1 pin is under the 2026-10-23 advisories.
+- Tarball (packed from git archive, Node.js 22.23.4, npm 10.9.9): sha256
+  `51f01b10525eb372b1d9888f8d18cea47ef12768b6bc8ed946c0be307caba459`, 743,155 bytes, 134 files; shasum
+  `036ce855fb8876f253c04ed7147a72b425007e83`; integrity
+  `sha512-r41O8F72qZFAj2ejob96BtPb6vSHWZ0WjdJ7o5DoMrQCx8+y6hBWKWYM8eO9dLxw8qJLhFN9N5Y3QMDPyGcEmg==`. Against c0b52d3's tarball the
+  only difference is the undici line in package.json. Clean install: `--version` 0.1.5, undici 6.29.1, native SQLite loads.
+- The release commit must pack to this same sha256: docs/ is not in the tarball, so removing this file in the squash does not move
+  it; README.md and package.json stay as they are at 05b808a. After tagging, re-pack from `v0.1.5` and compare; a difference
+  stops the release.
+- Full suite at `05b808a`'s tree on a non-root host, Node.js 22.23.4: 1,620 tests, 1,579 pass, 0 fail, 41 skipped; protected paths
+  unchanged.
+- Next: the R6 re-issue against this commit and this sha256 (v3.2 session, on the operator's word), CI on the head, then the
+  release sequence; main is a squash.
