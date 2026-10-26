@@ -41,7 +41,7 @@
   "dependencies": {
     "better-sqlite3": "12.11.1",
     "semver": "7.7.4",
-    "undici": "6.28.1"
+    "undici": "6.29.1"
   },
   "devDependencies": {
     "ajv": "8.17.1"
