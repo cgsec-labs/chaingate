@@ -323,3 +323,36 @@ Coverage after R13: every rule of the consult is encoded as a fact: 6, 7, 8a, 8d
   unchanged.
 - Next: the R6 re-issue against this commit and this sha256 (v3.2 session, on the operator's word), CI on the head, then the
   release sequence; main is a squash.
+
+## Final code commit: 3f94008 (2026-10-26; static-checks-1.7, the operator: into 0.1.5, the release held for it)
+
+- 05b808a is retired for this (the v3.2 re-issue against it was stopped and discarded). Tests `c7d8cc3` (failing first: 8 of 10;
+  the superset and cost tests pass on 1.6 too), code `3f94008dce6ea1259c0b68d24a02daed2cb7740b`. 66053bb (G2c-9 test fix) is in between.
+- What: recon v6.16's static-checks-1.7 mirrored (chaingate-ops `g10-c2-recon-v6.16` @793a595; manifest RECON-v6.16.SHA256SUMS
+  9755f734b48b83253cf50c458a00211230e3d6a610a3ea4b3cd465cc23586607; sealed static-checks.mjs 0677f0f4..., its lines 94-144 copied
+  byte for byte into `proxy/static-checks.js`, and the two NET_SINKS entries identical apart from the trailing comment). The
+  'http-request' and 'net-connect' sinks also read a call on a name bound to the module (assignment, the beacon.cjs ternary,
+  require(M).f( direct, import, destructured { request }/{ get }); the 1.6 regexes stay and are tried first (`literal`); no new sink
+  name; url-literal still excluded; every other constant, check, role, notice and limit unchanged. STATIC_CHECKS_VERSION
+  'static-checks-1.7'.
+- `proxy/static-checks.js` sha256 `c60ac077bf7add60c3dad6a2fbd97008135a266b3d0123c8d6dce7b0c2b0a57d` (was df56a279): send to recon
+  for its parity record.
+- Parity beyond the vectors: recon's sealed module and this file over 1,255 real JS files (this tree's node_modules and test/, npm's
+  bundled modules): every NET_SINKS entry and boundModuleCall agree on every file (0 differences). On that benign set the bound forms
+  add no hit the 1.6 literals did not already have (http-request 37 files, net-connect 6, bound-only 0).
+- Effect on rows: S6 and S7 are named gates, so a hook target that calls the network through a bound name and reads host identity
+  is now an S6 named WARN (recon step 0: S6 8 -> 27 of 3,617 hooked stored captures, every add in the beacon.cjs family, 0
+  others; S1 +1). No seed-v3 code, row or policy changes. Facts stored by 1.6 are a different version for S7's predecessor (not
+  checked once), as for every bump.
+- Tests updated deliberately: the version string pins (s2, s5-check-tarball, s8, s9, s6-s7 U7) and the 1.6/parity helpers read
+  `re.literal ?? re` for the two widened sinks; recon's 1.6 facts vectors compare with the version string moved.
+- Tarball (git archive, Node.js 22.23.4, npm 10.9.9): sha256 `d97036f41e4c68843cc64e76de24c8a010280ef60da999ca5a9b08e56796c5d8`,
+  745,087 bytes, 134 files (same list as 05b808a; only proxy/static-checks.js differs); shasum
+  `50fa6a1468d430c5d9f1bbda8585f3bf0fcb1814`; integrity
+  `sha512-qjcfe8WFoSEM3HwDICZ9OBiMB9KEJRl7hMCC7imDNXWYotgm1Oym502Frt1R+WUvcDzlBpzC/kSrgtXPbJzw6Q==`. Clean install: `--version`
+  0.1.5, static-checks-1.7 loads and reads the ternary form.
+- The release commit must pack to this same sha256 (docs/ is not shipped; README.md and package.json stay as at 3f94008).
+- Full suite at `3f94008`'s tree on a non-root host, Node.js 22.23.4: 1,630 tests, 1,589 pass, 0 fail, 41 skipped; protected paths
+  unchanged.
+- Next: CI on the head; then the R6 re-issue against this commit and this sha256 (v3.2 session, on the operator's word); then the
+  release sequence; main is a squash.
