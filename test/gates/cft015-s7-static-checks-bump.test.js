@@ -33,7 +33,7 @@ test('A1 identity: never static-checks-1.1; the five 1.0 gate names unchanged, S
   const S = await SC();
   assert.notEqual(S.STATIC_CHECKS_VERSION, 'static-checks-1.1', '1.1 is never shipped (operator 2026-10-15)');
   assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S5-oversized-hook-target',
-    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);   // S6, S7: rulings R2, R3 2026-10-21 (cft015-s6-s7)
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);   // S6, S7: rulings R2, R3 2026-10-21 (cft015-s6-s7); S8, S9: 1.8 (declared)
   assert.equal(S.LIMITS.s2MinNumericHex, 1000); assert.equal(S.LIMITS.maxKeepBytes, 1 << 20); assert.equal(S.LIMITS.s1MaxBytes, 8192);
   assert.equal(S.NOTHING_READ, REASON);
   assert.deepEqual(S.NET_TOOLS.map(([n]) => n), ['curl', 'wget', 'nc', 'nslookup', 'dig', 'host', 'ping']);

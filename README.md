@@ -125,7 +125,7 @@ warning:
     its own tag (a `-canary` is compared with the last canary). The first version of a new tag has none, and the rule
     says it is not evaluable. A holding package npm publishes in place of removed malware is never used as the version
     before;
-  - four of the tarball checks (below).
+  - six of the tarball checks (below).
 - **Contributing rows are detail.** These are publisher change, new dependency, provenance dropped, release age, scope
   boundary, size jump of 2x or more, npm-version downgrade, the seed's looser rule, the other tarball checks (below),
   and two checks added in 0.1.5:
@@ -178,7 +178,22 @@ targets; at most 6 files of 1 MiB each -- and checks them. It warns when:
   the row is "not checked", never a clean result. To compare, the proxy keeps a summary of what `main` and the `bin`
   files can do (never their content) for the newest 3 versions of each package it serves. Because it compares with
   what your proxy served, it depends on what this machine has installed. npm prints "its entry file gained a capability
-  its previous version did not have".
+  its previous version did not have";
+- an install hook loads a prebuilt native module shipped in the tarball (a `.node` file with a Linux, Windows or macOS
+  binary header, named in the hook command, run through `node-gyp-build`, or required by a hook target), the tarball
+  ships no native source (no C, C++ or other source file, and no `binding.gyp` that lists a source), and another file is
+  text hidden under a one-byte XOR (not readable text, but one single-byte key turns it into text). A module shipped
+  without its source is recorded on the row on its own, never a warning. npm prints "an install script loads a
+  prebuilt native module shipped without its source, next to an encoded file";
+- a `binding.gyp` or `.gypi` file runs a script from the package (with node, bun, deno, sh, bash, python, perl or ruby)
+  in a command expansion (`<!(...)`) and discards the script's output. npm builds a `binding.gyp` at the package root
+  while installing, even with no install script. npm prints "its native build file runs a package script during
+  install and hides the output".
+
+These last two read every file in the archive (the first 2 MiB of each; the XOR test reads the first 1 MiB), not only
+the kept files. They do not read a file with a zero byte in its first 8,000 bytes for hidden text, a key longer than one
+byte, or a module loaded some other way (by `main`, a `bin` file or a dependency). An archive of more than 20,000 files
+is "not checked" for them.
 
 The other tarball checks are contributing notes, shown in `chaingate why` and `chaingate report --json`, never a
 warning on their own:
@@ -199,7 +214,7 @@ outcome rides every later record of that version.
 
 **Holding a suspect download until it is checked (optional).** With the `static_withhold` setting on
 (`"static_withhold": true` in ChainGate's `config.json`), the proxy holds a suspect download in memory, up to 8 MiB,
-while the tarball checks read it. If one of the four tarball warnings fires, npm receives HTTP 403
+while the tarball checks read it. If one of the six tarball warnings fires, npm receives HTTP 403
 `withheld_by_static_check`, naming the check and `chaingate why <pkg>@<ver>`, and the package is not installed. The
 recorded decision stays WARN: withholding is a choice about serving, not a different verdict. A download over 8 MiB is
 served and recorded as it is without the switch. The switch is off by default.

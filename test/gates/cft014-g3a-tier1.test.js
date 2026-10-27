@@ -196,7 +196,7 @@ test('G3a-9 (D-T6) the 1.2 role tables', () => {
     'release-age', 'scope-boundary', 'size-jump', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry',
     'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);   // 0.1.5 group 1: T1.5 contributing; 0.1.5 static checks: S1–S4 contributing, S0+S5 named 2026-10-15; T1.6 entry-path-change contributing; S6+S7 contributing (R2, R3 2026-10-21), then named (R7, R9 2026-10-22) (deliberate)
   assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target',
-    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);   // S6, S7 named 2026-10-22 (R7, R9; deliberate)   // 3b (D-N6); 0.1.5 T1.4; 0.1.5 S0+S5 named
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);   // S8, S9 named 2026-10-27 (static-checks-1.8; deliberate); S6, S7 named 2026-10-22 (R7, R9; deliberate)   // 3b (D-N6); 0.1.5 T1.4; 0.1.5 S0+S5 named
 });
 
 test('G3a-11 (D-T7) the Tier 1 gates run on a package\'s first sight: no local-history depth requirement', async () => {

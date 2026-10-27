@@ -46,13 +46,13 @@ test('C1 the hand-off is recon\'s file byte for byte (sha256), plain ASCII; the 
   assert.equal(createHash('sha256').update(RAW).digest('hex'), HANDOFF_SHA256);
   assert.ok(RAW.every((b) => b < 0x80), 'plain ASCII');
   assert.equal(K.static_checks_version, 'static-checks-1.6');
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.7', 'updated deliberately: 1.7 changes the two bound-form sinks only (cft015-static-checks-1.7)');
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.8', 'updated deliberately: 1.7 changes the two bound-form sinks only, 1.8 appends S8 and S9 (cft015-static-checks-1.7, -1.8)');
   assert.equal(S.FACTS_NOTE, F.note);
 });
 
 test('C2 every 1.5 section is unchanged: the eight checks, S0 1.4, the S6 and S7 vocabularies, the limits', async () => {
   const S = await SC();
-  assert.deepEqual(S.CHECKS.map(({ id, gate, cls, roles, notice }) => ({ id, gate, cls, roles, notice })),
+  assert.deepEqual(S.CHECKS.slice(0, 8).map(({ id, gate, cls, roles, notice }) => ({ id, gate, cls, roles, notice })),   // S0-S7; 1.8 appends S8, S9 (declared)
     K.checks.map(({ id, gate, cls, roles, notice }) => ({ id, gate, cls, roles, notice })));
   assert.deepEqual([...S.SHELLS], K.s0.shells);
   assert.deepEqual({ regex: S.SHELL_C.source, flags: S.SHELL_C.flags }, { regex: K.s0.shell_c.regex, flags: K.s0.shell_c.flags });
@@ -115,7 +115,10 @@ test('V2 rule 7: the streamed base64 share on recon\'s 4 vectors, identical at c
 test('V3 memberFacts on recon\'s 17 member vectors (8a, 8d, 8h, rule 6, binary, beyond the window)', async () => {
   const S = await SC();
   assert.equal(F.vectors.member_facts.length, 17);
-  for (const v of F.vectors.member_facts) assert.deepEqual(S.memberFacts({ path: v.path, size: v.size, data: dataOf(v) }), v.expected, v.path);
+  // 1.8 adds six member facts for S8 and S9 (cft015-static-checks-1.8, declared): recon's 1.6 record once they are set aside
+  const NEW18 = ['native', 'node_file', 'native_source', 'gyp_sources', 'xor_text', 'gyp_build'];
+  const v16 = (m) => Object.fromEntries(Object.entries(m).filter(([k]) => !NEW18.includes(k)));
+  for (const v of F.vectors.member_facts) assert.deepEqual(v16(S.memberFacts({ path: v.path, size: v.size, data: dataOf(v) })), v.expected, v.path);
 });
 
 test('V4 staticFacts on recon\'s 5 package vectors (no I/O surface, a binary member, an install hook, an archive not read in full, agent writes and the 8a split)', async () => {
@@ -128,7 +131,7 @@ test('V4 staticFacts on recon\'s 5 package vectors (no I/O surface, a binary mem
     const got = S.staticFacts({ members, hooks: v.hooks, keepList: { roles: v.keep_list_roles }, archiveComplete: v.archive_complete });
     assert.deepEqual(got, { ...v.expected, version: S.STATIC_CHECKS_VERSION }, v.name);   // recon's 1.6 vectors; only the version string moved in 1.7
   }
-  assert.deepEqual(S.staticFacts({}), { version: 'static-checks-1.7', note: F.note, status: 'NOT_CHECKED', reason: 'no member facts supplied' });
+  assert.deepEqual(S.staticFacts({}), { version: 'static-checks-1.8', note: F.note, status: 'NOT_CHECKED', reason: 'no member facts supplied' });
 });
 
 test('V5 8d agentConfigWrite on recon\'s 5 vectors (the redirect only in a hook command or a shell script)', async () => {
@@ -196,7 +199,7 @@ test('F1 staticFactsOf: recon\'s block over the member facts with the hook comma
   const { S, walk, members, man, pj } = await armedWalk({ 'install.js': `${WASM}${FILL}`, 'index.js': 'require("fs").writeFileSync(require("os").homedir() + "/.claude/x", "1");\n',
     'test/t.js': 'eval(x);\n' }, MAN({ postinstall: 'node install.js' }));
   const x = S.staticFactsOf({ manifest: man, packageJson: pj, walk, members });
-  assert.equal(x.facts.version, 'static-checks-1.7'); assert.equal(x.facts.status, 'CHECKED'); assert.equal(x.facts.note, F.note);
+  assert.equal(x.facts.version, 'static-checks-1.8'); assert.equal(x.facts.status, 'CHECKED'); assert.equal(x.facts.note, F.note);
   assert.deepEqual(Object.keys(x.facts), ['version', 'note', 'status', 'encoded_runs', 'excluded_paths', 'agent_config_writes', 'io_surface'], 'recon\'s block shape');
   assert.equal(x.facts.encoded_runs.by_magic.wasm, 1);
   assert.deepEqual(x.facts.excluded_paths.p2, { rest: 0, excluded: 1, rest_files: 0, excluded_files: 1 });
@@ -211,7 +214,7 @@ test('F1 staticFactsOf: recon\'s block over the member facts with the hook comma
 test('F2 without the streamed body the S5 fields are recon\'s nulls and note; without member facts the block is NOT_CHECKED "no member facts supplied"; a refused walk likewise', async () => {
   const { S, walk, man, pj } = await armedWalk({ 'install.js': FILL, 'index.js': 'module.exports = 1;\n' }, MAN({ postinstall: 'node install.js' }), { members: false, share: false });
   const x = S.staticFactsOf({ manifest: man, packageJson: pj, walk, members: undefined });
-  assert.deepEqual(x.facts, { version: 'static-checks-1.7', note: F.note, status: 'NOT_CHECKED', reason: 'no member facts supplied' });
+  assert.deepEqual(x.facts, { version: 'static-checks-1.8', note: F.note, status: 'NOT_CHECKED', reason: 'no member facts supplied' });
   assert.deepEqual(x.s5, [{ path: 'install.js', roles: ['hook'], size: Buffer.byteLength(FILL), fires: true, base64_share: null, base64_magic: null, base64_note: 'body not streamed: base64 share not checked' }]);
   const refused = S.staticFactsOf({ manifest: man, packageJson: null, walk: { ok: false, reason: 'tar: truncated archive' }, members: [] });
   assert.equal(refused.facts.status, 'NOT_CHECKED'); assert.equal(refused.facts.reason, 'no member facts supplied'); assert.deepEqual(refused.s5, []);
@@ -319,7 +322,7 @@ test('E1 an armed download stores its static-checks-1.6 facts once (rule 6 wasm 
     await get(`${base}/z`); const t = await get(`${base}/z/-/z-1.1.0.tgz`);
     assert.equal(t.status, 200); assert.ok(t.body.equals(TARBALLS['/z/-/z-1.1.0.tgz']), 'served unchanged');
     const x = await eventually(() => proxy.witnessDb.staticFactsFor('z', '1.1.0'));
-    assert.equal(x?.facts?.version, 'static-checks-1.7', JSON.stringify(x)); assert.equal(x.facts.status, 'CHECKED');
+    assert.equal(x?.facts?.version, 'static-checks-1.8', JSON.stringify(x)); assert.equal(x.facts.status, 'CHECKED');
     assert.equal(x.facts.encoded_runs.by_magic.wasm, 1);
     assert.deepEqual(x.facts.agent_config_writes.listed, [{ source: 'file', path: 'scripts/a.sh', roles: ['module'], dirs: ['.cursor'], writes: ['shell-copy', 'shell-mkdir'] }]);
     assert.equal(x.facts.io_surface.no_io_surface, false);
@@ -340,7 +343,7 @@ test('E2 `why` prints the static-checks-1.6 facts under the recorded facts, mark
     await get(`${base}/z`); await get(`${base}/z/-/z-1.1.0.tgz`);
     await eventually(() => proxy.witnessDb.staticFactsFor('z', '1.1.0')); await settle();
     const w = await runCli(['why', 'z@1.1.0'], { CHAINGATE_WITNESS_DB: dbPath, HOME: dir });
-    assert.match(w.out, /Static check facts \(static-checks-1\.7; recorded only: no verdict, tier or notice depends on it/);
+    assert.match(w.out, /Static check facts \(static-checks-1\.8; recorded only: no verdict, tier or notice depends on it/);
     assert.match(w.out, /encoded runs 1 \(wasm 1\)/);
     assert.match(w.out, /S5 install\.js \(\d+ B\): base64 share 0\.\d+, magic wasm/);
     assert.match(w.out, /agent config writes 1: scripts\/a\.sh \.cursor \(shell-copy, shell-mkdir\)/);
@@ -349,7 +352,7 @@ test('E2 `why` prints the static-checks-1.6 facts under the recorded facts, mark
     assert.ok(block.slice(0, end).join('\n').split('').every((ch) => ch.charCodeAt(0) < 0x80), 'the facts block is plain ASCII');
     const j = await runCli(['why', 'z@1.1.0', '--json'], { CHAINGATE_WITNESS_DB: dbPath, HOME: dir });
     const parsed = JSON.parse(j.out.slice(j.out.indexOf('{')));
-    assert.equal(parsed.static_facts?.facts?.version, 'static-checks-1.7');
+    assert.equal(parsed.static_facts?.facts?.version, 'static-checks-1.8');
   });
 });
 
@@ -359,10 +362,10 @@ test('E3 `report` names the armed version\'s static facts in the record-only blo
     await eventually(() => proxy.witnessDb.staticFactsFor('z', '1.1.0')); await settle();
     const j = JSON.parse((await get(`${base}/_chaingate/report`)).body.toString('utf8'));
     const ev = j.installs.flatMap((i) => i.events).find((e) => e.kind === 'facts' && e.package === 'z' && e.version === '1.1.0');
-    assert.equal(ev?.static_facts?.facts?.version, 'static-checks-1.7', JSON.stringify(ev));
+    assert.equal(ev?.static_facts?.facts?.version, 'static-checks-1.8', JSON.stringify(ev));
     const { renderReport } = await import('../../cli/report-render.js');
     const text = renderReport(j, { source: 'proxy' }).text;
-    assert.match(text, /z@1\.1\.0: .*static-checks-1\.7 facts: encoded runs 1 \(wasm 1\)/);
+    assert.match(text, /z@1\.1\.0: .*static-checks-1\.8 facts: encoded runs 1 \(wasm 1\)/);
     const bare = { ...j, installs: j.installs.map((i) => ({ ...i, events: i.events.filter((e) => e.kind !== 'facts') })) };
     assert.equal(renderReport(j, { source: 'proxy' }).exit, renderReport(bare, { source: 'proxy' }).exit);
   });

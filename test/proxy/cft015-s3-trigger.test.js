@@ -94,7 +94,7 @@ test('U1 armedBy: a named WARN row, the identity-break NOTE, or the seed coverag
 
 test('U2 roles: S1-S4 are contributing (S0 and S5 named 2026-10-15, cft015-s9; S6 and S7 named 2026-10-22, cft015-named-s6-s7; declared); a contributing static WARN is recorded as NOTE; MC stays named', async () => {
   const R = await RC(); const S = await SC();
-  const NAMED = ['static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target', 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain'];
+  const NAMED = ['static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target', 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build'];   // S8, S9: 1.8 (declared)
   for (const g of S.STATIC_GATES) assert.equal(R.CONTRIBUTING_GATES.has(g), !NAMED.includes(g), g);
   assert.equal(R.withRole({ gate: 'static:S1-loader-in-hook-target', result: 'WARN', detail: 'd' }).result, 'NOTE');
   assert.equal(R.withRole({ gate: 'static:S2-obfuscated-entry', result: 'SKIP', detail: 'd' }).result, 'SKIP');

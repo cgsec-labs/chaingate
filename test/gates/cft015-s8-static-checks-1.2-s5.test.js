@@ -27,8 +27,8 @@ const OVER = { path: 'install.js', reason: 'over the kept-file cap (1048576 byte
 
 test('A1 identity: static-checks-1.2 (now 1.3, declared: wording-only, cft015-s9); S5 sixth with recon 1.2\'s gate, roles and notice (S6, S7 follow: R2, R3, cft015-s6-s7)', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.7');   // declared (1.7 bound-module sinks, cft015-static-checks-1.7): recon's static-checks-1.5 mirrored (R5, R9; cft015-static-checks-parity), then 1.6 facts only (R11; cft015-static-checks-1.6)
-  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.8');   // declared (1.7 bound-module sinks, 1.8 S8 and S9, cft015-static-checks-1.7, -1.8): recon's static-checks-1.5 mirrored (R5, R9; cft015-static-checks-parity), then 1.6 facts only (R11; cft015-static-checks-1.6)
+  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9']);   // S8, S9: 1.8 (declared)
   assert.deepEqual(S.CHECKS[5], { id: 'S5', gate: S5G, cls: 'oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' });   // cls: recon's class name, carried by 1.4 (declared)
   assert.deepEqual(S.STATIC_GATES, S.CHECKS.map((c) => c.gate));
 });
@@ -36,7 +36,7 @@ test('A1 identity: static-checks-1.2 (now 1.3, declared: wording-only, cft015-s9
 test('S5-1 a hook target over the kept-file cap is an S5 WARN (size from the header, body not read); S1 states it not checked and never fires on size', async () => {
   const S = await SC();
   const rows = S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: walkOf([MAIN], [OVER]) });
-  assert.equal(rows.length, 8);
+  assert.equal(rows.length, 10);   // S8, S9: 1.8 (declared)
   const s5 = row(rows, 'S5'); assert.equal(s5.result, 'WARN');
   assert.equal(s5.detail, 'hook target install.js (2000000 B) is over the 1 MiB keep cap, body not read');
   const s1 = row(rows, 'S1'); assert.equal(s1.result, 'SKIP'); assert.equal(s1.detail, 'not checked: install.js over the kept-file cap (1048576 bytes)');
@@ -114,11 +114,11 @@ test('R1 roles (declared: S5 NAMED by the operator ruling of 2026-10-15, cft015-
   assert.equal(N.labelFor(S5G), 'an install script runs a file too large to read');
 });
 
-test('R2 every row-set shape is every check (eight since R2, R3): failed walk, unarmed, no manifest; staticSettled needs all of them', async () => {
+test('R2 every row-set shape is every check (eight since R2, R3; ten since 1.8): failed walk, unarmed, no manifest; staticSettled needs all of them', async () => {
   const S = await SC();
   const failed = S.staticRows({ manifest: HOOKED, packageJson: null, walk: { ok: false, reason: 'gunzip: unexpected end of file' } });
-  assert.deepEqual(failed.map((r) => r.gate), S.STATIC_GATES); assert.equal(failed.length, 8);
-  assert.equal(S.unarmedRows('x').length, 8); assert.equal(S.noManifestRows('x').length, 8);
+  assert.deepEqual(failed.map((r) => r.gate), S.STATIC_GATES); assert.equal(failed.length, 10);
+  assert.equal(S.unarmedRows('x').length, 10); assert.equal(S.noManifestRows('x').length, 10);
   const rows = S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: walkOf([MAIN, file('install.js', 'x')]) });
   assert.equal(S.staticSettled({ gates_fired: rows }), true);
   assert.equal(S.staticSettled({ gates_fired: rows.slice(0, 5) }), false, 'a record written before S5 is retried once');

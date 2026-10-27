@@ -158,7 +158,7 @@ test('W4 switch on, armed, all checks contributing: the same status, bytes and s
   assert.equal(off.status, 200); assert.equal(on.status, 200);
   assert.ok(on.body.equals(TARBALLS['/q/-/q-1.1.0.tgz']), 'the held bytes are served unchanged');
   assert.ok(off.body.equals(on.body));
-  assert.equal(on.rows.length, 8);   // S0-S7 (S6, S7: rulings R2, R3 2026-10-21)
+  assert.equal(on.rows.length, 10);   // S0-S9 (S6, S7: rulings R2, R3 2026-10-21; S8, S9: 1.8)
   assert.deepEqual(on.rows, off.rows, 'the same rows are recorded');
   assert.equal(on.rows.find((g) => g.gate === 'static:S1-loader-in-hook-target').result, 'NOTE', 'S1 fired and is contributing');
 });
@@ -200,7 +200,7 @@ for (const chunked of [false, true]) {
       await get(`${base}/big`); const r = await get(`${base}/big/-/big-1.1.0.tgz`); await settle();
       assert.equal(r.status, 200); assert.ok(r.body.equals(big));
       const rows = await staticRowsEventually(proxy, 'big', '1.1.0');
-      assert.equal(rows.length, 8);   // S0-S7 (S6, S7: rulings R2, R3 2026-10-21)
+      assert.equal(rows.length, 10);   // S0-S9 (S6, S7: rulings R2, R3 2026-10-21; S8, S9: 1.8)
       assert.equal(rows.find((g) => g.gate === 'static:S1-loader-in-hook-target').result, 'NOTE');
     });
   });
@@ -220,7 +220,7 @@ test('W8 switch on: client aborts while the download is held free the armed slot
     const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
     assert.equal(r.status, 200);
     const rows = await staticRowsEventually(proxy, 'q', '1.1.0');
-    assert.equal(rows.length, 8);   // S0-S7 (S6, S7: rulings R2, R3 2026-10-21)
+    assert.equal(rows.length, 10);   // S0-S9 (S6, S7: rulings R2, R3 2026-10-21; S8, S9: 1.8)
     assert.ok(rows.every((g) => !/ceiling/.test(g.detail)), 'the later download was armed, not refused a slot');
   });
 });

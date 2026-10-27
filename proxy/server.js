@@ -1272,7 +1272,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           let lateRows = null;                                  // MC's row and the static rows (1.2 roles), computed once
           const rowsOfWalk = () => lateRows ?? (lateRows = [mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion)),
             ...(staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed,
-              predecessor: predecessorFacts(canonicalName, state.tarballVersion) })
+              predecessor: predecessorFacts(canonicalName, state.tarballVersion),
+              // static-checks-1.8: S8 and S9 read the member facts the armed walk gathered
+              ...(memberTally ? (({ members, over }) => ({ members, membersOver: over }))(memberTally.result()) : {}) })
               : staticWhy === 'no-manifest' ? noManifestRows(armed)
                 : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
                   : unarmedRows('no named row, no identity-break, no entry-path-change, no coverage gap')).map(withRole)]);

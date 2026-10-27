@@ -64,11 +64,11 @@ const NOFACTS = { binary: false, net_sinks: [], exec_sinks: [], obf_idents: 0, d
 // ------------------------------------------------------------------ the check list and the roles
 test('S67-U1 eight static checks S0-S7; S6 and S7 are named since rulings R7, R9 2026-10-22 (their WARN stays WARN; were contributing); "not armed" covers all eight', async () => {
   const S = await SC();
-  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
+  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9']);   // S8, S9: 1.8 (declared)
   assert.ok(S.STATIC_GATES.includes(S6) && S.STATIC_GATES.includes(S7));
   assert.equal(withRole({ gate: S6, result: 'WARN', detail: 'x' }).result, 'WARN');
   assert.equal(withRole({ gate: S7, result: 'WARN', detail: 'x' }).result, 'WARN');
-  assert.equal(S.unarmedRows('why').length, 8);
+  assert.equal(S.unarmedRows('why').length, 10);
   const six = S.CHECKS.slice(0, 6).map((c) => ({ gate: c.gate, result: 'ALLOW', detail: 'x' }));
   assert.equal(S.staticSettled({ gates_fired: six }), false, 'a record from before S6 and S7 is retried when a later download is armed');
 });
@@ -206,7 +206,7 @@ test('S67-U7 S7 NOT_CHECKED: a refused predecessor archive, unreadable stored fa
   r = s7(pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)]), walkOf([{ path: 'index.js', buf: Buffer.from('a\0b') }]));
   assert.equal(r.result, 'SKIP'); assert.match(r.detail, /^not checked: current main index\.js was not read \(binary/);
   r = s7(pred('1.0.0', [readEntry('main', 'index.js', NOFACTS)], { static_checks_version: 'static-checks-0.9' }));
-  assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: predecessor 1.0.0: its facts were stored by static-checks-0.9, not static-checks-1.7; armed by x');
+  assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: predecessor 1.0.0: its facts were stored by static-checks-0.9, not static-checks-1.8; armed by x');
 });
 
 // ------------------------------------------------------------------ end to end: the predecessor is the last version this proxy served

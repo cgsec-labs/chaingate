@@ -30,6 +30,9 @@ const LABELS = Object.freeze({
   // the static-checks-1.5 CHECKS notice text, byte for byte
   'static:S6-network-beacon-in-hook-target': 'an install script sends details about this machine to the network',
   'static:S7-entry-capability-gain': 'its entry file gained a capability its previous version did not have',
+  // the static-checks-1.8 CHECKS notice text, byte for byte
+  'static:S8-prebuilt-addon-dropper-in-hook': 'an install script loads a prebuilt native module shipped without its source, next to an encoded file',
+  'static:S9-hidden-script-in-gyp-build': 'its native build file runs a package script during install and hides the output',
 });
 
 const printable = (s) => String(s).replace(/[^\x20-\x7e]/g, '');

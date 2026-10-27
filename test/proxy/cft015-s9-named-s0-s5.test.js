@@ -89,7 +89,7 @@ const settle = () => new Promise((r) => setTimeout(r, 250));
 // ------------------------------------------------------------------ (A) identity
 test('A1 identity: static-checks-1.6 (recon\'s tree mirrored, R5, R9; 1.6 facts only, R11); S0-S5 gates, roles and texts as 1.3; S6, S7 with recon\'s names', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.7');   // declared: 1.7 bound-module sinks (cft015-static-checks-1.7)
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.8');   // declared: 1.7 bound-module sinks, 1.8 S8 and S9 (cft015-static-checks-1.7, -1.8)
   assert.deepEqual(S.CHECKS.map(({ cls: _c, ...c }) => c), [
     { id: 'S0', gate: S0G, roles: null, notice: S0_TEXT },
     { id: 'S1', gate: 'static:S1-loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
@@ -100,6 +100,9 @@ test('A1 identity: static-checks-1.6 (recon\'s tree mirrored, R5, R9; 1.6 facts 
     // rulings R2 and R3 2026-10-21 (cft015-s6-s7), contributing first; recon's names (1.4, unchanged in 1.5); named R7, R9 2026-10-22
     { id: 'S6', gate: 'static:S6-network-beacon-in-hook-target', roles: ['hook'], notice: 'an install script sends details about this machine to the network' },
     { id: 'S7', gate: 'static:S7-entry-capability-gain', roles: ['main', 'bin'], notice: 'its entry file gained a capability its previous version did not have' },
+    // static-checks-1.8 (declared, cft015-static-checks-1.8): recon v6.17's names; they read member facts, not kept files
+    { id: 'S8', gate: 'static:S8-prebuilt-addon-dropper-in-hook', roles: null, notice: 'an install script loads a prebuilt native module shipped without its source, next to an encoded file' },
+    { id: 'S9', gate: 'static:S9-hidden-script-in-gyp-build', roles: null, notice: 'its native build file runs a package script during install and hides the output' },
   ]);
 });
 
@@ -108,9 +111,9 @@ test('R1 roles: S0 and S5 are named runner gates and out of the contributing lis
   const R = await RC(); const POL = (await POLM()).default; const S = await SC();
   // declared 2026-10-22 (rulings R7, R9; cft015-named-s6-s7): S6 and S7 are named after S0 and S5
   assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', S0G, S5G,
-    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);   // S8, S9: 1.8 (declared)
   for (const g of [S0G, S5G]) { assert.ok(!R.CONTRIBUTING_GATES.has(g), g); assert.equal(R.withRole({ gate: g, result: 'WARN', detail: 'd' }).result, 'WARN'); }
-  for (const g of S.STATIC_GATES.filter((x) => ![S0G, S5G, 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain'].includes(x))) {
+  for (const g of S.STATIC_GATES.filter((x) => ![S0G, S5G, 'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build'].includes(x))) {
     assert.ok(R.CONTRIBUTING_GATES.has(g), g); assert.ok(!POL.NAMED_RUNNER_GATES.includes(g), g);
     assert.equal(R.withRole({ gate: g, result: 'WARN', detail: 'd' }).result, 'NOTE');
   }

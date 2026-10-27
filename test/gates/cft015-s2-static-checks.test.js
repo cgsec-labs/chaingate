@@ -36,13 +36,15 @@ const PLAIN = { name: 'p', version: '1.0.0', main: 'index.js' };
 
 test('T1 identity: static-checks-1.6 (declared: S5 added, cft015-s8; S0 wording only, cft015-s9; recon 1.4, 1.5, then 1.6 facts only mirrored, R5, R9, R11), eight checks (S6, S7 by rulings R2, R3 2026-10-21, cft015-s6-s7) with the proxy gate names and the §5 notice texts, limits equal to the walker\'s caps', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.7');   // declared: 1.7 bound-module sinks (cft015-static-checks-1.7)
-  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.8');   // declared: 1.7 bound-module sinks, 1.8 S8 and S9 (cft015-static-checks-1.7, -1.8)
+  assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9']);   // S8, S9: 1.8 (declared)
   assert.deepEqual(S.CHECKS.map((c) => c.gate), ['static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S5-oversized-hook-target',
-    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);
   assert.deepEqual(S.CHECKS.map((c) => c.notice), ['an install script downloads code to run or sends data to an outside host', 'an install script runs a small loader that fetches and executes',
     'its entry file is obfuscated code', 'its code reads credentials and sends them to an outside host', 'its code rewrites wallet addresses in web traffic', 'an install script runs a file too large to read',
-    'an install script sends details about this machine to the network', 'its entry file gained a capability its previous version did not have']);
+    'an install script sends details about this machine to the network', 'its entry file gained a capability its previous version did not have',
+    // static-checks-1.8 (declared, cft015-static-checks-1.8)
+    'an install script loads a prebuilt native module shipped without its source, next to an encoded file', 'its native build file runs a package script during install and hides the output']);
   assert.deepEqual(S.STATIC_GATES, S.CHECKS.map((c) => c.gate));
   assert.equal(S.LIMITS.maxKeep, DEFAULTS.maxKeep); assert.equal(S.LIMITS.maxKeepBytes, DEFAULTS.maxKeepBytes);
   assert.equal(S.LIMITS.s1MaxBytes, 8192); assert.equal(S.LIMITS.s2MinIdents, 20); assert.equal(S.LIMITS.s2MinCharCodes, 50); assert.equal(S.LIMITS.s2HexDensity, 0.15); assert.equal(S.LIMITS.s4MinAddressFamilies, 2);
@@ -140,7 +142,7 @@ test('T7 S4 wallet-swap-hook: an override of XMLHttpRequest.prototype.send / win
 test('T8 conventions: a failed or unarmed walk is all "not checked" rows; binary, over-cap and platform statements; a hostile path never reaches a detail; details are bounded', async () => {
   const S = await SC();
   const failed = S.staticRows({ manifest: HOOKED, packageJson: null, walk: { ok: false, reason: 'gunzip: unexpected end of file' } });
-  assert.equal(failed.length, 8); for (const r of failed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: gunzip: unexpected end of file'); }
+  assert.equal(failed.length, 10); for (const r of failed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: gunzip: unexpected end of file'); }
   const unarmed = S.staticRows({ manifest: HOOKED, packageJson: HOOKED, walk: { ok: true, packageJson: null, views: [], approx: [] } });
   for (const r of unarmed) { assert.equal(r.result, 'SKIP'); assert.equal(r.detail, 'not checked: the tarball was not examined (keep list not armed)'); }
   assert.deepEqual(failed.map((r) => r.gate), S.STATIC_GATES);

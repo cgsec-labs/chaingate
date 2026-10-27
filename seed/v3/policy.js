@@ -81,7 +81,9 @@ const CONTRIBUTING_ROWS = Object.freeze(['seed-v3:dac-trajectory:any']);
 const NAMED_RUNNER_GATES = Object.freeze(['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance',
   'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target',
   // static-checks-1.4 re-measure: S6 named as an INDICATOR; S7 named on the static-checks-1.5 condition
-  'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain']);
+  'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain',
+  // static-checks-1.8: the prebuilt native module dropper and the hidden native build script, named
+  'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);
 // Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member).
 const POLICY_ROW_GATES = Object.freeze(['override', 'seed-v3:known-malicious-pin', 'seed-v3:input', 'seed-v3:channel-a',
   'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage']);

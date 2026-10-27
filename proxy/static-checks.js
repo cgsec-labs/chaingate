@@ -55,6 +55,19 @@
 // excluded; every other constant, check, gate, role, notice and limit is unchanged. Each scan is linear (BOUND_LIMITS). Not read: a
 // binding split across lines, a module held in an object property or passed to a function, a dynamic import(), and a name bound in
 // one file and called in another.
+// static-checks-1.8 (operator 2026-10-27; 0.1.5 held for it) is recon's v6.17 mirrored: two named checks appended after S7, S0-S7,
+// every sink and every 1.6 fact unchanged.
+//   S8 prebuilt-addon-dropper-in-hook  an install hook loads a shipped native module (a .node member with an ELF / PE / Mach-O head),
+//                                      the tarball has no native source (no C/C++/... member, no binding.gyp naming a source), and a
+//                                      member is text under a one-byte XOR (not UTF-8, under half printable, one key makes it at least
+//                                      95 % printable; read over its first 1 MiB). The first two alone are a fact on the row.
+//   S9 hidden-script-in-gyp-build      a binding.gyp or .gypi command expansion runs a package script with its standard output
+//                                      discarded (npm builds a root binding.gyp even with no install hook).
+// Both read the member facts of every archive member (memberFacts: native, node_file, native_source, gyp_sources, xor_text, gyp_build),
+// which an armed walk already gathers (createMemberTally); without them, or past MAX_FACTS_MEMBERS, a row is SKIP "not checked", stated.
+// Recon's block (S8_LIMITS through addonDropper) is copied as written; STATIC_LIMITS is recon's name for LIMITS. Stated limits: a body
+// with a NUL in its first 8000 bytes is not read for XOR text; a multi-byte key or real encryption is not text under one key; a module
+// loaded another way (a main or bin file, a dependency) is not a hook load.
 // The keep list (keepListFor) comes from the REGISTRY manifest, known before the first byte: install-hook targets (a small hook
 // grammar, node-resolution variants), main (default index.js), up to 4 bin targets; what is dropped is stated. The roles of a kept
 // body (hook, main, bin) decide which checks read it; a body the tarball package.json alone names gets its role from that file.
@@ -65,11 +78,13 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.7';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.8';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
   s2MinIdents: 20, s2MinCharCodes: 50, s2HexDensity: 0.15, s2MinNumericHex: 1000, s4MinAddressFamilies: 2, headBytes: 8000, detailChars: 400 });
+/** recon's name for the same limits (headBytes 8000), so the static-checks-1.8 block below reads as written. */
+const STATIC_LIMITS = LIMITS;
 export const CHECKS = Object.freeze([
   { id: 'S0', gate: 'static:S0-shell-fetch-in-hook', cls: 'shell-fetch-in-hook', roles: null, notice: 'an install script downloads code to run or sends data to an outside host' },
   { id: 'S1', gate: 'static:S1-loader-in-hook-target', cls: 'loader-in-hook-target', roles: ['hook'], notice: 'an install script runs a small loader that fetches and executes' },
@@ -79,6 +94,8 @@ export const CHECKS = Object.freeze([
   { id: 'S5', gate: 'static:S5-oversized-hook-target', cls: 'oversized-hook-target', roles: ['hook'], notice: 'an install script runs a file too large to read' },
   { id: 'S6', gate: 'static:S6-network-beacon-in-hook-target', cls: 'network-beacon-in-hook-target', roles: ['hook'], notice: 'an install script sends details about this machine to the network' },   // R2; named as INDICATOR (R7 2026-10-22)
   { id: 'S7', gate: 'static:S7-entry-capability-gain', cls: 'entry-capability-gain', roles: ['main', 'bin'], notice: 'its entry file gained a capability its previous version did not have' },   // R3; named on the 1.5 condition (R9 2026-10-22)
+  { id: 'S8', gate: 'static:S8-prebuilt-addon-dropper-in-hook', cls: 'prebuilt-addon-dropper-in-hook', roles: null, notice: 'an install script loads a prebuilt native module shipped without its source, next to an encoded file' },   // v6.17 (operator 2026-10-27)
+  { id: 'S9', gate: 'static:S9-hidden-script-in-gyp-build', cls: 'hidden-script-in-gyp-build', roles: null, notice: 'its native build file runs a package script during install and hides the output' },   // v6.17 (operator 2026-10-27, step 0b)
 ]);
 export const STATIC_GATES = Object.freeze(CHECKS.map((c) => c.gate));
 /** Armed keep-list walks at once (design note §3 budget: ≤ 6 MiB each); beyond it a download gets the MC-only walk, stated and retried. */
@@ -544,13 +561,37 @@ function s7Outcome({ manifest, packageJson, walk, predecessor }) {
   return s7Row(capabilityDelta({ predecessor: s7Predecessor(predecessor), current }));
 }
 const list = (xs) => xs.join(', ');
+/** S8's or S9's outcome [result, detail] over the walk's member facts (recon's addonDropper and hiddenGypScript); paths and counts only. */
+function memberRowOutcome(id, { hooks, files, members, membersOver }) {
+  if (membersOver) return ['SKIP', `not checked: more than ${MAX_FACTS_MEMBERS} archive members: member facts not kept`];
+  if (id === 'S8') {
+    const { row: r, fires } = addonDropper({ hooks, files, members });
+    if (r.outcome === 'NOT_CHECKED') return ['SKIP', `not checked: ${r.reason}`];
+    if (r.reason === 'no install hook') return ['ALLOW', 'no install hook'];
+    const mods = `${list(r.addons.slice(0, 3).map(shownName))}${r.addons_total > 3 ? ` and ${r.addons_total - 3} more` : ''}`;
+    if (fires) {
+      const x = r.xor_text[0];
+      return ['WARN', `an install hook loads a shipped native module (${mods}; ${list(r.loads)}) and the tarball has no native source; ${shownName(x.path)} (${x.size} B) is text under a one-byte XOR${r.xor_text_total > 1 ? `; and ${r.xor_text_total - 1} more` : ''}`];
+    }
+    if (r.addon_without_source) return ['ALLOW', `an install hook loads a shipped native module with no native source (${mods}), and no member is text under a one-byte XOR`];
+    return ['ALLOW', `no install hook loads a prebuilt native module shipped without its source (${plural(r.addons_total, 'native module')}, ${plural(r.native_source, 'native source file')})`];
+  }
+  const { row: r, fires } = hiddenGypScript({ members });
+  if (r.outcome === 'NOT_CHECKED') return ['SKIP', `not checked: ${r.reason}`];
+  if (fires) {
+    const q = r.quiet_script[0];
+    return ['WARN', `${shownName(q.path)} runs a package script in ${plural(q.count, 'command expansion')} with its output discarded${r.quiet_script_total > 1 ? `; and ${r.quiet_script_total - 1} more gyp file(s)` : ''}`];
+  }
+  return ['ALLOW', r.gyp_files ? `${plural(r.gyp_files, 'gyp file')}, ${plural(r.expansions, 'command expansion')}; none runs a package script with its output discarded` : 'no gyp file'];
+}
 
 /**
- * The eight rows (S0-S7) for a finished walk. `manifest`: the registry version manifest (what npm acts on; the keep list's source);
+ * The ten rows (S0-S9) for a finished walk. `manifest`: the registry version manifest (what npm acts on; the keep list's source);
  * `packageJson`: the tarball's root package.json, parsed (Linux view), or null; `walk`: the walker result (step 1: `files`, `notKept`).
  * `predecessor`: S7's stored predecessor (witness.db predecessorEntryFacts), null on a cold start. Every row is { gate, result, detail }; the detail never carries publisher text beyond a sanitised path and fixed hook names.
+ * `members`: the walk's member facts (createMemberTally's result), which S8 and S9 read; `membersOver`: more than MAX_FACTS_MEMBERS.
  */
-export function staticRows({ manifest, packageJson = null, walk, armed = null, predecessor = null }) {
+export function staticRows({ manifest, packageJson = null, walk, armed = null, predecessor = null, members = undefined, membersOver = false }) {
   const suffix = typeof armed === 'string' && armed ? `; armed by ${armed}` : '';
   const row = (c, result, detail) => ({ gate: c.gate, result, detail: clipDetail(`${detail}${suffix}`) });
   if (!walk || !walk.ok) return CHECKS.map((c) => row(c, 'SKIP', `not checked: ${walk?.reason ?? 'the tarball was not walked'}`));
@@ -586,6 +627,10 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null, p
   const absentOnly = (rs) => rs.length > 0 && rs.every((x) => /^not in the archive/.test(String(x.reason)));
   const candidateOf = (c) => klReg.paths.find((p) => klReg.roles[p].some((r) => c.roles.includes(r)) && primaryOf[p] === p);
   for (const c of CHECKS.slice(1)) {
+    if (c.id === 'S8' || c.id === 'S9') {
+      const [r, d] = memberRowOutcome(c.id, { hooks, files: walk.files.map((f) => ({ roles: roles[f.path] ?? [], data: f.buf })), members, membersOver });
+      rows.push(row(c, r, d)); continue;
+    }
     const mine = facts.filter((x) => c.roles.some((r) => x.roles.includes(r)));
     const unread = notKept.filter((x) => c.roles.some((r) => (roles[x.path] ?? []).includes(r)));
     const skipped = unread.map((x) => `${shownName(x.path)} ${x.reason}`);
@@ -625,6 +670,100 @@ export function staticRows({ manifest, packageJson = null, walk, armed = null, p
     else rows.push(row(c, 'ALLOW', `${read ? ALLOW_TEXT[c.id](read) : NONE_TEXT[c.id]}${platSuffix([...platsRead])}`));
   }
   return rows;
+}
+
+// ------------------------------------------------------------------ v6.17 static-checks-1.8: S8 (the native-addon dropper)
+/** S8 bounds: the XOR read covers a member's first xorWindow bytes; a body under xorMinBytes is not read; the two printable shares. */
+export const S8_LIMITS = Object.freeze({ xorWindow: 1 << 20, xorMinBytes: 64, xorMaxPrintableBefore: 0.5, xorMinPrintableAfter: 0.95, listed: 20 });
+/** The heads of a native module (hex prefix): ELF, PE (MZ), Mach-O (both byte orders, 32 and 64 bit) and a fat Mach-O. */
+export const NATIVE_MAGIC = Object.freeze([['elf', '7f454c46'], ['pe', '4d5a'], ['macho', 'cffaedfe'], ['macho', 'cefaedfe'], ['macho', 'feedfacf'], ['macho', 'feedface'], ['macho', 'cafebabe']].map((x) => Object.freeze(x)));
+const NATIVE_BUF = NATIVE_MAGIC.map(([n, h]) => [n, Buffer.from(h, 'hex')]);
+/** A native source file (what a module could be built from in the tarball). */
+export const NATIVE_SOURCE = /\.(?:c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|m|mm|rs|zig|go|s|asm)$/i;
+export const BINDING_GYP = /(?:^|\/)binding\.gyp$/;
+const GYP_SOURCES = /["']sources["']\s*:\s*\[\s*["']/;   // a non-empty sources list (gyp is a Python literal: either quote)
+export const ADDON_FILE = /\.node$/i;
+/** How an install hook loads a module (name, where it is read, regex): the hook command, or a kept hook target's text. */
+export const ADDON_LOADS = Object.freeze([
+  ['hook-names-node-file', 'command', /[\w-]\.node(?![\w-])/],
+  ['hook-runs-node-gyp-build', 'command', /(?:^|[\s;&|(])node-gyp-build(?:-optional-packages)?(?=$|[\s;&|)])/],
+  ['target-requires-node-file', 'hook-target', /\brequire\s*\([^)]*\.node['"`]|\bprocess\.dlopen\s*\(/],
+  ['target-requires-node-gyp-build', 'hook-target', /\brequire\s*\(\s*['"`]node-gyp-build(?:-optional-packages)?['"`]\s*\)/],
+].map((x) => Object.freeze(x)));
+/** The native kind of a body's head, or null. */
+export function nativeKind(buf) {
+  if (!Buffer.isBuffer(buf)) return null;
+  for (const [n, m] of NATIVE_BUF) if (buf.length >= m.length && buf.subarray(0, m.length).equals(m)) return n;
+  return null;
+}
+const PRINTABLE = new Uint8Array(256); for (let b = 0x20; b < 0x7f; b += 1) PRINTABLE[b] = 1; PRINTABLE[9] = 1; PRINTABLE[10] = 1; PRINTABLE[13] = 1;
+/** Text under a one-byte XOR, over the first xorWindow bytes (pure, bounded): null for a short body, a body with a NUL in its first 8000
+ *  bytes, UTF-8 text, or a body at least half printable; else { printable_before, printable_after } when one key 1-255 makes it at least
+ *  xorMinPrintableAfter printable, else null. Shares only: never the key, never a decoded byte. */
+export function xorText(buf, { truncated = false } = {}) {
+  const L = S8_LIMITS; if (!Buffer.isBuffer(buf)) return null;
+  const b = buf.subarray(0, L.xorWindow); const n = b.length; if (n < L.xorMinBytes || b.subarray(0, STATIC_LIMITS.headBytes).includes(0)) return null;
+  try { new TextDecoder('utf-8', { fatal: true }).decode(b, { stream: truncated || buf.length > n }); return null; } catch { /* not UTF-8: read on */ }
+  const h = new Float64Array(256); for (let i = 0; i < n; i += 1) h[b[i]] += 1;
+  let p0 = 0; for (let x = 0; x < 256; x += 1) if (PRINTABLE[x]) p0 += h[x];
+  if (p0 / n >= L.xorMaxPrintableBefore) return null;
+  let best = 0; for (let k = 1; k < 256; k += 1) { let p = 0; for (let x = 0; x < 256; x += 1) if (PRINTABLE[x ^ k]) p += h[x]; if (p > best) best = p; }
+  return best / n >= L.xorMinPrintableAfter ? { printable_before: Number((p0 / n).toFixed(3)), printable_after: Number((best / n).toFixed(3)) } : null;
+}
+/** S9 bounds: at most maxExpansions command expansions read per gyp file, each at most expansionChars long. */
+export const GYP_LIMITS = Object.freeze({ maxExpansions: 200, expansionChars: 2000 });
+export const GYP_FILE = /(?:^|\/)(?:binding\.gyp|[^/]+\.gypi)$/;
+/** S9: a command that discards its standard output (a 2> redirect alone is not one), and an interpreter given a package script file. */
+export const GYP_QUIET = /(?<![2&\w])>{1,2}\s*(?:\/dev\/null|nul)\b|(?<!\w)1>{1,2}\s*(?:\/dev\/null|nul)\b|&>{1,2}\s*\/dev\/null/i;
+export const GYP_SCRIPT = /(?:^|[\s;&|(])(?:env\s+)?(?:node|bun|deno|sh|bash|python3?|perl|ruby)\s+(?:-\S+\s+)*[\w@./-]+\.(?:c?js|mjs|ts|sh|py|pl|rb)(?![\w.])/;
+/** The command expansions of a gyp text, in order (<!( and <!@(; balanced parentheses; bounded by GYP_LIMITS). Pure. */
+export function gypExpansions(text) {
+  const s = typeof text === 'string' ? text : ''; const out = []; let i = 0;
+  while (out.length < GYP_LIMITS.maxExpansions && (i = s.indexOf('<!', i)) >= 0) {
+    let j = i + 2; if (s[j] === '@') j += 1; if (s[j] !== '(') { i = j; continue; }
+    let d = 0; let k = j; const end = Math.min(s.length, j + GYP_LIMITS.expansionChars);
+    for (; k < end; k += 1) { if (s[k] === '(') d += 1; else if (s[k] === ')') { d -= 1; if (d === 0) break; } }
+    out.push(s.slice(j + 1, k)); i = k + 1;
+  }
+  return out;
+}
+/** S9 fact of one gyp text: { expansions, quiet_script } (counts only; never the command). */
+export function gypBuild(text) { const e = gypExpansions(text); return { expansions: e.length, quiet_script: e.filter((x) => GYP_QUIET.test(x) && GYP_SCRIPT.test(x)).length }; }
+/** The six S8/S9 facts of one member (memberFacts carries them), each read from the full path. */
+function s8MemberFacts(p, buf, truncated) {
+  return { native: nativeKind(buf), node_file: ADDON_FILE.test(p), native_source: NATIVE_SOURCE.test(p), gyp_sources: BINDING_GYP.test(p) ? GYP_SOURCES.test(buf.toString('utf8')) : null, xor_text: xorText(buf, { truncated }),
+    gyp_build: GYP_FILE.test(p) ? gypBuild(buf.toString('utf8')) : null };
+}
+/** S9, pure: members = memberFacts records. INDICATOR when a gyp file runs a package script with its output discarded; NONE otherwise;
+ *  NOT_CHECKED without member facts. */
+export function hiddenGypScript({ members = undefined } = {}) {
+  if (!Array.isArray(members)) return { row: { outcome: 'NOT_CHECKED', reason: 'no member facts supplied' }, fires: false };
+  const gs = members.filter((m) => m && typeof m === 'object' && m.gyp_build && typeof m.gyp_build === 'object');
+  const quiet = gs.filter((m) => m.gyp_build.quiet_script > 0).map((m) => ({ path: String(m.path), count: m.gyp_build.quiet_script }));
+  return { fires: quiet.length > 0, row: { outcome: quiet.length ? 'INDICATOR' : 'NONE', ...(gs.length ? {} : { reason: 'no gyp file' }), gyp_files: gs.length,
+    expansions: gs.reduce((a, m) => a + (m.gyp_build.expansions || 0), 0), quiet_script: quiet.slice(0, S8_LIMITS.listed), quiet_script_total: quiet.length } };
+}
+/**
+ * S8, pure: hooks as staticChecks (only the install hooks count), files = the kept bodies (their hook-role texts are read for a load),
+ * members = memberFacts records (the 1.8 facts). Returns { row, fires }: the row states the loads, the shipped native modules, the native
+ * source count, A (addon_without_source) and the XOR-text members; INDICATOR needs all three facts, NONE otherwise; NOT_CHECKED with
+ * a hook and no member facts.
+ */
+export function addonDropper({ hooks = [], files = [], members = undefined } = {}) {
+  const L = S8_LIMITS; const hs = (Array.isArray(hooks) ? hooks : []).filter((h) => h && INSTALL_HOOKS.includes(h.hook) && typeof h.cmd === 'string' && h.cmd);
+  if (!hs.length) return { row: { outcome: 'NONE', reason: 'no install hook' }, fires: false };
+  if (!Array.isArray(members)) return { row: { outcome: 'NOT_CHECKED', reason: 'no member facts supplied' }, fires: false };
+  const ms = members.filter((m) => m && typeof m === 'object'); const loads = new Set();
+  for (const [n, where, re] of ADDON_LOADS) {
+    if (where === 'command' && hs.some((h) => re.test(h.cmd))) loads.add(n);
+    if (where === 'hook-target' && (Array.isArray(files) ? files : []).some((f) => Array.isArray(f?.roles) && f.roles.includes('hook') && Buffer.isBuffer(f.data) && !f.data.subarray(0, STATIC_LIMITS.headBytes).includes(0) && re.test(f.data.toString('utf8')))) loads.add(n);
+  }
+  const addons = ms.filter((m) => m.node_file === true && m.native).map((m) => String(m.path));   // the full path is read in memberFacts (a row path is clipped)
+  const source = ms.filter((m) => m.native_source === true || m.gyp_sources === true).length; const gyp = ms.filter((m) => typeof m.gyp_sources === 'boolean').length;
+  const xor = ms.filter((m) => m.xor_text && m.node_file !== true).map((m) => ({ path: String(m.path), size: m.size, ...m.xor_text }));
+  const a = loads.size > 0 && addons.length > 0 && source === 0; const fires = a && xor.length > 0;
+  return { fires, row: { outcome: fires ? 'INDICATOR' : 'NONE', loads: ADDON_LOADS.map(([n]) => n).filter((n) => loads.has(n)), addons: addons.slice(0, L.listed), addons_total: addons.length,
+    native_source: source, binding_gyp: gyp, addon_without_source: a, xor_text: xor.slice(0, L.listed), xor_text_total: xor.length } };
 }
 
 // ---- static-checks-1.6: shadow facts (operator ruling R11), recon v6.14's code as written (paths through factsClip, the head through LIMITS)
@@ -733,14 +872,15 @@ export function memberFacts({ path, size, data } = {}) {
   const p = typeof path === 'string' ? path : '?';
   const base = { path: factsClip(p), size: n, truncated: n > buf.length, excluded_path: EXCLUDED_PATH.test(p) };
   const none = { by_kind: Object.fromEntries(RUN_KINDS.map((k) => [k, 0])), by_magic: Object.fromEntries(MAGIC_NAMES.map((k) => [k, 0])), under_diversity_ref: 0 };
-  if (buf.subarray(0, LIMITS.headBytes).includes(0)) return { ...base, binary: true, io: [], io_tokens: [], p2_lines: 0, p9_lines: 0, runs_total: 0, run_counts: none, runs: [], agent: null };
+  const s8f = s8MemberFacts(p, buf, n > buf.length);   // v6.17 static-checks-1.8: the S8 facts (native, native_source, gyp_sources, xor_text)
+  if (buf.subarray(0, LIMITS.headBytes).includes(0)) return { ...base, binary: true, io: [], io_tokens: [], p2_lines: 0, p9_lines: 0, runs_total: 0, run_counts: none, runs: [], agent: null, ...s8f };
   const s = buf.toString('utf8');
   let p2 = 0; let p9 = 0; for (const line of s.split('\n')) { if (DYNAMIC_CODE.test(line)) p2 += 1; if (RAW_IP_URL.test(line)) p9 += 1; }
   const runs = encodedRuns(s); const rc = none;
   for (const r of runs) { rc.by_kind[r.kind] += 1; rc.by_magic[r.magic ?? 'none'] += 1; if (r.distinct_chars < L.diversityRef) rc.under_diversity_ref += 1; }
   const toks = IO_TOKENS.filter(([, , re]) => re.test(s)); const io = new Set(toks.map(([c]) => c)); if (runs.length) io.add('encoding');
   return { ...base, binary: false, io: IO_CLASSES.filter((c) => io.has(c)), io_tokens: [...new Set([...toks.map(([, t]) => t), ...(runs.length ? ['encoded-run'] : [])])],
-    p2_lines: p2, p9_lines: p9, runs_total: runs.length, run_counts: rc, runs: runs.slice(0, L.listed), agent: agentConfigWrite(s, { shell: SHELL_SCRIPT.test(p) }) };
+    p2_lines: p2, p9_lines: p9, runs_total: runs.length, run_counts: rc, runs: runs.slice(0, L.listed), agent: agentConfigWrite(s, { shell: SHELL_SCRIPT.test(p) }), ...s8f };
 }
 /**
  * The 1.6 facts block of one version, pure: members = memberFacts records of every member of the archive (the installed view), hooks =
@@ -847,11 +987,11 @@ export function armedBy(results) {
   return null;
 }
 const RETRY_PREFIXES = ['not checked: not armed', 'not checked: no registry manifest at hand'];
-/** The eight rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
+/** The ten rows of a walk that was not armed (or could not be: the concurrency ceiling), with the reason; retried when a later download is armed. */
 export const unarmedRows = (why) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: not armed (${why})`) }));
-/** The eight rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
+/** The ten rows of an armed walk whose registry manifest was not at hand (no keep list); retried, as MC's own "not checked" is. */
 export const noManifestRows = (armed) => CHECKS.map((c) => ({ gate: c.gate, result: 'SKIP', detail: clipDetail(`not checked: no registry manifest at hand; armed by ${armed}`) }));
-/** Whether the record's static rows are FINAL: all eight present and none a retryable "not checked". A walked outcome, WARN, ALLOW or a
+/** Whether the record's static rows are FINAL: all ten present and none a retryable "not checked". A walked outcome, WARN, ALLOW or a
  *  SKIP for the tarball's own shape, is final: tarballs are immutable per version. */
 export function staticSettled(latest) {
   const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
@@ -862,4 +1002,5 @@ export function staticSettled(latest) {
 
 export default { FACTS_LIMITS, FACTS_NOTE, DECODED_MAGIC, magicOf, B64_RUN, HEX_ESCAPE_RUN, encodedRuns, makeBase64Share, EXCLUDED_PATH, DYNAMIC_CODE,
   AGENT_CONFIG_NAMES, AGENT_HOME_DIR, AGENT_XDG_DIR, WRITE_MARKERS, SHELL_REDIRECT, SHELL_SCRIPT, agentConfigWrite, IO_CLASSES, IO_TOKENS, memberFacts, staticFacts,
-  s5Base64Fields, MAX_FACTS_MEMBERS, createMemberTally, staticFactsOf, RAW_IP_URL, entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, s7Named, S7_NAMED_ARMS, S7_DECODE_OBF_EXCLUDED, S7_EXEC_EXCLUDED, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled };
+  s5Base64Fields, MAX_FACTS_MEMBERS, createMemberTally, staticFactsOf, RAW_IP_URL, entryKeepFor, entryFactsOf, entrySummaryOf, capabilitiesOf, capabilityDelta, s7Named, S7_NAMED_ARMS, S7_DECODE_OBF_EXCLUDED, S7_EXEC_EXCLUDED, CAPABILITY_CLASSES, API_NET_SINKS, HOST_IDENTITY, IDENTITY_ENV, SHELLS, SHELL_C, shellCArgs, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, NOTHING_READ, LIMITS, CHECKS, STATIC_GATES, MAX_ARMED_WALKS, hookFetchExec, hookTargets, keepListFor, fileFacts, staticRows, shownName, armedBy, unarmedRows, noManifestRows, staticSettled,
+  S8_LIMITS, NATIVE_MAGIC, NATIVE_SOURCE, BINDING_GYP, ADDON_FILE, ADDON_LOADS, nativeKind, xorText, GYP_LIMITS, GYP_FILE, GYP_QUIET, GYP_SCRIPT, gypExpansions, gypBuild, hiddenGypScript, addonDropper };

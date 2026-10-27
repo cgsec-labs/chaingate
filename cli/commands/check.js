@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fmt, colorDisposition } from '../format.js';
 import { createTarWalker } from '../../proxy/tar-walk.js';
 import { hookDict, mcRow } from '../../proxy/manifest-check.js';
-import { keepListFor, staticRows, STATIC_CHECKS_VERSION } from '../../proxy/static-checks.js';
+import { keepListFor, staticRows, STATIC_CHECKS_VERSION, createMemberTally, FACTS_LIMITS } from '../../proxy/static-checks.js';
 import { withRole } from '../../gates/row-class.js';
 import { resolvePaths } from '../paths.js';
 import { openWitnessDB } from '../../witness/db.js';
@@ -140,7 +140,7 @@ function parsedPackageJson(walk) {
 }
 
 /**
- * 0.1.5: the manifest check and the five static checks over a LOCAL tarball, offline. The keep list comes from the
+ * 0.1.5: the manifest check and the static checks over a LOCAL tarball, offline. The keep list comes from the
  * packument's manifest for this version when it has one (what npm acts on), else from the tarball's own package.json as the
  * walker's keep function; both are stated. Rows carry their 1.2 roles (a static WARN is NOTE). Never a verdict, never a BLOCK.
  */
@@ -152,12 +152,14 @@ async function evaluateTarball({ file, manifest }) {
   const source = { kind: 'tarball-file', path: file, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
   const man = manifest && typeof manifest === 'object' && !Array.isArray(manifest) ? manifest : null;
   const kl = man ? keepListFor(man) : null;
-  const walkWith = async (keep) => {
-    const walker = createTarWalker({ keep });
+  // static-checks-1.8: S8 and S9 read the member facts of every archive member, gathered on the first walk as the proxy's armed walk does
+  const tally = createMemberTally();
+  const walkWith = async (keep, onMember = null) => {
+    const walker = createTarWalker({ keep, ...(onMember ? { onMember, memberWindow: FACTS_LIMITS.windowBytes } : {}) });
     for (let i = 0; i < bytes.length; i += 65536) walker.write(bytes.subarray(i, i + 65536));
     return walker.end();
   };
-  let walk = await walkWith(man ? kl.paths : (pj) => keepListFor(pj).paths);
+  let walk = await walkWith(man ? kl.paths : (pj) => keepListFor(pj).paths, tally.onMember);
   const pj = parsedPackageJson(walk);
   let candidates = man ? kl.paths.length : (pj ? keepListFor(pj).paths.length : 0);
   // offline, the archive is at hand: the targets only the tarball's package.json names (a hook the registry entry lacks: MC's case)
@@ -170,7 +172,8 @@ async function evaluateTarball({ file, manifest }) {
     }
   }
   const rows = [mcRow(walk, man ? hookDict(man) : undefined),
-    ...staticRows({ manifest: man, packageJson: pj, walk, armed: 'chaingate check --tarball' }).map(withRole)];
+    ...staticRows({ manifest: man, packageJson: pj, walk, armed: 'chaingate check --tarball',
+      ...(({ members, over }) => ({ members, membersOver: over }))(tally.result()) }).map(withRole)];
   const disposition = rows.some((r) => r.result === 'WARN') ? 'WARN' : rows.some((r) => r.result === 'ALLOW' || r.result === 'NOTE') ? 'ALLOW' : 'SKIP';
   return { source, static_checks_version: STATIC_CHECKS_VERSION, walk: walk.ok ? { ok: true } : { ok: false, reason: walk.reason },
     keep_list: { source: man ? 'registry manifest' : 'tarball package.json', candidates },
