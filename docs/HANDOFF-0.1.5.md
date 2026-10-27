@@ -356,3 +356,35 @@ Coverage after R13: every rule of the consult is encoded as a fact: 6, 7, 8a, 8d
   unchanged.
 - Next: CI on the head; then the R6 re-issue against this commit and this sha256 (v3.2 session, on the operator's word); then the
   release sequence; main is a squash.
+
+## Final code commit: ee2b16f (2026-10-28; static-checks-1.8, the operator: 0.1.5 held for it; S8 and S9 both, both named)
+
+- 3f94008 / d97036f4 is retired for this (seed-v3.2-full was published 2026-10-27 against it; the v3.2 session and the operator decide
+  the re-registration with the new sha). Tests `072b755` (failing first: 14 of 15; the one that passes compares S0-S7 with and
+  without member facts, which 1.7 leaves alone), code `ee2b16f867a97c76b266be8910879a8510948365`.
+- What: recon v6.17's static-checks-1.8 mirrored (chaingate-ops `g10-c2-recon-v6.17` @9c12718, pushed @c134dc4; manifest
+  RECON-v6.17.SHA256SUMS 4d63939402252405c6011b08e0b137a5714f7e65aa0bc45c380c63c4b0827c11; sealed static-checks.mjs b82d7ae9...).
+  Its lines 579-672 (S8_LIMITS through addonDropper) copied byte for byte (sha256 8dc3e357...) and its CHECKS lines 89-90; recon's
+  name STATIC_LIMITS is an alias of LIMITS. memberFacts carries the six new facts (native, node_file, native_source, gyp_sources,
+  xor_text, gyp_build). staticRows takes `members` / `membersOver` and states S8 and S9 as rows (WARN, ALLOW, or SKIP "not
+  checked: no member facts supplied" / "more than 20000 archive members"). The proxy's armed walk and `chaingate check --tarball`
+  pass the member tally. Both gates are in NAMED_RUNNER_GATES with the CHECKS notice text in proxy/notice.js.
+- `proxy/static-checks.js` sha256 `952cb6c8bec00bd118255e5f9e915f5666b66db635edaf9b772b786ae43e1178` (was c60ac077).
+- Real data, proxy vs recon's driver output (drv-gypu-v617s.jsonl, jobs-gypu.jsonl 72411413...; 3,708 stored tarballs, in-memory
+  reads): 0 differences on S8 and S9 over the 3,704 both read; S8 WARN 6 (the addon family), S9 WARN 2 (the test-brotli pair), 0
+  others. 4 archives recon's strict reader refuses (Apple xattr PAX records, a base-256 uid, a `./` segment) are read by the proxy's
+  walker as before; both rows ALLOW. Proxy walk plus rows over that set: median 27.5 ms, p99 2.2 s.
+- Recon's own counts (the operator's condition for naming): S8 6 and S9 2 on 3,708, 0 others; frozen-28 shadow 28/28.
+- Tests updated deliberately: the version string pins, the named list (g3a, g3b, g2a, named-s6-s7, s9, s3-trigger), ten static rows
+  (s2, s8, s6-s7, withhold), CHECKS slices for the 1.5/1.6 parity sets, recon's 1.6 member vectors with the six new keys set aside
+  (0 differences otherwise); the CLI tarball test's walk assertion, which the 1.7 edit had left inside a comment, is restored.
+- README: six tarball checks warn; what S8 and S9 read and do not read.
+- Tarball (git archive, Node.js 22.23.4, npm 10.9.9): sha256 `a8c362ca4a142c7c1b7741b9cbd8ce11259a516c1d1b90397a10b5160ece6d7e`,
+  751,294 bytes, 134 files (same list as 3f94008); shasum `60442b2485b9835b00366218801bf537037e40ef`; integrity
+  `sha512-CeHpX/OrEzJDryDt2FEec1w8EeQMqz86CNUIfRHIKS/WSznyIZaTAb1avm5/wrUDIlYnwSY3C8p0x7OV133Z4Q==`. Clean install: `--version`
+  0.1.5, static-checks-1.8 loads with S0-S9.
+- The release commit must pack to this same sha256 (docs/ is not shipped; README.md and package.json stay as at ee2b16f).
+- Full suite at `ee2b16f` on a non-root host, Node.js 22.23.4: 1,645 tests, 1,604 pass, 0 fail, 41 skipped; protected paths
+  unchanged.
+- Next: CI 40588812255 on ee2b16f; then the v3.2 session and the operator (re-registration and re-issue scope; the M6 field
+  deviation was scoped to d97036f4); then the release sequence; main is a squash.
