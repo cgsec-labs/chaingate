@@ -1,4 +1,4 @@
-// U-01 / CFT-04 R6 — the explanation is a PURE FUNCTION of a check result.
+// The explanation is a PURE FUNCTION of a check result.
 //
 //   explain(result) -> { text: string[], structured }
 //
@@ -7,7 +7,7 @@
 // `chaingate.check/1`, `/2` or `/3` record (its own `explanation` member, if present, is ignored), so a SAVED
 // output can be explained again later without evaluating anything (`why --from`).
 //
-// TWO RENDERERS, chosen by the record's schema (U-05 Amendment 1). `chaingate.check/1` records -- written by 0.1.2
+// TWO RENDERERS, chosen by the record's schema. `chaingate.check/1` records -- written by 0.1.2
 // and earlier -- are explained by version 1, unchanged byte for byte. `chaingate.check/2` records (0.1.3) use
 // version 2, which differs in one respect: a REFUSED explanation names the rows that decided it, in the text and in
 // the structure (`decided_by`). Under cft-policy-1.1 a refusal can be decided by a recorded advisory pin, and version
@@ -15,7 +15,7 @@
 // `chaingate.check/3` records (0.1.4, cft-policy-1.2) use version 2 unchanged: the format did not change, and the
 // policy version is printed from the decision itself.
 //
-// What it must never do (R5/R6):
+// What it must never do:
 //   * render NOT_EVALUATED as clean, or let it disappear. Every group, publisher constituent and
 //     predicate that was not evaluated is named, with its reason, in the text AND the structure;
 //   * drop a publisher constituent because another one decided the group;
@@ -32,6 +32,7 @@ const EXPLAIN_VERSION_FOR_SCHEMA = Object.freeze({
   'chaingate.check/1': EXPLAIN_VERSION_1,
   'chaingate.check/2': EXPLAIN_VERSION_2,
   'chaingate.check/3': EXPLAIN_VERSION_2,
+  'chaingate.check/4': EXPLAIN_VERSION_2,   // 0.1.5: /3 plus the optional tarball member; the explanation is the seed decision's
 });
 
 const has = (o, k) => o !== null && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);

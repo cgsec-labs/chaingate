@@ -23,6 +23,7 @@ import {
   syntheticCases, rc3Cases, buildSyntheticSeed, inputFromPackument, canonical, sha256, RC3_DIR,
 } from './u01-cases.mjs';
 import { recordG2a } from './cft014-g2a-transform.mjs';
+import { plainWording } from './cft015-plain-wording.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GOLD = path.join(HERE, '..', 'fixtures', 'u01-goldens');
@@ -44,7 +45,7 @@ function expectedUnderCurrent(g) {
   const { record, changed } = recordG2a(out, POLICY_CURRENT);
   if (changed) ROWS_CHANGED.add(g.id);
   if (record.decision.disposition !== out.decision.disposition) DISPOSITION_CHANGED.add(g.id);
-  return record;
+  return plainWording(record);                                                     // 0.1.5 plain wording
 }
 // Which frozen cases E6/E7 touch, read from the goldens' own decision rows when the 2a tables were written (A9'(b)): the
 // transform must touch exactly these, so a wrong E6/E7 cannot hide behind an empty exception list.

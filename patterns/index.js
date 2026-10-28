@@ -1,8 +1,8 @@
-// V2 pattern extraction — registry + contract validator.
+// Pattern extraction - registry + contract validator.
 //
 // Patterns are deterministic, pure extractors over a package's observed
-// history. Each pattern produces a structured feature set that the V2
-// gates (Section 11 step 3) consume. Contract:
+// history. Each pattern produces a structured feature set that the
+// gates consume. Contract:
 //
 //   export default {
 //     name:     string          // unique registry key
@@ -17,9 +17,9 @@
 // machines. Determinism is enforced by the harness in
 // test/patterns/*.test.js.
 //
-// Build order (V2_DESIGN §11): publisher → provenance → cadence →
-// script → dep-structure. publisher is fully implemented; provenance
-// is registered as a skeleton (Phase 1) pending core logic (Phase 2).
+// Build order: publisher -> provenance -> cadence ->
+// script -> dep-structure. publisher is fully implemented; provenance
+// is registered as a skeleton pending its core logic.
 
 import publisher from './publisher.js';
 import provenance from './provenance.js';

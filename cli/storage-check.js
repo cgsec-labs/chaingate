@@ -1,4 +1,4 @@
-// U-05 gap-closure r2 (owner decision 6), Addendum 1 §B: the doctor check and status text for the RUNNING proxy's storage
+// The doctor check and status text for the RUNNING proxy's storage
 // state. The state itself is computed by the proxy (proxy/storage-health.js) and read from /_chaingate/self; this module
 // only words it. A positive in-memory count or FULL never passes. Persisted decisions are reported separately by
 // `status` from the witness database; the in-memory count is never added to them.

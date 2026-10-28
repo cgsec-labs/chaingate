@@ -32,7 +32,7 @@
 //   - runGates() is called inside the transaction for every version;
 //     runner-level throws surface as a synthetic runner_error SKIP result
 //     with disposition ALLOW (fail-open)
-//   - (U-05 Amendment 1) every failure path passes the request-bound
+//   - every failure path passes the request-bound
 //     { packageName, version } to runGates.failureDecision, so a gate can still
 //     find a recorded advisory for that exact version; and a decision COMPUTED
 //     before a later failure (a witness write, the transaction itself) is kept,
@@ -69,7 +69,7 @@ export function createWitness({ db, runGates, config, logger }) {
    * function (tests do) falls back to the previous behaviour, which is what it always was.
    */
   // A failure decision is made because the gates could not run (`evaluated: false`), and is never stored on the path
-  // that returns it (`persisted: false`): the proxy relies on both flags (U-05 Amendment 3, P6b and Rule K).
+  // that returns it (`persisted: false`): the proxy relies on both flags.
   function failureDecision(err, detail, identity = null) {
     if (typeof runGates.failureDecision === 'function') {
       const d = runGates.failureDecision(err, identity);
@@ -89,7 +89,7 @@ export function createWitness({ db, runGates, config, logger }) {
   }
 
   /**
-   * A decision already COMPUTED when a later step failed (U-05 Amendment 1, A3). The failure no longer replaces it:
+   * A decision already COMPUTED when a later step failed. The failure no longer replaces it:
    * it is combined with what the gates declare the failure means, so the result is never less severe than either --
    * a computed pin BLOCK survives a failed write, and a version the failure would have blocked is still blocked. It
    * was not stored, and says so.
@@ -115,15 +115,14 @@ export function createWitness({ db, runGates, config, logger }) {
   }
 
   /**
-   * U-05 gap-closure r2, N1 (W2): a decision made because the gates could not run never downgrades the stored BLOCK that
-   * applies to this exact version. Nothing is inserted; the stored BLOCK is returned -- it IS stored -- with the failure's
-   * own rows after it. (Rule K's wording, for the stored case.)
+   * A decision made because the gates could not run never downgrades the stored BLOCK that applies to this exact
+   * version. Nothing is inserted; the stored BLOCK is returned -- it IS stored -- with the failure's own rows after it.
    */
-  /** C2 (owner decision 10): the stored BLOCK still applies because this evaluation did not definitively clear it. */
+  /** The stored BLOCK still applies because this evaluation did not definitively clear it. */
   function applicableBlockKept(packageName, version, row, pending, computed, facts = []) {
     return {
       disposition: 'BLOCK',
-      // 2b review (dated note 5.1): what the kept BLOCK rests on, structured -- its confirmed fact reasons and the stored
+      // What the kept BLOCK rests on, structured -- its confirmed fact reasons and the stored
       // BLOCK's rows -- so lines, reasons and notices name the fact rather than this synthetic row.
       held: { facts, rows: Array.isArray(row?.gates_fired) ? row.gates_fired : null },
       results: [{ gate: 'chaingate', result: 'BLOCK',
@@ -136,7 +135,7 @@ export function createWitness({ db, runGates, config, logger }) {
   function preservedStoredBlock(packageName, version, row, failed, facts = []) {
     return {
       disposition: 'BLOCK',
-      held: { facts, rows: Array.isArray(row?.gates_fired) ? row.gates_fired : null },   // dated note 5.1
+      held: { facts, rows: Array.isArray(row?.gates_fired) ? row.gates_fired : null },   // structured, as in applicableBlockKept
       results: [{ gate: 'chaingate', result: 'BLOCK',
         detail: `stored BLOCK preserved: the applicable stored decision for ${packageName}@${version} is BLOCK (decided `
           + `${row.decided_at ?? 'at an unknown time'}); a failure decision cannot make it servable` },
@@ -145,7 +144,7 @@ export function createWitness({ db, runGates, config, logger }) {
     };
   }
 
-  // Storage health (U-05 gap-closure r2, Addendum 1 §B): one outcome per observation, from the store's own database
+  // Storage health: one outcome per observation, from the store's own database
   // steps only. `failure` if any storage step failed (failure dominates), else `ok` if the transaction committed with at
   // least one decision row inserted, else nothing. Input refusals (unreadable manifests, a runner that threw) are not
   // storage evidence.
@@ -179,7 +178,7 @@ export function createWitness({ db, runGates, config, logger }) {
       && typeof packument.versions === 'object' ? packument.versions : {};
     const rawTimes = packument && typeof packument === 'object' && packument.time
       && typeof packument.time === 'object' ? packument.time : {};
-    // 0.1.4 A8: only a plain-object time map is handed to the gate for the stale-seed count; `publishedAt` above and
+    // Since 0.1.4: only a plain-object time map is handed to the gate for the stale-seed count; `publishedAt` above and
     // below is read exactly as before (an array-valued time{} included).
     const timesSupplied = Boolean(packument && typeof packument === 'object' && packument.time
       && typeof packument.time === 'object' && !Array.isArray(packument.time));
@@ -202,7 +201,7 @@ export function createWitness({ db, runGates, config, logger }) {
     // throw is now inside one guard.
     // Decisions computed inside the transaction, kept OUTSIDE it: a rolled-back transaction must not take them along.
     const evaluated = new Map();
-    const actual = new Set();          // C1: versions actually evaluated (decision 10, F1/F1a), kept outside the transaction
+    const actual = new Set();          // versions actually evaluated, kept outside the transaction
     const storageFailures = [];
     let inserted = 0;
     let txn;
@@ -232,7 +231,7 @@ export function createWitness({ db, runGates, config, logger }) {
             rawVersions,
             publishedAt: typeof rawTimes[incoming.version] === 'string'
               ? rawTimes[incoming.version] : null,
-            // 0.1.4 A8: the packument's time map as served (undefined when it has none), for the stale-seed count.
+            // Since 0.1.4: the packument's time map as served (undefined when it has none), for the stale-seed count.
             rawTimes: timesSupplied ? rawTimes : undefined,
             baseline: existing,
             history,
@@ -253,28 +252,34 @@ export function createWitness({ db, runGates, config, logger }) {
           }
           let disposition = result?.disposition ?? 'ALLOW';
           const gateResults = Array.isArray(result?.results) ? result.results : [];
-          // 0.1.4 group 3b (D-N5): the record keeps N1h's last JUDGEMENT. A pending row (the dependency cache is cold) never
+          // Since 0.1.4: the record keeps N1h's last JUDGEMENT. A pending row (the dependency cache is cold) never
           // replaces a judged one for the same added set: the judgement changes only when a new one is made.
           const n1h = gateResults.findIndex((g) => g && g.gate === 'dependency-hooks');
-          // Release audit R1 (G4 tables dated note 4): the carried rows come from the version's HISTORY, newest first, override
+          // The carried rows come from the version's HISTORY, newest first, override
           // rows skipped -- not from its newest row, which may be an override row or a row 0.1.3 wrote after a rollback.
           let decisionHistory = null;
           try { decisionHistory = db.getDecisionHistory(packageName, incoming.version); } catch { decisionHistory = null; }
           const newestFirst = (decisionHistory ?? []).filter((r) => Array.isArray(r?.gates_fired) && !isOverrideRow(r.gates_fired)).reverse();
-          // 0.1.4 group 3c (D-M5): a determinate MC outcome (tarballs are immutable per version) is carried into every
+          // Since 0.1.4: a determinate MC outcome (tarballs are immutable per version) is carried into every
           // re-evaluation; the runner never produces it. A not-checked row is not carried: it is retried at the next download.
           let mcPrev = null;
           for (const r of newestFirst) {
             mcPrev = r.gates_fired.find((g) => g && g.gate === 'install-manifest-mismatch' && (g.result === 'WARN' || g.result === 'ALLOW'));
             if (mcPrev) break;
           }
-          // never into an override short-circuit (G3 dated note 5.5): the stored override row keeps its ALLOW
+          // never into an override short-circuit: the stored override row keeps its ALLOW
           if (mcPrev && !isOverrideRow(gateResults) && !gateResults.some((g) => g && g.gate === 'install-manifest-mismatch')) {
             gateResults.push(mcPrev);
             if (mcPrev.result === 'WARN' && disposition !== 'BLOCK') disposition = 'WARN';
           }
+          // 0.1.5 static checks: the newest static:* rows -- a walked outcome, or "not armed" as stated -- ride into every
+          // re-evaluation too; the runner never produces them, and whether a later download walks again is decided there
+          // (proxy/static-checks.js staticSettled), never here. They are NOTE/SKIP/ALLOW: the disposition is untouched.
+          const isStatic = (g) => g && typeof g.gate === 'string' && g.gate.startsWith('static:');
+          const staticPrev = newestFirst.map((r) => r.gates_fired.filter(isStatic)).find((xs) => xs.length);
+          if (staticPrev && !isOverrideRow(gateResults) && !gateResults.some(isStatic)) gateResults.push(...staticPrev);
           if (n1h >= 0 && Array.isArray(gateResults[n1h].pending)) {
-            // only a DETERMINATE judgement is kept (G3 dated note 3.4): a not-evaluable SKIP is retried, not carried
+            // only a DETERMINATE judgement is kept: a not-evaluable SKIP is retried, not carried
             // the newest non-override row that HAS an N1h row (rows without the gate, e.g. 0.1.3's, are skipped)
             const n1hPrev = newestFirst.map((r) => r.gates_fired.find((g) => g && g.gate === 'dependency-hooks')).find(Boolean);
             const judged = n1hPrev && !Array.isArray(n1hPrev.pending) && (n1hPrev.result === 'WARN' || n1hPrev.result === 'ALLOW')
@@ -285,18 +290,18 @@ export function createWitness({ db, runGates, config, logger }) {
               if (judged.result === 'WARN' && disposition !== 'BLOCK') disposition = 'WARN';
             }
           }
-          // A failure decision made here IS stored below; it stays marked as a failure decision (Amendment 3).
+          // A failure decision made here IS stored below; it stays marked as a failure decision.
           computed = { disposition, results: gateResults, ...(result?.evaluated === false ? { evaluated: false } : {}) };
           stage = 'write';
 
-          // U-05 owner decision 10 (C2): ONE applicable-BLOCK rule (witness/decision-rule.js) over the stored history
+          // ONE applicable-BLOCK rule (witness/decision-rule.js) over the stored history
           // and this result. A read error here is a storage failure for this version (the catch below).
           const overrideBased = isOverrideRow(gateResults);
           const stored = decisionHistory ?? db.getDecisionHistory(packageName, incoming.version);
           const before = applicableFromRows(stored);
           const after = step(new Set(before.pending), gateResults);
-          // N1 (W2): a failure-derived non-BLOCK never downgrades the applicable BLOCK. With an exact override
-          // established the failure decision is returned as before (A1-OV); either way nothing is inserted over it.
+          // A failure-derived non-BLOCK never downgrades the applicable BLOCK. With an exact override
+          // established the failure decision is returned as before; either way nothing is inserted over it.
           let returned = computed;
           let skipInsert = false;
           if (computed.evaluated === false && disposition !== 'BLOCK') {
@@ -308,7 +313,7 @@ export function createWitness({ db, runGates, config, logger }) {
               }
             }
           } else if (!overrideBased && disposition !== 'BLOCK' && before.block && after.pending.size > 0) {
-            // C2: an evaluation that does not DEFINITIVELY clear every pending reason (a SKIP, an error, a missing gate,
+            // An evaluation that does not DEFINITIVELY clear every pending reason (a SKIP, an error, a missing gate,
             // an input-rule result) leaves the BLOCK applicable. Its row is still written below, once, as evidence.
             if (!overrideEstablished(packageName, incoming.version)) {
               returned = applicableBlockKept(packageName, incoming.version, before.block, [...after.pending].sort(), computed,
@@ -328,14 +333,14 @@ export function createWitness({ db, runGates, config, logger }) {
           } else {
             // Idempotent re-observe: bumpLastSeen fires inside recordBaseline's write path.
             db.recordBaseline(packageName, incoming.version, incoming);
-            // W1: state-change logging against the EFFECTIVE prior decision -- the same rows the tarball gate applies --
-            // so a new evaluation after a revoked override is recorded even when it repeats the override's ALLOW. C2: a
+            // State-change logging against the EFFECTIVE prior decision -- the same rows the tarball gate applies --
+            // so a new evaluation after a revoked override is recorded even when it repeats the override's ALLOW. A
             // result that definitively clears a pending reason is recorded even when the disposition repeats (a
             // clearance must not be lost behind an earlier non-definitive row of the same disposition).
             const prior = skipInsert ? null : (overrideBased ? (stored.at(-1) ?? null) : before.latest);
-            // 0.1.4 group 2a (D-N7, E12): also when the CLASS of the record changed (named, contributing, facts, policy
+            // Since 0.1.4: also when the CLASS of the record changed (named, contributing, facts, policy
             // identity) under the same NON-BLOCK disposition -- e.g. a 1.1 coverage WARN that is a 1.2 strict-tier WARN, or
-            // contributing signals under an ALLOW. BLOCK -> BLOCK keeps the C2 rule exactly as before (review fix): a row
+            // contributing signals under an ALLOW. BLOCK -> BLOCK keeps the pending-reason rule exactly as before: a row
             // there could add a pending reason and become the cited applicable BLOCK.
             if (!skipInsert && (!prior || prior.disposition !== disposition || after.cleared.length > 0
               || (disposition !== 'BLOCK'
@@ -346,7 +351,7 @@ export function createWitness({ db, runGates, config, logger }) {
           }
 
           decisions.set(incoming.version, returned);
-          // C1 (owner decision 10, F1/F1a): this version was actually evaluated in this observation.
+          // This version was actually evaluated in this observation.
           if (computed.evaluated !== false && isActualEvaluation(gateResults)) actual.add(incoming.version);
         } catch (err) {
           log.warn(
@@ -414,7 +419,7 @@ export function createWitness({ db, runGates, config, logger }) {
    * that case by serving the packument RAW, which discards every BLOCK the document would have
    * earned; it can now ask what the configured gates say a total failure means.
    *
-   * `packageName` is the request-bound name the caller observed under (U-05 Amendment 1). Without it nothing is
+   * `packageName` is the request-bound name the caller observed under. Without it nothing is
    * looked up for any version, as before.
    */
   function failureDecisionsFor(packument, err, packageName = null) {

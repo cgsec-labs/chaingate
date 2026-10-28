@@ -5,7 +5,7 @@
 // attacks (Shai-Hulud, eslint-scope 2018, event-stream 2018) always show
 // this symptom: a different email pushes the next release.
 //
-// Spec: docs/P5.md §6 lines 439-455. This gate is history-driven, not
+// This gate is history-driven, not
 // baseline-driven — the "prior" we compare against is the latest version
 // we've already observed for this package, regardless of whether the
 // incoming version is itself first-seen or a re-observation.

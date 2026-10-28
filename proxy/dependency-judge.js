@@ -1,4 +1,4 @@
-// 0.1.4 group 3b (D-N3, §18.20 item 2): N1h at TARBALL time. For the exact version npm downloads, the dependencies its
+// N1h at TARBALL time (since 0.1.4). For the exact version npm downloads, the dependencies its
 // stored `dependency-hooks` row left pending are fetched -- in parallel, all within one budget (5 s), the request's
 // authorization relayed -- into the dependency cache, judged, and, when the judgement differs from the stored row, ONE new
 // decision row is written: the applicable row's results with that row replaced, the disposition recomputed (any WARN ->
@@ -8,7 +8,7 @@ import { judge } from '../gates/dependency-hooks.js';
 import { getDependency, setDependencyDoc } from '../gates/dependency-cache.js';
 
 export const BUDGET_MS = 5_000;
-// Release audit R4 (G4 tables dated note 4): at most MAX_IN_FLIGHT dependency fetches run in the process; the rest wait in
+// At most MAX_IN_FLIGHT dependency fetches run in the process; the rest wait in
 // line. A queued fetch whose every waiter's budget has passed is dropped unstarted. A running fetch is not aborted: the
 // upstream timeouts bound it, and its answer still fills the cache.
 export const MAX_IN_FLIGHT = 8;
@@ -65,30 +65,49 @@ export async function fetchPending(pending, { fetchPackument, config, authorizat
 const aggregate = (results) => (results.some((r) => r?.result === 'BLOCK') ? 'BLOCK'
   : (results.some((r) => r?.result === 'WARN') ? 'WARN' : 'ALLOW'));
 
+const awaitsJudgement = (g) => g && g.gate === 'dependency-hooks' && Array.isArray(g.added) && (Array.isArray(g.pending) || g.result === 'SKIP');
+const sameJudgement = (a, b) => a.result === b.result
+  && String(a.detail).replace(/ \(judged [^)]*\)$/, '') === String(b.detail).replace(/ \(judged [^)]*\)$/, '');
+
 /**
  * Judge the served version's pending or not-evaluable N1h row at tarball time. Returns 'wrote' (a new decision row),
- * 'raced' (a concurrent writer wrote first; re-read the record), or false (nothing to judge, or the same judgement).
+ * 'raced' (a concurrent writer wrote first, twice, or its decision no longer awaits this judgement; re-read the record), or
+ * false (nothing to judge, or the same judgement).
  * `latest`: the applicable stored row (the newest non-override row; not a BLOCK).
  */
 export async function judgeAtTarball({ db, pkg, version, latest, fetchPackument, config, authorization, budgetMs, log }) {
   const rows = Array.isArray(latest?.gates_fired) ? latest.gates_fired : [];
   const i = rows.findIndex((g) => g && g.gate === 'dependency-hooks');
-  // judged now: a pending row, or a not-evaluable SKIP (retried; G3 dated note 3.4); a determinate judgement stands
-  if (i < 0 || !Array.isArray(rows[i].added) || !(Array.isArray(rows[i].pending) || rows[i].result === 'SKIP')) return false;
-  // EVERY added target missing from the cache is fetched, not only the stored pending ones (G3 dated note 3.3)
+  // judged now: a pending row, or a not-evaluable SKIP (retried); a determinate judgement stands
+  if (i < 0 || !awaitsJudgement(rows[i])) return false;
+  // EVERY added target missing from the cache is fetched, not only the stored pending ones
   const { timedOut } = await fetchPending(rows[i].added, { fetchPackument, config, authorization, budgetMs });
   const lookup = (t) => (timedOut.includes(t) ? { why: `no answer within ${Math.round((budgetMs ?? BUDGET_MS) / 1000)} s` } : getDependency(t));
   const row = judge(rows[i].added, { lookup, unjudgeable: Array.isArray(rows[i].unjudgeable) ? rows[i].unjudgeable : [] });
   if (Array.isArray(row.pending)) return false;               // nothing could be judged (cache evicted mid-way): keep the stored row
-  if (row.result === rows[i].result && row.detail.replace(/ \(judged [^)]*\)$/, '') === String(rows[i].detail).replace(/ \(judged [^)]*\)$/, '')) {
-    return false;                                              // the same judgement: no new row
+  if (sameJudgement(row, rows[i])) return false;               // the same judgement: no new row
+  // the guard compares like with like: `latest` is the newest NON-override row
+  let base = latest;
+  let retried = false;
+  for (;;) {
+    const fresh = db.getLatestNonOverrideDecision(pkg, version);
+    if (!fresh || fresh.id === base.id) break;
+    // Since 0.1.5: a concurrent writer got there first. Once per download, the same judgement goes on top of its
+    // decision (every row of theirs kept), when that decision still awaits it for the same added dependencies and is not a
+    // BLOCK; a second race, or anything else, leaves it to the caller's re-read and a later download, as before.
+    if (retried || fresh.disposition === 'BLOCK') return 'raced';
+    const have = Array.isArray(fresh.gates_fired) ? fresh.gates_fired : [];
+    const k = have.findIndex((g) => g && g.gate === 'dependency-hooks');
+    if (k < 0 || !awaitsJudgement(have[k]) || JSON.stringify(have[k].added) !== JSON.stringify(rows[i].added)) return 'raced';
+    if (sameJudgement(row, have[k])) return 'raced';
+    base = fresh;
+    retried = true;
   }
-  const results = rows.map((g, k) => (k === i ? row : g));
-  // the guard compares like with like: `latest` is the newest NON-override row (G3 dated note 3.5)
-  const fresh = db.getLatestNonOverrideDecision(pkg, version);
-  if (fresh && fresh.id !== latest.id) return 'raced';         // a concurrent writer got there first: the caller re-reads
+  const have = Array.isArray(base.gates_fired) ? base.gates_fired : [];
+  const at = have.findIndex((g) => g && g.gate === 'dependency-hooks');
+  const results = have.map((g, k) => (k === at ? row : g));
   db.insertGateDecision(pkg, version, aggregate(results), results);
-  log?.info?.(`[n1h] ${pkg}@${version}: ${row.result} (${row.detail})`);
+  log?.info?.(`[n1h] ${pkg}@${version}: ${row.result} (${row.detail})${retried ? ' (retried after a concurrent write)' : ''}`);
   return 'wrote';
 }
 

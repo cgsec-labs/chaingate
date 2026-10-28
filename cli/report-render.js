@@ -1,12 +1,12 @@
-// 0.1.4 group 2c (D-R3..D-R8): the text and exit code of `chaingate report`, a pure function of what the proxy's install
+// The text and exit code of `chaingate report`, a pure function of what the proxy's install
 // summary (or the disk record) holds. Every verdict shown is what the proxy decided when it served the request, bound to
-// that policy and seed; nothing here re-evaluates a stored row (CFT-04 R4).
+// that policy and seed; nothing here re-evaluates a stored row.
 //
 // Exit: 4 tool error > 3 any refusal or tag moved off a withheld version > 2 named warnings > 4 an incomplete record with
-// nothing else to report > 0 (dated note 6.6). Every string from a record is stripped of control characters (C0, DEL, C1)
-// and bidi/format controls, and capped; copyable commands are printed only for identities notice.js validates (dated
-// notes 6.10, 7.14).
+// nothing else to report > 0. Every string from a record is stripped of control characters (C0, DEL, C1)
+// and bidi/format controls, and capped; copyable commands are printed only for identities notice.js validates.
 import { identity, labelFor } from '../proxy/notice.js';
+import { shadowLines, staticFactsLines, repoClaimLine, notable, SHADOW_NOTE } from '../proxy/shadow-facts.js';
 
 // C0, DEL, C1, and the bidi/format controls (U+061C, U+200B-U+200F, U+202A-U+202E, U+2060-U+2069, U+FEFF)
 export const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g;
@@ -32,11 +32,11 @@ const COVERAGE = [
 ];
 const MAX_INSTALLS_HELD = 20;
 
-/** D-R4: the lines for one named warning. `cutoff`: the seed's history_cutoff; `bound`: an extra binding line (disk). */
+/** The lines for one named warning. `cutoff`: the seed's history_cutoff; `bound`: an extra binding line (disk). */
 function namedBlock(e, { cutoff, bound = null }) {
   const id = identity(e.package, e.version);
   const namedRows = Array.isArray(e.named) ? e.named : [];
-  // G3 dated note 2.5: a seed row and a packument (Tier 1 runner) row on one version name both baselines
+  // a seed row and a packument (Tier 1 runner) row on one version name both baselines
   const seedRow = namedRows.some((g) => String(g).startsWith('seed-v3:'));
   const packumentRow = namedRows.some((g) => !String(g).startsWith('seed-v3:'));
   const seedText = `seed (history to ${cutoff ? clean(cutoff, 40) : 'an unrecorded cutoff'})`;
@@ -60,16 +60,16 @@ function namedBlock(e, { cutoff, bound = null }) {
   return out;
 }
 
-/** 2d (D-U9): an accepted named warning, one line. */
+/** An accepted named warning, one line. */
 const acceptedLine = (e) => `${shownId(e.package, e.version)}  NAMED WARNING (accepted by you): ${labels(e.named, 'see chaingate why')}`;
 
-/** 2d (D-U9): a tarball refused because the user's own pin withholds it. */
+/** A tarball refused because the user's own pin withholds it. */
 function pinRefusedLine(e, k) {
   const undo = identity(e.package, k) ? `chaingate unpin ${e.package}` : 'chaingate unpin <package>';
   return `${shownId(e.package, e.version)}  WITHHELD BY YOUR PIN (download refused): pinned to ${clean(k, 64)} — undo: ${undo}`;
 }
 
-/** D-R6: a refusal. `retried`: a non-fact refusal whose version was served later in the same install (dated note 7.1). */
+/** A refusal. `retried`: a non-fact refusal whose version was served later in the same install. */
 function refusedLine(e, { retried = false } = {}) {
   const facts = Array.isArray(e.facts) ? e.facts : [];
   if (facts.length) return `${shownId(e.package, e.version)}  BLOCKED (download refused): ${labels(facts, 'a recorded fact')} — npm could not install it`;
@@ -77,7 +77,7 @@ function refusedLine(e, { retried = false } = {}) {
   return `${shownId(e.package, e.version)}  REFUSED (download refused): not a recorded fact — ${clean(e.reason, 200)} — npm could not install it`;
 }
 
-/** D-R6: a dist-tag moved off a withheld version; `installed` when this install's summary shows that tarball served. */
+/** A dist-tag moved off a withheld version; `installed` when this install's summary shows that tarball served. */
 function tagLine(e, installed) {
   const pkg = clean(e.package, 214);
   const tag = TAG_RE.test(String(e.tag)) ? e.tag : 'a dist-tag';
@@ -110,8 +110,8 @@ function renderInstall(inst, cutoff) {
   const idOf = (e) => `${e.package}@${e.version ?? ''}`;
   const counts = { named: 0, refusals: 0, tags: 0, dropped: (Number(inst.dropped) || 0) + (inst.evicted_earlier ? 1 : 0) };
 
-  // named warnings, one block per version: every named event of the version merged (G3 dated note 5.4 -- a late MC event is
-  // never shadowed by an earlier one); the earliest serve's time and K; an accepted one is one line (2d, D-U9)
+  // named warnings, one block per version: every named event of the version merged (a late MC event is
+  // never shadowed by an earlier one); the earliest serve's time and K; an accepted one is one line
   const namedByVersion = new Map();
   for (const e of events) {
     if (e.kind !== 'served' || e.class !== 'named') continue;
@@ -127,7 +127,7 @@ function renderInstall(inst, cutoff) {
     out.push(...namedBlock(e, { cutoff }), '');
     counts.named += 1;
   }
-  // refusals, merged per version (dated note 7.1): any fact makes it BLOCKED; a non-fact refusal served later is a retry
+  // refusals, merged per version: any fact makes it BLOCKED; a non-fact refusal served later is a retry
   const refusals = new Map();
   events.forEach((e, i) => {
     if (e.kind !== 'refused') return;
@@ -159,7 +159,7 @@ function renderInstall(inst, cutoff) {
     counts.tags += 1;
   }
   for (const [k, n] of more) { const [pkg, from] = k.split('\u0000'); out.push(moreTagsLine(pkg, from, n)); }
-  // 2d (D-U9): what the user's pins withheld, as context (no exit code)
+  // what the user's pins withheld, as context (no exit code)
   const pinSeen = new Map();
   for (const e of events) {
     if (e.kind !== 'pin-withheld') continue;
@@ -184,14 +184,14 @@ function renderInstall(inst, cutoff) {
   }
   if (refusals.size || counts.tags || withheldSeen.size || pinSeen.size) out.push('');
 
-  // V6 (D-R7), per distinct version; a named version is never "not checked" (its named rule fired)
+  // not-checked coverage, per distinct version; a named version is never "not checked" (its named rule fired)
   const byCoverage = new Map();
   const overrides = [];
   const servedSeen = new Set();
   for (const e of events) {
     if (e.kind !== 'served' || servedSeen.has(idOf(e))) continue;
     servedSeen.add(idOf(e));
-    if (namedByVersion.has(idOf(e))) continue;                // a named version is never "not checked" (note 5.4)
+    if (namedByVersion.has(idOf(e))) continue;                // a named version is never "not checked"
     if (e.class === 'override') overrides.push(shownId(e.package, e.version));
     else if (e.class === 'not-checked') byCoverage.set(e.coverage, (byCoverage.get(e.coverage) ?? 0) + 1);
   }
@@ -208,13 +208,33 @@ function renderInstall(inst, cutoff) {
       ? 'Every package served in this install, other than those served under your overrides, was checked by a named rule.'
       : 'Every package served in this install was checked by a named rule.');
   }
-  // 0.1.4 group 3a (D-T3, E29): checked by a named rule, but not by the seed's
+  // checked by a named rule, but not by the seed's
   const hookOnly = [...new Set(events.filter((e) => e.kind === 'served' && (e.class === 'clean' || e.class === 'contributing')
     && e.coverage !== 'checked').map(idOf))].length;
   if (hookOnly) out.push(`${hookOnly} package(s) were checked only by the install-hook rule (the seed had no usable history for them).`);
   if (overrides.length) {
     out.push(`${overrides.length} version(s) were served under your exact-version overrides (chaingate allow): `
       + `${overrides.slice(0, 20).join(', ')}${overrides.length > 20 ? ', …' : ''}`);
+  }
+  // 0.1.5 shadow facts: record only, never counted and never in the exit code; the versions with a notable fact (one that
+  // survives the noise rules: not the latest tag, not a known owner, a named sign not new, a size change all docs),
+  // the newest facts event per version. Every facts event is in --json.
+  const factsBy = new Map();
+  for (const e of events) if (e.kind === 'facts' && e.facts && typeof e.facts === 'object') factsBy.set(idOf(e), e);
+  const factLines = [];
+  for (const e of factsBy.values()) {
+    try {
+      // static-checks-1.6: an armed version's static facts are listed with it, notable or not (armed versions are few)
+      const sx = e.static_facts && typeof e.static_facts === 'object' ? `; ${clean(e.static_facts.facts?.version ?? 'static checks', 40)} facts: ${staticFactsLines(e.static_facts).map((l) => clean(l, 400)).join('; ')}` : '';
+      // the repository claim of an armed version, with its other facts
+      const rc = e.repo_claim && typeof e.repo_claim === 'object' ? `; ${clean(repoClaimLine(e.repo_claim), 400)}` : '';
+      if (notable(e.facts) || sx || rc) factLines.push(`  ${shownId(e.package, e.version)}: ${shadowLines(e.facts).map((l) => clean(l, 400)).join('; ')}${rc}${sx}`);
+    } catch { /* malformed: not shown */ }
+  }
+  if (factLines.length) {
+    out.push('', `Recorded facts (${clean([...factsBy.values()][0].facts.version ?? 'unknown', 40)}; ${SHADOW_NOTE}), `
+      + `${factLines.length} version(s) with a notable fact:`, ...factLines.slice(0, 20));
+    if (factLines.length > 20) out.push(`  ... and ${factLines.length - 20} more (chaingate report --json)`);
   }
   if (inst.evicted_earlier) {
     out.push(`Earlier events of this install were evicted (more than ${MAX_INSTALLS_HELD} installs were active); this report is incomplete.`);
@@ -265,8 +285,8 @@ function renderDisk(p) {
   const total = { named: 0, refusals: 0, tags: 0, dropped: (p.truncated ? 1 : 0) + (p.incomplete || p.proxy ? 1 : 0) };
   let accepted = 0;
   const boundOf = (r) => `  recorded: policy ${clean(r.policy_version ?? 'unknown', 40)}, seed ${r.seed_sha256 ? clean(r.seed_sha256, 64).slice(0, 16) : 'none'}`;
-  // release audit R5 (G4 tables dated note 4): a version's named rows are merged as the proxy view merges them (G3 dated note
-  // 5.4) -- the union of the named rows, accepted only if every row was, a late row's reason appended, the first K and cutoff
+  // a version's named rows are merged as the proxy view merges them --
+  // the union of the named rows, accepted only if every row was, a late row's reason appended, the first K and cutoff
   const namedOf = new Map();
   for (const r of rows) {
     if (r.kind !== 'named-served') continue;
@@ -292,7 +312,7 @@ function renderDisk(p) {
     seen.add(k);
     const m = r.kind === 'named-served' ? namedOf.get(`${r.package_name}@${r.version}`) : null;
     if (m && m.accepted) {
-      // dated note 8.2: listed with its binding; counted for the empty sentence, never for the exit code
+      // listed with its binding; counted for the empty sentence, never for the exit code
       out.push(`${acceptedLine({ package: r.package_name, version: r.version, named: m.named })} (at ${clean(r.at, 40)})`, boundOf(r));
       accepted += 1;
     } else if (m) {

@@ -1,6 +1,6 @@
-// 0.1.4 group 2b (D-V4, D-V4b, D-V5): the `npm-notice` header ChainGate sends, and the hygiene applied to one relayed from
+// The `npm-notice` header ChainGate sends, and the hygiene applied to one relayed from
 // upstream. npm prints a response's npm-notice (`npm notice <text>`) only when the response is not stored in or served from
-// its cache: a `cache-control: no-store` response or an error status (measured on npm 10.9.7 and 11.19.0, A10). So a 200
+// its cache: a `cache-control: no-store` response or an error status (measured on npm 10.9.7 and 11.19.0). So a 200
 // that carries a ChainGate notice is also sent `no-store` (NOTICE_CACHE_CONTROL).
 //
 // Our text is built ONLY from a validated identity and a closed vocabulary: no registry-controlled string ever reaches it.
@@ -12,7 +12,7 @@ export const NOTICE_CACHE_CONTROL = 'no-store';
 export const NOTICE_MAX_BYTES = 400;
 const UPSTREAM_MAX = 300;
 // npm's package-name characters (validate-npm-package-name): URL-safe, optional @scope/, <= 214. Uppercase is allowed
-// because legacy names keep it (e.g. JSONStream; dated note 5.7).
+// because legacy names keep it (e.g. JSONStream).
 const NAME_RE = /^(?:@[a-zA-Z0-9-*~][a-zA-Z0-9-*._~]*\/)?[a-zA-Z0-9-~][a-zA-Z0-9-._~]*$/;
 
 const LABELS = Object.freeze({
@@ -20,16 +20,26 @@ const LABELS = Object.freeze({
   'seed-v3:dac-trajectory:surface': 'release-history break vs the seed (2+ package-wide signals)',
   'seed-v3:pin': 'a recorded advisory names this version',
   'content-hash': 'its content differs from the recorded baseline',
-  'install-introduced': 'an install script appears that earlier releases did not have',          // 0.1.4 group 3a (E30)
-  'dependency-hooks': 'it adds a dependency that runs install scripts',                           // 0.1.4 group 3b (E35)
-  'install-manifest-mismatch': "its tarball's install scripts differ from its registry entry",    // 0.1.4 group 3c (E39)
+  'install-introduced': 'an install script appears that earlier releases did not have',          // since 0.1.4
+  'dependency-hooks': 'it adds a dependency that runs install scripts',                           // since 0.1.4
+  'install-manifest-mismatch': "its tarball's install scripts differ from its registry entry",    // since 0.1.4
+  'size-jump-provenance': 'its tarball grew fivefold and its link to the repository broke',       // since 0.1.5
+  // 0.1.5 static checks: the static-checks-1.3 CHECKS notice text, byte for byte (one wording)
+  'static:S0-shell-fetch-in-hook': 'an install script downloads code to run or sends data to an outside host',
+  'static:S5-oversized-hook-target': 'an install script runs a file too large to read',
+  // the static-checks-1.5 CHECKS notice text, byte for byte
+  'static:S6-network-beacon-in-hook-target': 'an install script sends details about this machine to the network',
+  'static:S7-entry-capability-gain': 'its entry file gained a capability its previous version did not have',
+  // the static-checks-1.8 CHECKS notice text, byte for byte
+  'static:S8-prebuilt-addon-dropper-in-hook': 'an install script loads a prebuilt native module shipped without its source, next to an encoded file',
+  'static:S9-hidden-script-in-gyp-build': 'its native build file runs a package script during install and hides the output',
 });
 
 const printable = (s) => String(s).replace(/[^\x20-\x7e]/g, '');
 const validId = (pkg, version) => typeof pkg === 'string' && pkg.length <= 214 && NAME_RE.test(pkg)
   && typeof version === 'string' && version.length <= 256 && SEMVER_RE.test(version);
 
-/** The closed-vocabulary label of one classification key, or null (shared with `chaingate report`, 2c D-R4/D-R6). */
+/** The closed-vocabulary label of one classification key, or null (shared with `chaingate report`). */
 export function labelFor(key) {
   return Object.hasOwn(LABELS, key) ? LABELS[key] : null;
 }
@@ -53,7 +63,7 @@ export function buildNotice({ kind, pkg, version, labels = [], tail = '' }) {
   return out;
 }
 
-/** 0.1.4 group 2d (D-U5): the notice of a tarball withheld by the user's own pin; null unless every part validates. */
+/** The notice of a tarball withheld by the user's own pin; null unless every part validates. */
 export function pinNotice(pkg, version, k) {
   const id = identity(pkg, version);
   if (!id || !identity(pkg, k)) return null;

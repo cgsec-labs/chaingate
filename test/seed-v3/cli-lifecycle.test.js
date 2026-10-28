@@ -498,12 +498,23 @@ test('readiness waits while the proxy is ALIVE and gives up the moment it is not
 test('environment probe: a real blackholed connect also hits the deadline', async (t) => {
   const { waitForProxyReady } = await import('../../cli/proxy-control.js');
   const { createConnection } = await import('node:net');
+  // A test run with outbound network denied (the qualification wrapper's in-process guard throws on connect) has no
+  // route to probe: skip and say why, never fail. The controlled-stub case above still runs there.
+  let denied = null;
   const stalls = await new Promise((resolve) => {
-    const s = createConnection({ port: 9, host: '198.51.100.1' });
+    let s;
+    try { s = createConnection({ port: 9, host: '198.51.100.1' }); } catch (e) {
+      if (e?.code !== 'U01_NETWORK_DENIED') throw e;
+      denied = e; resolve(false); return;
+    }
     const timer = setTimeout(() => { s.destroy(); resolve(true); }, 1000);
     s.once('error', () => { clearTimeout(timer); s.destroy(); resolve(false); });
     s.once('connect', () => { clearTimeout(timer); s.destroy(); resolve(false); });
   });
+  if (denied) {
+    t.skip(`outbound network is denied in this run (${denied.code}); the controlled-stub case above is the regression`);
+    return;
+  }
   if (!stalls) {
     t.skip('this network does not stall on TEST-NET-2; the controlled-stub case above is the regression');
     return;

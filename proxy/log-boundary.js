@@ -1,4 +1,4 @@
-// U-05 gap-closure r2 (owner decision 6), A1: ONE logging boundary for the proxy, with a global output budget.
+// ONE logging boundary for the proxy, with a global output budget.
 //
 // Every line the proxy, the witness store, the gate runner, the dependency fetcher and the unstored-BLOCK record write goes
 // through here. Two guarantees:
@@ -40,7 +40,7 @@ export function createLogBoundary(inner, opts = {}) {
   let suppressedSinceSummary = 0;
   let lastFallbackAt = -Infinity;
   const channels = new Map();               // channel -> { value, at, pending: {value, message} | null }
-  // 0.1.4 group 2b (D-V6, A4): RESERVED channels for fact and named lines. Each has its own bucket, its own dedup window
+  // Since 0.1.4: RESERVED channels for fact and named lines. Each has its own bucket, its own dedup window
   // and its own suppression summary, and never draws on (or is starved by) the general budget above.
   const RESERVED = { burst: 50, perSecond: 1, dedupMs: 10 * 60_000 };
   const reservedState = new Map();          // kind -> { tokens, last, lastSummaryAt, suppressedSinceSummary, seen: Map, stats }
@@ -135,19 +135,19 @@ export function createLogBoundary(inner, opts = {}) {
       stats.transitions_suppressed += 1;
     },
     /**
-     * A reserved line (D-V6): `kind` 'fact' | 'named'. A `key` seen within the dedup window is counted, not written.
+     * A reserved line: `kind` 'fact' | 'named'. A `key` seen within the dedup window is counted, not written.
      */
     reserved(kind, message, key = null) {
       const r = reservedFor(kind);
       const t = now();
-      // keys are inserted in time order and never re-set, so expiry stops at the first fresh key (dated note 5.4)
+      // keys are inserted in time order and never re-set, so expiry stops at the first fresh key
       for (const [k, at] of r.seen) { if (t - at < RESERVED.dedupMs) break; r.seen.delete(k); }
       if (key !== null && r.seen.has(key)) { r.stats.deduped += 1; return; }
       let line;
       try { line = clip(message, o.lineBytes, stats); } catch { line = `[log] (unprintable ${kind} line)`; }
       if (t > r.last) { r.tokens = Math.min(RESERVED.burst, r.tokens + ((t - r.last) / 1000) * RESERVED.perSecond); r.last = t; }
       reservedSummary(kind, r);
-      // marked seen only when written (note 5.4): a line dropped for lack of tokens is retried, not deduplicated away
+      // marked seen only when written: a line dropped for lack of tokens is retried, not deduplicated away
       if (r.tokens >= 1) { r.tokens -= 1; r.stats.emitted += 1; if (key !== null) r.seen.set(key, t); write('warn', line); } else {
         r.stats.suppressed += 1; r.suppressedSinceSummary += 1;
       }

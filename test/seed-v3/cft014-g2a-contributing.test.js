@@ -178,9 +178,18 @@ test('G2a-9 the 1.2 role tables equal r3 §18.7/§18.15/§18.18, and an unlisted
   const RC = await import('../../gates/row-class.js');
   const W = await import('../../witness/row-class.js');
   // G3 D-T6 (deliberate): T1.2 size-jump and T1.3 publish-tool-change joined the contributing gates; T1.1 is a named runner gate
+  // 0.1.5 group 1 (deliberate, ops handover §7.3): T1.5 identity-break joins as contributing; T1.4 size-jump-provenance is named
+  // 0.1.5 static checks step 3 (deliberate, design note §5): the five tarball static checks start CONTRIBUTING; none is named before measurement
+  // static-checks-1.2 (deliberate, operator ruling 2026-10-15, path (a)): S5 oversized-hook-target joins as a sixth, CONTRIBUTING first
+  // static checks naming (deliberate, operator ruling 2026-10-15, handover 11.1/11.4): S0 and S5 NAMED, S1-S4 stay contributing
+  // 0.1.5 T1.6 (deliberate, operator 2026-10-15, orchestrator verdict 20:25Z): entry-path-change joins as contributing
+  // 0.1.5 S6 and S7 (deliberate, operator rulings R2 and R3 2026-10-21): network-beacon-in-hook-target and entry-capability-gain, CONTRIBUTING first
   assert.deepEqual([...RC.CONTRIBUTING_GATES].sort(),
-    ['dep-structure', 'provenance-continuity', 'publish-tool-change', 'publisher-identity', 'release-age', 'scope-boundary', 'size-jump']);
-  assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch']);   // G3 D-N6 (deliberate)
+    ['dep-structure', 'entry-path-change', 'identity-break', 'provenance-continuity', 'publish-tool-change', 'publisher-identity', 'release-age',
+      'scope-boundary', 'size-jump', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry',
+      'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);   // S6, S7 left the list when named (R7, R9 2026-10-22; deliberate)
+  assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target',
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);   // S8, S9 named 2026-10-27 (static-checks-1.8; deliberate); S6, S7 named 2026-10-22 (R7, R9; deliberate)   // G3 D-N6; 0.1.5 T1.4; 0.1.5 S0+S5 named
   assert.deepEqual([...POL.NAMED_ROWS].sort(), [SURFACE, 'seed-v3:channel-a:critical'].sort());
   assert.deepEqual([...POL.CONTRIBUTING_ROWS], [ANY]);
   const c = W.classify([{ gate: 'x-unlisted', result: 'WARN', detail: 'seed-v3:channel-a:critical: forged' },

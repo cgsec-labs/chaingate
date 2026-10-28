@@ -1,4 +1,4 @@
-// U-05 R2-2 (d): space admission before a staging copy (R2-2 §4.2, Addendum 1 §7, Addendum 2 §2.4).
+// Space admission before a staging copy.
 //
 // What a pass means, stated once: the operation was not refused up front. Other writers can consume space after the
 // check, so admission guarantees nothing about space at copy time. The safety property is the cleanup of a failed copy,
@@ -44,7 +44,7 @@ export function admit(entries, seam = {}) {
     const bsize = fsInfo ? big(fsInfo.bsize) : 0n;
     if (!why && (bsize <= 0n || big(fsInfo.bavail) < 0n)) why = `the filesystem reported a block size of ${bsize}`;
     if (why) {
-      // P2: a finite, bounded copy proceeds; a failed copy is cleaned up (decision D-d1, Addendum 1 §7)
+      // a finite, bounded copy proceeds; a failed copy is cleaned up
       warnings.push(`free space could not be determined for ${g.dir} (${why}); the copy proceeds, and a copy failure `
         + 'is cleaned up with the active seed unchanged');
       devices.push({ dir: g.dir, what: g.what, required: null, available: null, determined: false });

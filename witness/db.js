@@ -3,8 +3,8 @@ import { applicableFromRows } from './decision-rule.js';
 
 /**
  * A stored decision row that recorded an exact-version override ALLOW: the runner's synthetic `override` result
- * (gates/index.js). Structural, never inferred from text. U-05 gap-closure r2 (N3): such a row applies only while the
- * override it recorded still exists.
+ * (gates/index.js). Structural, never inferred from text. Such a row applies only while the override it recorded still
+ * exists.
  */
 export function isOverrideRow(gatesFired) {
   return Array.isArray(gatesFired) && gatesFired.some((r) => r && r.gate === 'override');
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS dep_first_publish (
     attempts      INTEGER NOT NULL DEFAULT 1
 );
 
--- 0.1.4 group 2c (D-R2, O3, E20): the only per-install facts kept on disk -- named warnings served, refusals resting on a
+-- Since 0.1.4: the only per-install facts kept on disk -- named warnings served, refusals resting on a
 -- fact, and dist-tags moved off a fact-withheld version. Written by the proxy once per install and event; pruned at its
 -- start (365 days, at most 100,000 rows). Its statements are prepared LAZILY (namedFactStmts), never in _prepare(): a
 -- read-only handle on a database the 0.1.3 code created has no such table, and must still open (it reads as empty).
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS named_fact_events (
 );
 CREATE INDEX IF NOT EXISTS idx_named_fact_events_at ON named_fact_events(at);
 
--- 0.1.4 group 2d (D-U1, E24): the user's actions. Live state in acceptances and pins; every action appended to
+-- Since 0.1.4: the user's actions. Live state in acceptances and pins; every action appended to
 -- adjudications, which triggers keep append-only. Lazily prepared statements, as for named_fact_events.
 CREATE TABLE IF NOT EXISTS acceptances (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,6 +162,50 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_u BEFORE UPDATE ON adjudi
   BEGIN SELECT RAISE(ABORT, 'adjudications are append-only'); END;
 CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudications
   BEGIN SELECT RAISE(ABORT, 'adjudications are append-only'); END;
+
+-- Since 0.1.5: the entry facts of each version this proxy served, written once per version on its
+-- first download (tarballs are immutable per version): the main and bin targets the registry manifest names, each read (size,
+-- sha256, the closed-vocabulary fileFacts summary) or not read (its reason). walk = 'refused' when the archive itself was refused
+-- (no files). S7 compares a version with the last one served before it. Retention: the newest 3 served versions per package and at
+-- most 200,000 in all (recordEntryFacts).
+-- Since 0.1.5: shape = the version's file sizes by class (proxy/shadow-facts.js), written with the entry facts; shadow = its
+-- recorded facts (dist-tags, sign transitions, known owner, size change), written once after its first download's rows are final.
+-- Record only: no verdict reads them. static_facts = the static-checks-1.6 facts of an armed walk (proxy/static-checks.js
+-- staticFactsOf), written once when its rows are recorded. Record only likewise. static_facts_ms = the time that walk's 1.6 work spent (the member windows
+-- and tally, the streamed share and staticFactsOf), in milliseconds, written with static_facts. repo_claim = an armed version's
+-- repository claim (proxy/shadow-facts.js repoClaimFact: its attestation bundle's repository against its package metadata's), written
+-- once after its first download; record only likewise. repo_claim_ms = the time it took, the bundle fetch included, in milliseconds.
+CREATE TABLE IF NOT EXISTS entry_fact_versions (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_name          TEXT NOT NULL,
+    version               TEXT NOT NULL,
+    served_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    walk                  TEXT NOT NULL CHECK (walk IN ('read','refused')),
+    reason                TEXT,
+    static_checks_version TEXT NOT NULL,
+    facts_ms              REAL,
+    shape                 TEXT,
+    shadow                TEXT,
+    static_facts          TEXT,
+    static_facts_ms       REAL,
+    repo_claim            TEXT,
+    repo_claim_ms         REAL,
+    UNIQUE (package_name, version)
+);
+CREATE TABLE IF NOT EXISTS entry_facts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id INTEGER NOT NULL REFERENCES entry_fact_versions(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('main','bin')),
+    path       TEXT NOT NULL,
+    state      TEXT NOT NULL CHECK (state IN ('read','not-read','absent')),
+    size_bytes INTEGER,
+    sha256     TEXT,
+    facts      TEXT,
+    reason     TEXT,
+    UNIQUE (version_id, role, path)
+);
+CREATE INDEX IF NOT EXISTS idx_efv_pkg_order ON entry_fact_versions(package_name, id DESC);
+CREATE INDEX IF NOT EXISTS idx_ef_version    ON entry_facts(version_id);
 
 CREATE INDEX IF NOT EXISTS idx_versions_pkg      ON versions(package_id);
 CREATE INDEX IF NOT EXISTS idx_versions_pub_at   ON versions(package_id, published_at DESC);
@@ -237,6 +281,14 @@ export class WitnessDB {
       );
     }
     this.db.exec(SCHEMA_SQL);
+    // 0.1.5: facts_ms joined entry_fact_versions after the table; a table created before it gains the column
+    const efv = this.db.prepare("SELECT name FROM pragma_table_info('entry_fact_versions')").all().map((c) => c.name);
+    if (efv.length && !efv.includes('facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN facts_ms REAL');
+    // 0.1.5: shape, shadow and static_facts likewise
+    for (const c of ['shape', 'shadow', 'static_facts']) if (efv.length && !efv.includes(c)) this.db.exec(`ALTER TABLE entry_fact_versions ADD COLUMN ${c} TEXT`);
+    if (efv.length && !efv.includes('static_facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN static_facts_ms REAL');
+    if (efv.length && !efv.includes('repo_claim')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN repo_claim TEXT');
+    if (efv.length && !efv.includes('repo_claim_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN repo_claim_ms REAL');
     this._prepare();
     return this;
   }
@@ -342,7 +394,7 @@ export class WitnessDB {
          WHERE package_name = ? AND version = ?
          ORDER BY decided_at DESC, id DESC`,
       ),
-      // U-05 owner decision 10 (C2): the same order, oldest first, for the applicable-BLOCK walk.
+      // The same order, oldest first, for the applicable-BLOCK walk.
       decisionsOldestFirst: this.db.prepare(
         `SELECT id, disposition, gates_fired, decided_at
          FROM gate_decisions
@@ -412,7 +464,7 @@ export class WitnessDB {
   }
 
   /**
-   * 0.1.4 group 2c (D-R2): the named_fact_events statements, prepared on first use. Null when the table does not exist
+   * Since 0.1.4: the named_fact_events statements, prepared on first use. Null when the table does not exist
    * (a database the 0.1.3 code created, opened read-only): readers treat that as empty.
    */
   _namedFactStmts() {
@@ -425,7 +477,7 @@ export class WitnessDB {
            install_key, k_version)
          VALUES (@at, @kind, @package_name, @version, @classes, @reason, @policy_version, @seed_sha256, @install_key, @k_version)`,
       ),
-      // the NEWEST rows of the window (dated note 7.7); the caller gets them oldest first
+      // the NEWEST rows of the window; the caller gets them oldest first
       since: this.db.prepare(
         `SELECT id, at, kind, package_name, version, classes, reason, policy_version, seed_sha256, install_key, k_version
          FROM named_fact_events WHERE at >= ? ORDER BY at DESC, id DESC LIMIT ?`,
@@ -440,7 +492,7 @@ export class WitnessDB {
   }
 
   /**
-   * 0.1.4 group 2d (D-U1): the statements of one lazily used table, prepared on first use; null while the table does not
+   * Since 0.1.4: the statements of one lazily used table, prepared on first use; null while the table does not
    * exist (a database the 0.1.3 code created, opened read-only), which readers treat as empty.
    */
   _tableStmts(table, build) {
@@ -502,6 +554,117 @@ export class WitnessDB {
       decision_id: a.decision_id ?? null, policy_version: a.policy_version ?? null }).changes;
   }
 
+  _entryFactStmts() {
+    if (!this._tableStmts('entry_facts', () => ({}))) return null;
+    return this._tableStmts('entry_fact_versions', () => ({
+      has: this.db.prepare('SELECT 1 FROM entry_fact_versions WHERE package_name = ? AND version = ?'),
+      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms, shape)
+        VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms, @shape)`),
+      shadowSet: this.db.prepare('UPDATE entry_fact_versions SET shadow = @shadow WHERE package_name = @p AND version = @v AND shadow IS NULL'),
+      staticSet: this.db.prepare('UPDATE entry_fact_versions SET static_facts = @x, static_facts_ms = @ms WHERE package_name = @p AND version = @v AND static_facts IS NULL'),
+      claimSet: this.db.prepare('UPDATE entry_fact_versions SET repo_claim = @x, repo_claim_ms = @ms WHERE package_name = @p AND version = @v AND repo_claim IS NULL'),
+      insF: this.db.prepare(`INSERT OR IGNORE INTO entry_facts (version_id, role, path, state, size_bytes, sha256, facts, reason)
+        VALUES (@version_id, @role, @path, @state, @size_bytes, @sha256, @facts, @reason)`),
+      prev: this.db.prepare(`SELECT * FROM entry_fact_versions WHERE package_name = @p AND version <> @v AND id <
+        COALESCE((SELECT id FROM entry_fact_versions WHERE package_name = @p AND version = @v), 9223372036854775807) ORDER BY id DESC LIMIT 1`),
+      files: this.db.prepare('SELECT role, path, state, size_bytes, sha256, facts, reason FROM entry_facts WHERE version_id = ? ORDER BY id'),
+      prunePkg: this.db.prepare(`DELETE FROM entry_fact_versions WHERE package_name = @package_name AND id NOT IN
+        (SELECT id FROM entry_fact_versions WHERE package_name = @package_name ORDER BY id DESC LIMIT @keep)`),
+      count: this.db.prepare('SELECT COUNT(*) AS c FROM entry_fact_versions'),
+      pruneAll: this.db.prepare(`DELETE FROM entry_fact_versions WHERE id IN (SELECT id FROM entry_fact_versions ORDER BY id LIMIT ?)`),
+    }));
+  }
+
+  /** 0.1.5: whether the entry facts of this version are stored (false on a database without the tables). */
+  hasEntryFacts(packageName, version) {
+    const st = this._entryFactStmts();
+    return Boolean(st && st.has.get(packageName, version));
+  }
+
+  /**
+   * 0.1.5: store one served version's entry facts, once: 'wrote', or 'exists' (nothing changed). Serving order is the row id
+   * (first download). Prunes to the newest `keepPerPackage` versions of the package and `maxVersions` in all, oldest served first.
+   */
+  recordEntryFacts(r, { keepPerPackage = 3, maxVersions = 200_000 } = {}) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return this.db.transaction(() => {
+      const ins = st.insV.run({ package_name: r.package_name, version: r.version, walk: r.walk, reason: r.reason ?? null,
+        static_checks_version: r.static_checks_version, facts_ms: Number.isFinite(r.facts_ms) ? r.facts_ms : null,
+        shape: r.shape == null ? null : JSON.stringify(r.shape) });
+      if (!ins.changes) return 'exists';
+      const versionId = Number(ins.lastInsertRowid);
+      for (const f of Array.isArray(r.files) ? r.files : []) {
+        st.insF.run({ version_id: versionId, role: f.role, path: f.path, state: f.state, size_bytes: f.size_bytes ?? null,
+          sha256: f.sha256 ?? null, facts: f.facts == null ? null : JSON.stringify(f.facts), reason: f.reason ?? null });
+      }
+      st.prunePkg.run({ package_name: r.package_name, keep: keepPerPackage });
+      const over = st.count.get().c - maxVersions;
+      if (over > 0) st.pruneAll.run(over);
+      return 'wrote';
+    })();
+  }
+
+  /**
+   * 0.1.5: the last version of the package this proxy served BEFORE `version` (before its first download when it is stored,
+   * else the last one served), with its files; null on a cold start.
+   */
+  predecessorEntryFacts(packageName, version) {
+    const st = this._entryFactStmts();
+    const v = st ? st.prev.get({ p: packageName, v: version }) : null;
+    if (!v) return null;
+    const files = st.files.all(v.id).map((f) => decodeJsonField(f, 'facts', null));
+    return { version: v.version, served_at: v.served_at, walk: v.walk, reason: v.reason, static_checks_version: v.static_checks_version, facts_ms: v.facts_ms ?? null,
+      shape: decodeJsonField(v, 'shape', null).shape ?? null, files };
+  }
+
+  /** 0.1.5: store a served version's shadow facts, once; 1 when written, 0 when already stored or no entry facts row exists. */
+  recordShadowFacts(packageName, version, facts) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return st.shadowSet.run({ p: packageName, v: version, shadow: JSON.stringify(facts) }).changes;
+  }
+
+  /** 0.1.5: a version's stored shadow facts, or null (none, a database without the column, or not readable). Never throws. */
+  shadowFactsFor(packageName, version) {
+    try {
+      const r = this.db.prepare('SELECT shadow FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
+      return r && typeof r.shadow === 'string' ? JSON.parse(r.shadow) : null;
+    } catch { return null; }
+  }
+
+  /** 0.1.5: store a version's static-checks-1.6 facts ({ facts, s5 }) and the time they took (ms, or NULL), once; 1 when written,
+   *  0 when already stored or no entry facts row exists. */
+  recordStaticFacts(packageName, version, x, ms = null) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return st.staticSet.run({ p: packageName, v: version, x: JSON.stringify(x), ms: Number.isFinite(ms) ? ms : null }).changes;
+  }
+
+  /** 0.1.5: a version's stored static-checks-1.6 facts, or null (none, a database without the column, or not readable). Never throws. */
+  staticFactsFor(packageName, version) {
+    try {
+      const r = this.db.prepare('SELECT static_facts FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
+      return r && typeof r.static_facts === 'string' ? JSON.parse(r.static_facts) : null;
+    } catch { return null; }
+  }
+
+  /** 0.1.5: store an armed version's repository claim and the time it took (ms, or NULL), once; 1 when written, 0 when already
+   *  stored or no entry facts row exists. */
+  recordRepoClaim(packageName, version, x, ms = null) {
+    const st = this._entryFactStmts();
+    if (!st) throw new Error('the entry facts tables do not exist (applySchema was not run on this handle)');
+    return st.claimSet.run({ p: packageName, v: version, x: JSON.stringify(x), ms: Number.isFinite(ms) ? ms : null }).changes;
+  }
+
+  /** 0.1.5: a version's stored repository claim, or null (none, a database without the column, or not readable). Never throws. */
+  repoClaimFor(packageName, version) {
+    try {
+      const r = this.db.prepare('SELECT repo_claim FROM entry_fact_versions WHERE package_name = ? AND version = ?').get(packageName, version);
+      return r && typeof r.repo_claim === 'string' ? JSON.parse(r.repo_claim) : null;
+    } catch { return null; }
+  }
+
   deleteAcceptance(packageName, version) {
     const st = this._acceptStmts();
     return st ? st.del.run(packageName, version).changes : 0;
@@ -543,7 +706,7 @@ export class WitnessDB {
     return st ? st.list.all().map((r) => decodeJsonField(r, 'classes', {})) : [];
   }
 
-  /** PRAGMA data_version: changes when ANOTHER connection commits (the pin set's change check, D-U6). */
+  /** PRAGMA data_version: changes when ANOTHER connection commits (the pin set's change check). */
   dataVersion() {
     return this.db.pragma('data_version', { simple: true });
   }
@@ -599,7 +762,7 @@ export class WitnessDB {
   }
 
   /**
-   * The newest decision for (pkg, version) that is NOT a stored override ALLOW (U-05 gap-closure r2, N3): the decision
+   * The newest decision for (pkg, version) that is NOT a stored override ALLOW: the decision
    * that applies once the override it recorded no longer exists. A row whose gates_fired does not parse is not an
    * override row; it is returned and read by its disposition, as getLatestDecision's callers read it. Read-only.
    */
@@ -628,7 +791,7 @@ export class WitnessDB {
   }
 
   /**
-   * U-05 owner decision 10 (C2): the decision that APPLIES to (pkg, version) under the one applicable-BLOCK rule
+   * The decision that APPLIES to (pkg, version) under the one applicable-BLOCK rule
    * (witness/decision-rule.js). `overrideLive` defaults to whether an exact override exists now. Read errors propagate:
    * a caller that cannot read the history has no decision. Read-only.
    */

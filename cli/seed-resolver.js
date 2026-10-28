@@ -1,7 +1,7 @@
 import { SEED_REPO, SEED_TAG_PATTERN, SEED_FILES } from './constants.js';
 
 const GITHUB_API_BASE = 'https://api.github.com';
-/** The release listing is small; more than this is refused rather than buffered (U-05 R2-2, Addendum 1 §5). */
+/** The release listing is small; more than this is refused rather than buffered. */
 export const RELEASES_MAX_BYTES = 1024 * 1024;
 const DEFAULT_TIMEOUTS = Object.freeze({ connectMs: 30_000, idleMs: 60_000, totalMs: 60_000 });
 
@@ -18,7 +18,7 @@ export class SeedResolutionError extends Error {
  */
 export async function fetchReleases({ fetchImpl = fetch, timeouts = DEFAULT_TIMEOUTS } = {}) {
   const url = `${GITHUB_API_BASE}/repos/${SEED_REPO}/releases`;
-  // deadlines for the response and for the whole listing (U-05 R2-2, Addendum 1 §5)
+  // deadlines for the response and for the whole listing
   const ctrl = new AbortController();
   const total = setTimeout(() => ctrl.abort(), Math.min(timeouts.totalMs ?? 60_000, 60_000));
   const connect = setTimeout(() => ctrl.abort(), timeouts.connectMs ?? 30_000);

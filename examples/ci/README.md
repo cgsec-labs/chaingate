@@ -42,7 +42,12 @@ It performs a specified structural validation, listed at the top of the script. 
 full JSON Schema validation. That runs in the chaingate test suite against
 `seed/v3/chaingate-check-2.schema.json` (and `chaingate-check-1.schema.json` for older results).
 
-**Versions.** chaingate 0.1.4 writes `chaingate.check/3` with policy `cft-policy-1.2`. chaingate 0.1.3 writes
+**Versions.** chaingate 0.1.5 writes `chaingate.check/4` when `chaingate check --tarball` is used: `/3` plus one optional
+`tarball` member (the manifest check and the tarball static checks over a local archive; its `disposition` is over those rows
+alone and never the effective action). It also writes `/4` for every check against a seed of contract
+`cft-seed-v3-contract-1.2`, which only `/4` carries, and whose placement can be `new-family-cold-start` (the first
+prerelease of a new tag, with nothing before it to compare). Otherwise, without `--tarball`, it writes `chaingate.check/3`,
+as 0.1.4 does, with policy `cft-policy-1.2`. chaingate 0.1.3 writes
 `chaingate.check/2` with policy `cft-policy-1.1`; 0.1.2 and earlier
 wrote `chaingate.check/1` with `cft-policy-1.0`. The consumer accepts each schema only with its own
 combination of explanation, policy, detection-contract and seed-contract versions, and rejects any other

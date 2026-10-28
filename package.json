@@ -1,6 +1,6 @@
 {
   "name": "@cgsec/chaingate",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local npm proxy that checks each new package version against that package's own release history",
   "type": "module",
   "main": "proxy/server.js",
@@ -41,7 +41,7 @@
   "dependencies": {
     "better-sqlite3": "12.11.1",
     "semver": "7.7.4",
-    "undici": "6.28.1"
+    "undici": "6.29.1"
   },
   "devDependencies": {
     "ajv": "8.17.1"

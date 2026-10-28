@@ -12,13 +12,17 @@
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 
-const TABLES_IN_DIGEST = ['packages', 'lineages', 'lineage_state', 'spine', 'events', 'dep_names',
+// seed contract 1.2 adds cross_links between spine and events (writer.py TABLES_IN_DIGEST); a seed without the table
+// (1.0 / 1.1) digests exactly as before.
+const TABLES_IN_DIGEST = ['packages', 'lineages', 'lineage_state', 'spine', 'cross_links', 'events', 'dep_names',
   'known_malicious_pins', 'seed_metadata'];
+const OPTIONAL_TABLES = new Set(['cross_links']);
 const ORDER = {
   packages: 'id',
   lineages: 'id',
   lineage_state: 'lineage_id, grp',
   spine: 'lineage_id, ord',
+  cross_links: 'lineage_id, ord',
   events: 'lineage_id, grp, ord',
   dep_names: 'package_id, name',
   known_malicious_pins: 'package_id, version, advisory_id',
@@ -97,6 +101,7 @@ function logicalDigestOfDb(dbOrPath) {
   try {
     for (const t of TABLES_IN_DIGEST) {
       const cols = db.prepare(`PRAGMA table_info(${t})`).all();
+      if (!cols.length && OPTIONAL_TABLES.has(t)) continue;
       const names = cols.map((c) => c.name);
       const real = new Set(cols.filter((c) => String(c.type).toUpperCase().includes('REAL')).map((c) => c.name));
       const stmt = db.prepare(`SELECT ${names.join(', ')} FROM ${t} ORDER BY ${ORDER[t]}`);

@@ -10,7 +10,7 @@ import { resolveLatestSeedAssets } from './seed-resolver.js';
 import { CAPS, FileRefused, readBounded } from '../seed/v3/bounded-file.js';
 import { admit } from './space-admission.js';
 
-// U-05 R2-2, legacy part (Addendum 1 §5; O3 approved for LEGACY downloads only): every byte received is counted against
+// LEGACY seed downloads only: every byte received is counted against
 // an independent limit, with backpressure, deadlines and an owned temporary directory that is always removed.
 /** H: the legacy seed DATABASE download. 2.53x the only published legacy release (seed-v2.1, 106,172,416 bytes). It does
  *  not apply to rc3 or any local v3 database, nor to a local legacy `--seed` file (those are bounded by measured size). */
@@ -116,7 +116,7 @@ export function removeDownload(base, dir, pid = process.pid) {
 }
 
 /**
- * A `.download-<pid>.json` left by a terminated process, VALIDATED before anything is removed (Addendum 2 §3.4): bounded,
+ * A `.download-<pid>.json` left by a terminated process, VALIDATED before anything is removed: bounded,
  * the schema, a directory directly inside the REAL tmpdir named chaingate-seed-<12 hex>, a real directory (not a link),
  * holding only the expected file names. Returns { dir } when it is safe to remove, or { keep: why }.
  */

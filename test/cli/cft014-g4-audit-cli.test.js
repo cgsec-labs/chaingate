@@ -118,12 +118,11 @@ test('G4-14 (R6, R8, R10) README and SECURITY.md: the 1.2 model, labelled platfo
   const readme = read('README.md');
   for (const re of [/six gates/i, /combination is what matters/i, /\(hard limit\)/, /There are six gates/]) assert.doesNotMatch(readme, re);
   assert.match(readme, /no combination of contributing rows warns/i);
-  assert.match(readme, /qualification of 0\.1\.3/);
-  assert.match(readme, /0\.1\.4 ran its full test suite on Linux x64 with Node\.js 22\.22\.2/);
-  assert.match(readme, /passed\s+all 36 jobs/);
+  // 0.1.5: the platform results are one plain paragraph (the README carries no qualification tables; operator 2026-10-25)
+  assert.match(readme, /\*\*Supported platforms\.\*\* ChainGate is tested on Linux x64/);
   assert.match(readme, /is never an ALLOW for that rule/);
   const security = read('SECURITY.md');
-  assert.match(security, /qualification of 0\.1\.3/);
+  assert.match(security, /"Supported platforms" paragraph names the platforms ChainGate is tested on/);
 });
 
 test('README, SEEDS.md and SECURITY.md have no long dashes or ellipsis characters (operator request 2026-10-13)', () => {
@@ -146,11 +145,10 @@ test('G4-25 (W5) README: the pattern-layer results are labelled; the limits of t
   const readme = read('README.md');
   assert.doesNotMatch(readme, /raises severity/);
   assert.doesNotMatch(readme, /\| Canonical attacks caught \|/);
-  assert.match(readme, /\| Canonical attacks \(pattern layer, corpus\) \|/);
   assert.match(readme, /\*\*Coverage choice\*\*/);
   assert.match(readme, /except a BLOCK that is reached again/);
   assert.match(readme, /reads the same ChainGate directory/);
   assert.match(readme, /NAMED RULES/);
   assert.doesNotMatch(readme, /│ Scope boundary  │/);
-  assert.match(readme, /\*\*Limitation\.\*\* Under `cft-policy-1\.2`/);
+  assert.match(readme.replace(/\s+/g, ' '), /## Limitations A release warns only on a named rule\./);
 });

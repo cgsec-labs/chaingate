@@ -1,11 +1,11 @@
-// 0.1.4 group 3b (D-N4): the process's cache of DEPENDENCY packuments that N1h judges -- filled at tarball time by the proxy
-// (bounded fetch, §18.20 item 2), read by the `dependency-hooks` runner gate. Per target name: a summary of the served
+// The process's cache of DEPENDENCY packuments that N1h judges -- filled at tarball time by the proxy
+// (bounded fetch), read by the `dependency-hooks` runner gate. Per target name: a summary of the served
 // document (each version's manifest facts N1h needs, and the dist-tags) or the reason it could not be read. 10 minutes per
 // entry; at most 500 entries (least recently used dropped).
 import { pyTruthy } from '../seed/v3/packument.js';
 
 export const TTL_MS = 10 * 60_000;
-export const FAIL_TTL_MS = 60_000;      // G3 dated note 3.4: a failure is retried after a minute, not ten
+export const FAIL_TTL_MS = 60_000;      // a failure is retried after a minute, not ten
 export const MAX_ENTRIES = 500;
 const HOOKS = ['preinstall', 'install', 'postinstall'];
 

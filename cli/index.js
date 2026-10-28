@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { EXIT } from './constants.js';
+import { COMMAND_HELP } from './help.js';
 import { classifyNativeSqliteError, probeNativeSqlite, nativeSqliteHelp } from './native-sqlite.js';
 
 import { readFileSync } from 'node:fs';
@@ -81,27 +82,7 @@ async function main() {
 
   // Per-command --help: show usage hint without running the command
   if (cmdArgs.includes('--help') || cmdArgs.includes('-h')) {
-    const HELP = {
-      init: 'chaingate init [--no-seed] [--seed <path>] [--scope user|project] [--force] [--dry-run]',
-      status: 'chaingate status [--json] [--scope user|project]',
-      allow: 'chaingate allow <package>@<version> --reason "..." [--scope user|project]',
-      stop: 'chaingate stop [--scope user|project]',
-      'update-seed': 'chaingate update-seed [--force] [--scope user|project]',
-      why: 'chaingate why <package>@<version> --packument <file> [--json] [--scope user|project]\n'
-        + '  chaingate why --from <check.json> [--json]\n'
-        + '  chaingate why <package>@<version> --cached [--json]   (legacy row, UNBOUND, exit 4)\n'
-        + '  chaingate why <package>@<version>                     (no mode: the same as --cached)',
-      history: 'chaingate history <package> [--limit N] [--json] [--scope user|project]',
-      doctor: 'chaingate doctor [--json] [--scope user|project]',
-      check: 'chaingate check <package>@<version> --packument <file> [--json] [--scope user|project]\n  Exit codes (follow the effective action): 0=ALLOW, 2=WARN, 3=BLOCK, 4=tool error',
-      overrides: 'chaingate overrides [list|revoke <package>@<version>] [--json] [--scope user|project]',
-      accept: 'chaingate accept <package>@<version> | --revoke <package>@<version> | --list [--scope user|project]',
-      pin: 'chaingate pin <package>@<version> | --list [--scope user|project]',
-      unpin: 'chaingate unpin <package> [<major> | 0.<minor>] [--scope user|project]',
-      report: 'chaingate report [--all | --since <dur>] [--json] [--scope user|project]\n'
-        + '  Exit codes: 0=nothing named, refused or tag-moved, 2=named warnings, 3=a refusal or a moved dist-tag, 4=tool error or incomplete record',
-    };
-    console.log(HELP[cmd] ?? `chaingate ${cmd}`);
+    console.log(COMMAND_HELP[cmd] ?? `chaingate ${cmd}`);
     process.exit(EXIT.OK);
   }
 

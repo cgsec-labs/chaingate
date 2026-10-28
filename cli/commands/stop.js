@@ -12,7 +12,7 @@ function parseArgs(args) {
   return opts;
 }
 
-// The .npmrc block is removed only when this scope's proxy is known to be gone (U-05 gap-closure r2, revision 2 §6). On
+// The .npmrc block is removed only when this scope's proxy is known to be gone. On
 // any other outcome it is left in place and the command says so, without claiming which process npm is talking to.
 const SUCCESS = new Set(['not_running', 'stopped', 'stopped_port_taken']);
 

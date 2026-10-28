@@ -9,8 +9,8 @@
 // or has gaps, we SKIP instead of BLOCK — a broken npm metadata response
 // must never DoS legitimate installs.
 //
-// Spec: docs/P5.md §6 lines 395-419. This implementation is slightly
-// stricter than the pseudocode: the pseudocode reads both fields with an
+// This implementation is slightly stricter than the original
+// specification's pseudocode: the pseudocode reads both fields with an
 // OR, but that would BLOCK if one field is null on either side (a data
 // gap, not an attack). We break the comparison into:
 //   1. baseline null            → SKIP (first-seen)

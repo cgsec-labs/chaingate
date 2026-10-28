@@ -53,15 +53,15 @@ function loadSeedMeta(db) {
   return out;
 }
 
-// Package loading is set-based (G10 performance, 2026-10-07): ONE statement per table for the whole package, never one
+// Package loading is set-based, for performance: ONE statement per table for the whole package, never one
 // per lineage (the per-lineage form ran 3 statements per lineage: 6,566 for google-closure-compiler). Loading stays
 // eager and complete. Each per-lineage row order is the one the per-lineage statements produced (lineage_state in its
 // primary-key order (grp); events ORDER BY ord, grp; spine ORDER BY ord), and rows are parsed and assembled lineage by
 // lineage in `ORDER BY ord`, so the loaded package -- and the first malformed row a load meets -- are unchanged.
 // Statements are prepared lazily, in the order the per-lineage loader prepared them, and reused per connection;
-// they hold no data between calls. The four bulk statements return rows as ARRAYS (raw mode, G10 2026-10-08): the same
+// they hold no data between calls. The four bulk statements return rows as ARRAYS (raw mode): the same
 // values in the same order, without materialising one object per row; columns are read by position (LOAD_COLS).
-// G10 2026-10-08 (EXPERIMENTAL read layout g10-rl1, seed/v3/read-layout.js): the package lookup also returns the seed's
+// EXPERIMENTAL read layout g10-rl1 (seed/v3/read-layout.js): the package lookup also returns the seed's
 // declared read layout (one scalar subquery, no extra statement); a database without seed_metadata keeps the original
 // lookup (`packageLegacy`), so a legacy seed is read exactly as before. For a package with >= RL1_MIN_LINEAGES lineages
 // in a seed that declares g10-rl1, its initial states come from the ONE derived row (`rl1`) instead of one row per lineage
@@ -72,6 +72,11 @@ const LOAD_SQL = {
   packageLegacy: 'SELECT id, package_name FROM packages WHERE package_name = ?',
   rl1: `SELECT package_id, n_lineages, groups, dict, idx FROM ${RL.RL1_TABLE} WHERE package_id = ?`,
   lineages: 'SELECT id, lineage_key, n_versions, first_published_s, last_published_s FROM lineages WHERE package_id = ? ORDER BY ord',
+  // seed contract 1.2 (rl2): the chain's tag family, and the cross-links of the package's chains
+  lineagesRl2: 'SELECT id, lineage_key, n_versions, first_published_s, last_published_s, tag_family FROM lineages '
+    + 'WHERE package_id = ? ORDER BY ord',
+  links: 'SELECT x.lineage_id, x.ord, x.pred_lineage_id, x.pred_ord, x.pred_version, x.pred_size_bytes, x.pred_tool_key '
+    + 'FROM lineages l JOIN cross_links x ON x.lineage_id = l.id WHERE l.package_id = ? ORDER BY x.lineage_id, x.ord',
   states: 'SELECT s.lineage_id, s.grp, s.initial_state FROM lineages l JOIN lineage_state s ON s.lineage_id = l.id '
     + 'WHERE l.package_id = ? ORDER BY s.lineage_id, s.grp',
   events: 'SELECT e.lineage_id, e.grp, e.ord, e.version, e.published_s, e.after_state FROM lineages l '
@@ -79,10 +84,11 @@ const LOAD_SQL = {
   spine: 'SELECT s.lineage_id, s.ord, s.version, s.published_s, s.size_bytes, s.tool_key, s.shasum, s.capture_class '
     + 'FROM lineages l JOIN spine s ON s.lineage_id = l.id WHERE l.package_id = ? ORDER BY s.lineage_id, s.ord',
 };
-const LOAD_RAW = new Set(['lineages', 'states', 'events', 'spine']);
+const LOAD_RAW = new Set(['lineages', 'lineagesRl2', 'links', 'states', 'events', 'spine']);
 // column positions of the raw rows, in LOAD_SQL's SELECT order
 const LOAD_COLS = {
-  lineages: { id: 0, lineage_key: 1, n_versions: 2, first_published_s: 3, last_published_s: 4 },
+  lineages: { id: 0, lineage_key: 1, n_versions: 2, first_published_s: 3, last_published_s: 4, tag_family: 5 },
+  links: { lineage_id: 0, ord: 1, pred_lineage_id: 2, pred_ord: 3, pred_version: 4, pred_size_bytes: 5, pred_tool_key: 6 },
   states: { lineage_id: 0, grp: 1, initial_state: 2 },
   events: { lineage_id: 0, grp: 1, ord: 2, version: 3, published_s: 4, after_state: 5 },
   spine: { lineage_id: 0, ord: 1, version: 2, published_s: 3, size_bytes: 4, tool_key: 5, shasum: 6, capture_class: 7 },
@@ -101,6 +107,19 @@ function loadStatement(db, key) {
     m.set(key, st);
   }
   return st;
+}
+/**
+ * Whether this seed has the rl2 layout (contract 1.2: `lineages.tag_family`), decided once per handle by COMPILING the rl2
+ * lineage statement (no execution, so a package load still runs a constant number of statements; a legacy seed adds none).
+ */
+const RL2_LAYOUT = new WeakMap();
+function hasRl2(db) {
+  let v = RL2_LAYOUT.get(db);
+  if (v === undefined) {
+    try { db.prepare(LOAD_SQL.lineagesRl2); v = true; } catch { v = false; }
+    RL2_LAYOUT.set(db, v);
+  }
+  return v;
 }
 const isFlat = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
   && Object.values(v).every((x) => x === null || typeof x !== 'object');
@@ -136,8 +155,11 @@ function loadPackage(db, packageName, seedMeta) {
   const row = loadStatement(db, 'package').get(packageName);
   if (!row) return null;
   const pv = { package_id: row.id, package_name: row.package_name, lineages: new Map(), seed_meta: seedMeta };
-  const lrows = loadStatement(db, 'lineages').all(pv.package_id);
+  const rl2 = hasRl2(db);
+  const lrows = loadStatement(db, rl2 ? 'lineagesRl2' : 'lineages').all(pv.package_id);
   const L = LOAD_COLS.lineages; const S = LOAD_COLS.states; const E = LOAD_COLS.events; const P = LOAD_COLS.spine;
+  const X = LOAD_COLS.links;
+  const linkRows = rl2 ? byLineage(loadStatement(db, 'links').all(pv.package_id)) : null;
   const layout = row.read_layout ?? null;
   if (layout !== null && layout !== RL.RL1) throw new RL.ReadLayoutError(`unknown read layout ${JSON.stringify(layout)}`);
   const d = layout !== null && lrows.length >= RL.RL1_MIN_LINEAGES ? loadStatement(db, 'rl1').get(pv.package_id) : undefined;
@@ -161,16 +183,44 @@ function loadPackage(db, packageName, seedMeta) {
         shasum: Buffer.isBuffer(sh) ? sh.toString('hex') : sh, capture_class: s[P.capture_class],
       });
     }
+    // rl2: a cross-link per ord whose predecessor is not this chain's previous row; it carries the predecessor's spine
+    // fields because later rows of that row's own chain can push it out of the K tail. A 1.1 seed: one family, no links.
+    const crossLinks = new Map();
+    for (const x of (linkRows && linkRows.get(id)) || NONE) {
+      crossLinks.set(x[X.ord], { pred_lineage_id: x[X.pred_lineage_id], pred_ord: x[X.pred_ord], version: x[X.pred_version],
+        size_bytes: x[X.pred_size_bytes], tool_key: x[X.pred_tool_key] });
+    }
     pv.lineages.set(id, new LineageView({
       lineage_id: id, lineage_key: l[L.lineage_key], n_versions: l[L.n_versions],
       first_published_s: l[L.first_published_s], last_published_s: l[L.last_published_s], initial, events, spine,
+      tag_family: rl2 ? l[L.tag_family] : 'release', cross_links: crossLinks,
     }));
   }
   return pv;
 }
 
+/**
+ * [predecessor's lineage, its ord, its spine fields or null beyond the tail], or null for a cold start. The seed side's
+ * checker.py `_predecessor`: a live candidate (ord null) extends the tip of its lineage (placement puts it on the chain
+ * whose tip IS its predecessor); a recorded row takes its cross-link when it has one, else the previous row of its chain.
+ */
+function predecessorOf(pv, lv, c) {
+  if (c.ord === null || c.ord === undefined) {
+    const po = lv.n_versions - 1;
+    return po >= 0 ? [lv, po, lv.spine.get(po) || null] : null;
+  }
+  const link = lv.cross_links ? lv.cross_links.get(c.ord) : undefined;
+  if (link !== undefined) {
+    const plv = pv.lineages.get(link.pred_lineage_id);
+    const srow = plv.spine.get(link.pred_ord) || { version: link.version, size_bytes: link.size_bytes, tool_key: link.tool_key };
+    return [plv, link.pred_ord, srow];
+  }
+  if (c.ord - 1 < 0) return null;
+  return [lv, c.ord - 1, lv.spine.get(c.ord - 1) || null];
+}
+
 // ---------------------------------------------------------------------------
-// Channel-A (FU-2 lineage predecessor)
+// Channel-A (lineage predecessor)
 // ---------------------------------------------------------------------------
 function channelA(pv, c) {
   const lv = pv.lineages.get(c.lineage_id) || null;
@@ -181,17 +231,17 @@ function channelA(pv, c) {
     for (const gname of K.CHANNEL_A_GROUPS) groups[gname] = K.unknown(K.UNCOVERED_PACKAGE);
     for (const cn of K.PUBLISHER_CONSTITUENTS) constituents[cn] = K.unknown(K.UNCOVERED_PACKAGE);
   } else {
-    const ord = c.ord === null ? lv.n_versions : c.ord;       // a live candidate extends the tip
-    const predOrd = ord - 1;
-    if (predOrd < 0) {
+    const located = predecessorOf(pv, lv, c);
+    if (located === null) {
       for (const gname of K.CHANNEL_A_GROUPS) groups[gname] = K.unknown(K.COLD_START);
       for (const cn of K.PUBLISHER_CONSTITUENTS) constituents[cn] = K.unknown(K.COLD_START);
     } else {
-      const pub = lv.stateAt('publisher', predOrd);
-      const prov = lv.stateAt('provenance', predOrd);
-      const ins = lv.stateAt('install', predOrd);
-      const git = lv.stateAt('git', predOrd);
-      const srow = lv.spine.get(predOrd) || null;
+      // the predecessor's state comes from ITS lineage's own walk (a cross-link may name another chain)
+      const [plv, predOrd, srow] = located;
+      const pub = plv.stateAt('publisher', predOrd);
+      const prov = plv.stateAt('provenance', predOrd);
+      const ins = plv.stateAt('install', predOrd);
+      const git = plv.stateAt('git', predOrd);
       predVersion = srow ? srow.version : null;
 
       const pId = g(pub, 'identity_digest'); const cId = c.identity_digest;
@@ -243,9 +293,9 @@ function channelA(pv, c) {
   const agg = K.aggregate(groups, [['critical', K.CHANNEL_A_T]], K.CHANNEL_A_GROUPS.length);
   // install_body: RECORDED evidence, never a group, never in N.
   let bodyRecorded = null;
-  const predOrd2 = lv === null ? null : (c.ord === null ? lv.n_versions : c.ord) - 1;
-  if (lv !== null && predOrd2 !== null && predOrd2 >= 0) {
-    const prevBody = g(lv.stateAt('install', predOrd2), 'body_digest') || '';
+  const located2 = lv === null ? null : predecessorOf(pv, lv, c);
+  if (located2 !== null) {
+    const prevBody = g(located2[0].stateAt('install', located2[1]), 'body_digest') || '';
     bodyRecorded = {
       predecessor_body_digest: prevBody.slice(0, 16),
       candidate_body_digest: (c.body_digest || '').slice(0, 16),
@@ -441,12 +491,12 @@ function check(pv, c, seedMeta = null) {
   };
 }
 
-export { loadSeedMeta, loadPackage, check, channelA, dac, LineageView,
+export { loadSeedMeta, loadPackage, check, channelA, dac, LineageView, predecessorOf,
   priorStates, hasPriorVersion, everTrue, sizeReferenceCandidates, SEED_BINDING_KEYS };
 
 
 // A default export as well: the consumer is used both as `import R from` and
 // `import { verify } from`, and the runtime package is ESM.
-export default { loadSeedMeta, loadPackage, check, channelA, dac, LineageView, priorStates,
+export default { loadSeedMeta, loadPackage, check, channelA, dac, LineageView, predecessorOf, priorStates,
   hasPriorVersion, everTrue, sizeReferenceCandidates, SEED_BINDING_KEYS
 };

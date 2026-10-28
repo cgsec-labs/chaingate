@@ -96,5 +96,6 @@ test('G3b-11 (D-N2) the runner evaluates dependency-hooks on first sight (no dep
   const row = out.results.find((g) => g.gate === 'dependency-hooks');
   assert.equal(row.result, 'SKIP');
   assert.match(row.detail, /not yet fetched/);
-  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch']);
+  assert.deepEqual(POL.NAMED_RUNNER_GATES, ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target',
+    'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);   // S8+S9 named 2026-10-27, static-checks-1.8 (deliberate); 0.1.5 T1.4; 0.1.5 S0+S5 named; S6+S7 named 2026-10-22, R7, R9 (deliberate)
 });

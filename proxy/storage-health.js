@@ -1,5 +1,5 @@
-// U-05 gap-closure r2 (owner decision 6), Addendum 1 §B: ONE storage-health state, computed by the running proxy from its
-// own signals and used unchanged by /_chaingate/self, `chaingate status`, `chaingate doctor` and the operator text.
+// ONE storage-health state, computed by the running proxy from its own signals and used unchanged by /_chaingate/self,
+// `chaingate status`, `chaingate doctor` and the operator text.
 //
 // Signals (nothing is inferred):
 //   - the witness store's per-observation outcome: `failure` if any storage step failed in that observation (failure

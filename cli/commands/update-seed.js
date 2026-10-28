@@ -8,7 +8,7 @@ import { installLegacySeed, readInstallMarker, downloadedSeed, reportLegacyInsta
   LegacyInstallRefused, seedVersionAt, storeCountsAt } from '../legacy-seed.js';
 import { assertIntegrity as defaultAssertIntegrity } from '../integrity-gate.js';
 import { EXIT } from '../constants.js';
-import { stageIncoming, finishStagedBundle, activateBundle, rollbackActivation, activeBundleId,
+import { stageIncomingSeed, finishStagedBundle, activateBundle, rollbackActivation, activeBundleId,
   previousBundleId, verifyBundleDir, seedsDir, withSeedMutation, ActivationRecoveryRefused } from '../seed-bundle.js';
 import { LockUnavailable } from '../seed-mutation-lock.js';
 import { readConfigStrict } from '../../config-store.js';
@@ -64,7 +64,7 @@ export async function updateSeedV3(opts, paths, deps, staged = null, lock = null
     return EXIT.OK;
   }
 
-  // `staged`: the privately staged copy (R2-2 (d)). Trust is decided on ITS digest and the sidecar bytes read once.
+  // `staged`: the privately staged copy. Trust is decided on ITS digest and the sidecar bytes read once.
   const hasSig = staged.sigBytes !== null;
   const activeId = activeBundleId(paths.base);
   const activeIdentity = activeId
@@ -143,7 +143,7 @@ export default async function updateSeed(
     console.error(fmt.fail('No witness database found. Run `chaingate init` first.'));
     return EXIT.ERROR;
   }
-  // U-05 R2-2 (b): every seed mutation runs under the per-base lock, after recovering an interrupted activation and
+  // Every seed mutation runs under the per-base lock, after recovering an interrupted activation and
   // removing the leftovers of dead seed commands. A second seed command is refused, not interleaved.
   try {
     return await withSeedMutation(paths.base, (lock) => updateSeedLocked(opts, paths, deps, lock),
@@ -171,10 +171,10 @@ async function updateSeedLocked(opts, paths, deps, lock) {
   // must not touch runtime state. `--rollback`, or `--seed <bundle>` naming a v3 seed, take it.
   if (opts.rollback) return updateSeedV3(opts, paths, deps, null, lock);
   if (opts.seedPath) {
-    // PRIVATE STAGING FIRST (U-05 R2-2 (d)): the supplied file is opened once as a regular file, admitted for space and
+    // PRIVATE STAGING FIRST: the supplied file is opened once as a regular file, admitted for space and
     // copied; it is classified, verified and installed from the STAGED copy and never read again.
     let staged;
-    try { staged = stageIncoming(opts.seedPath, paths.base, { seam: deps.seam, hooks: deps.hooks, lock }); } catch (err) {
+    try { staged = await stageIncomingSeed(opts.seedPath, paths.base, { seam: deps.seam, hooks: deps.hooks, lock }); } catch (err) {
       console.error(fmt.fail(`The seed was not accepted: ${err.message}`));
       console.error('  Nothing was installed or activated; the active bundle is unchanged.');
       return EXIT.ERROR;
@@ -183,7 +183,7 @@ async function updateSeedLocked(opts, paths, deps, lock) {
     try {
       if (staged.info.schemaVersion === 3) return await updateSeedV3(opts, paths, deps, staged, lock);
     } finally { staged.discard(); }
-    // P-R3 (O1): a non-v3 file is refused, never answered with a download of something else
+    // A non-v3 file is refused, never answered with a download of something else
     console.error(fmt.fail('update-seed --seed accepts v3 bundles; a legacy seed is installed with '
       + '`chaingate init --seed <legacy db>` (add --force to refresh an existing witness database).'));
     console.error('  Nothing was changed.');
@@ -209,7 +209,7 @@ async function updateSeedLocked(opts, paths, deps, lock) {
   }
 
   // An interrupted legacy installation is completed by THIS command, even when it was interrupted before witness.db was
-  // created (Addendum 2 §3.2; decision 7 §2.5): the pending marker is what makes this the completing command.
+  // created: the pending marker is what makes this the completing command.
   const marker = readInstallMarker(paths);
   if (!existsSync(paths.witnessDb) && marker.state !== 'pending') {
     console.error(fmt.fail('No witness database found. Run `chaingate init` first.'));
@@ -254,7 +254,7 @@ async function updateSeedLocked(opts, paths, deps, lock) {
       return EXIT.OK;
     }
 
-    // 3. Refresh IN PLACE: one transaction, local decisions and overrides kept (U-05 R2-2, O2; cli/legacy-seed.js).
+    // 3. Refresh IN PLACE: one transaction, local decisions and overrides kept (cli/legacy-seed.js).
     //    Nothing is renamed over the witness database.
     console.log('Refreshing the witness database in place (local decisions and overrides are kept)...');
     let did;

@@ -1,4 +1,4 @@
-// CFT-05 — the supported installation path, assembled: the v3 seed as a D1 gate module.
+// The supported installation path, assembled: the v3 seed as a gate module.
 //
 //   npm packument  ->  explicit observation row  ->  candidate  ->  finding  ->  policy  ->  one
 //   GateResult, which the proxy's packument rewriter turns into enforcement.
@@ -9,7 +9,7 @@
 //
 // WHERE A LIVE RELEASE SITS IN HISTORY.
 //
-// This is grounded in the FU-2 FINAL rule of record
+// This is grounded in the final lineage rule of record
 // (`collector/drift_cooccurrence.resolve_lineage_predecessors`), not in a shortcut. That rule is:
 //
 //   E5  a version with no publication time is dropped: it can neither be a predecessor nor hold one
@@ -41,6 +41,20 @@
 //                         this release -- E1 depends on the package's full distinct-major publish
 //                         sequence, which the seed does not store
 //
+// SEED CONTRACT 1.2 (placement rule rl2-placement-1.0, the seed side's tools/seedgen/placement.py).
+// The rule of record keys a lineage by (major, prerelease tag family): a prerelease's predecessor is the previous version
+// of its own family in its key, a plain release's is the previous version of ANY family in its key. The seed keeps one
+// chain per (key, family), "release" a family of its own, and every chain's tip, so for a live release:
+//
+//   a prerelease of family f   appends to the (key, f) chain after its tip; the first of its family is
+//                              new-family-cold-start (no predecessor)
+//   a plain release            appends to the chain holding the latest tip across its key's chains (that may be a
+//                              prerelease chain); no chain in the key is new-major-cold-start
+//   a same-second tie the predecessor depends on (the candidate against the tip, or two tips against each other) is
+//   unresolved; a release before its own chain's tip is historical-omitted, inside another chain's history unresolved;
+//   a candidate carrying the npm holding description is ineligible-stub (a live release is always forward of the stub
+//   instant, so the forward stub predicate applies); E1 CalVer stays unresolved. A 1.0 / 1.1 seed is placed as above.
+//
 // Only `recorded` and `append` yield a Channel-A comparison. For every other outcome Channel-A is
 // NOT evaluated and the gate says why, IN ITS OWN WORDS, rather than letting the checker report
 // `uncovered_package` for a package the seed covers. The DAC trajectory is package-level -- it reads
@@ -53,6 +67,7 @@ import PK from './packument.js';
 import POL from './policy.js';
 import { emailDomain } from './normalize.js';
 import { resolvePublisherEmail } from './normalize-extra.js';
+import { RELEASE_FAMILY, HOLDING_DESCRIPTION, tagFamily } from './tag-family.js';
 
 const SEED_V3_GATE = 'seed-v3';
 const FROM_PACKUMENT = 'from-packument';
@@ -103,12 +118,15 @@ function resolveDomainVersionCount(configured, { rawVersions, candidateEmail }) 
   return { count: domainCountsFor(rawVersions).get(domain) || 0, source: 'from-packument', domain };
 }
 
-// FU-2 E4/E2, mirrored exactly: `0\.0\.\d+-security$` and `^(\d+)` with a '0' fallback.
+// Rules E4/E2 above, mirrored exactly: `0\.0\.\d+-security$` and `^(\d+)` with a '0' fallback.
 const STUB_RE = /0\.0\.\d+-security$/;
 const MAJOR_RE = /^(\d+)/;
 const CALVER_KEY = '__CALVER__';
 const CALVER_YEAR_MIN = 2000;
 const CALVER_YEAR_MAX = 2027;
+
+const PLACEMENT_RULE_VERSION = 'rl2-placement-1.0';
+const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
 
 const majorOf = (version) => (MAJOR_RE.exec(version || '')?.[1] ?? '0');
 const isStub = (version) => STUB_RE.test(version || '');
@@ -118,7 +136,7 @@ const isCalverYear = (major) => /^20\d\d$/.test(major)
 /**
  * How a release orders against a recorded one — 'after', 'before', or 'ambiguous'.
  *
- * FU-2 sorts on (published_at, version), but the seed stores `published_s` in SECONDS
+ * The lineage rule sorts on (published_at, version), but the seed stores `published_s` in SECONDS
  * (`contract.TIMESTAMP_PRECISION === 'unix_seconds_utc'`), so two releases inside the same second
  * are indistinguishable in it. Treating equal stored seconds as exact timestamp equality and then
  * breaking the tie on the version string INVENTED an ordering the seed cannot support: the real
@@ -134,13 +152,14 @@ function compareToRecorded(candidateS, recordedS) {
   return 'ambiguous';
 }
 
-const stubReason = (version) => `${version} is a 0.0.x-security takedown stub (FU-2 E4): it is excluded `
+const stubReason = (version) => `${version} is a 0.0.x-security takedown stub: it is excluded `
   + 'from lineage grouping and can hold no predecessor';
 
 const PLACEMENTS = Object.freeze({
   RECORDED: 'recorded',
   APPEND: 'append',
   NEW_MAJOR_COLD_START: 'new-major-cold-start',
+  NEW_FAMILY_COLD_START: 'new-family-cold-start',
   HISTORICAL_OMITTED: 'historical-omitted',
   INELIGIBLE_STUB: 'ineligible-stub',
   INELIGIBLE_NO_PUBLICATION_TIME: 'ineligible-no-publication-time',
@@ -149,18 +168,18 @@ const PLACEMENTS = Object.freeze({
 });
 
 /**
- * Where this release sits, per FU-2. Never throws: an unresolved placement is an OUTCOME that the
+ * Where this release sits, per the lineage rule. Never throws: an unresolved placement is an OUTCOME that the
  * caller must handle, not an error that discards the evidence which does not depend on it.
  *
  * @returns {{kind, lineage_id, ord, channel_a_usable, reason}}
  */
-function resolvePlacement(seed, packageName, version, publishedS) {
+function resolvePlacement(seed, packageName, version, publishedS, { holdingDescription = false } = {}) {
   const no = (kind, reason) => ({ kind, lineage_id: null, ord: null, channel_a_usable: false, reason });
 
   const pkg = seed.db.prepare('SELECT id FROM packages WHERE package_name = ?').get(packageName);
   if (!pkg) {
-    // A takedown stub is outside lineage grouping whether or not the seed represents its package (U-05, revision 2
-    // §3.3: an all-stub package reported `uncovered-package`). Placement only; the finding is unchanged.
+    // A takedown stub is outside lineage grouping whether or not the seed represents its package (an all-stub
+    // package used to report `uncovered-package`). Placement only; the finding is unchanged.
     if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
     return no(PLACEMENTS.UNCOVERED_PACKAGE, 'the seed does not cover this package');
   }
@@ -183,11 +202,17 @@ function resolvePlacement(seed, packageName, version, publishedS) {
       channel_a_usable: true, reason: null };
   }
 
+  if (seed.meta?.seed_contract_version === SEED_CONTRACT_1_2) {
+    const rows = seed.db.prepare('SELECT id, lineage_key, tag_family, last_version, last_published_s FROM lineages '
+      + 'WHERE package_id = ? ORDER BY ord').all(pkg.id);
+    return placeRl2(rows, version, publishedS, { holdingDescription });
+  }
+
   // E4 / E5: outside lineage grouping entirely, so it holds no predecessor.
   if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
   if (publishedS === null || publishedS === undefined) {
     return no(PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME,
-      'the release has no publication time (FU-2 E5): it is excluded from lineage grouping and '
+      'the release has no publication time: it is excluded from lineage grouping and '
       + 'cannot be ordered against any predecessor');
   }
 
@@ -204,7 +229,7 @@ function resolvePlacement(seed, packageName, version, publishedS) {
   const major = majorOf(version);
   if (isCalverYear(major) || lineages.some((l) => l.lineage_key === CALVER_KEY)) {
     return no(PLACEMENTS.UNRESOLVED,
-      `lineage key for major ${major} depends on the FU-2 E1 CalVer collapse, which is computed `
+      `lineage key for major ${major} depends on the CalVer collapse rule, which is computed `
       + "from the package's full distinct-major publish sequence and is not stored in the seed");
   }
 
@@ -237,6 +262,67 @@ function resolvePlacement(seed, packageName, version, publishedS) {
     `(${publishedS}, ${version}) is published before the recorded tip `
     + `(${ln.last_published_s}, ${ln.last_version}) of lineage ${ln.id}: this is a version the `
     + 'seed did not retain, not a new release, and its position in the chain is not recoverable');
+}
+
+/**
+ * Where a LIVE release sits in a contract-1.2 seed (rl2-placement-1.0; the seed side's placement.place, case for case).
+ * `lineages`: the package's rows (id, lineage_key, tag_family, last_version, last_published_s). Never throws.
+ */
+function placeRl2(lineages, version, publishedS, { holdingDescription = false } = {}) {
+  const no = (kind, reason) => ({ kind, lineage_id: null, ord: null, channel_a_usable: false, reason });
+  const append = (id) => ({ kind: PLACEMENTS.APPEND, lineage_id: id, ord: null, channel_a_usable: true, reason: null });
+  if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
+  if (holdingDescription) {
+    return no(PLACEMENTS.INELIGIBLE_STUB, `${version} carries the npm holding description (the forward stub predicate): it `
+      + 'is excluded from lineage grouping and holds no predecessor');
+  }
+  if (publishedS === null || publishedS === undefined) {
+    return no(PLACEMENTS.INELIGIBLE_NO_PUBLICATION_TIME, 'the release has no publication time: it cannot be ordered');
+  }
+  if (!lineages.length) return no(PLACEMENTS.UNCOVERED_PACKAGE, 'the seed records no lineage for this package');
+  const major = majorOf(version);
+  if (isCalverYear(major) || lineages.some((l) => l.lineage_key === CALVER_KEY)) {
+    return no(PLACEMENTS.UNRESOLVED, `the lineage key for major ${major} depends on the CalVer collapse rule, which the `
+      + 'seed does not store');
+  }
+  const key = lineages.filter((l) => l.lineage_key === major);
+  const fam = tagFamily(version);
+  const own = key.filter((l) => l.tag_family === fam);
+  if (own.length > 1) return no(PLACEMENTS.UNRESOLVED, `${own.length} recorded chains carry (${major}, ${fam}); a 1.2 seed holds at most one`);
+  const againstTip = (tip, ownChain) => {
+    if (publishedS > tip.last_published_s) return append(tip.id);
+    if (publishedS === tip.last_published_s) {
+      return no(PLACEMENTS.UNRESOLVED, `this release and the recorded tip ${tip.last_version} of chain ${tip.id} both stamp `
+        + `to the same second ${publishedS}; their true order is not recoverable`);
+    }
+    if (ownChain && ownChain.id === tip.id) {
+      return no(PLACEMENTS.HISTORICAL_OMITTED, `the release precedes the recorded tip ${tip.last_version} of its own chain `
+        + `${tip.id}: a version the seed did not retain`);
+    }
+    return no(PLACEMENTS.UNRESOLVED, `the release falls inside chain ${tip.id}'s history (before its tip ${tip.last_version}): `
+      + 'its predecessor is a row the seed does not name for a live release');
+  };
+  if (fam !== RELEASE_FAMILY) {
+    if (!own.length) {
+      return no(PLACEMENTS.NEW_FAMILY_COLD_START, `no recorded chain carries (${major}, ${fam}): the first ${fam} prerelease `
+        + 'of its key has no predecessor');
+    }
+    return againstTip(own[0], own[0]);
+  }
+  if (!key.length) {
+    return no(PLACEMENTS.NEW_MAJOR_COLD_START, `no recorded chain carries major ${major}: the release is the first of its key`);
+  }
+  if (own.length && publishedS < own[0].last_published_s) {
+    return no(PLACEMENTS.HISTORICAL_OMITTED, `(${publishedS}, ${version}) precedes the recorded tip ${own[0].last_version} `
+      + `of its own chain ${own[0].id}: a version the seed did not retain`);
+  }
+  const latest = Math.max(...key.map((l) => l.last_published_s));
+  const atLatest = key.filter((l) => l.last_published_s === latest);
+  if (atLatest.length > 1) {
+    return no(PLACEMENTS.UNRESOLVED, `the tips ${atLatest.map((l) => l.last_version).join(', ')} of major ${major} stamp to `
+      + `the same second ${latest}; which one precedes this release is not recoverable from second-resolution storage`);
+  }
+  return againstTip(atLatest[0], own.length ? own[0] : null);
 }
 
 // The gap index is computed ONCE PER DOCUMENT, like the domain map above: the store evaluates every version of a
@@ -283,8 +369,8 @@ function firstIndex(arr, pred) {
 }
 
 /**
- * 0.1.4 A8 (cft-policy-1.2; seed-base table R7/P3): how many registry releases sit between the seed tip and an `append`
- * candidate. Channel-A compares against the tip (R1) whatever the registry published since; this only COUNTS what the
+ * Since 0.1.4 (cft-policy-1.2): how many registry releases sit between the seed tip and an `append`
+ * candidate. Channel-A compares against the tip whatever the registry published since; this only COUNTS what the
  * seed has not seen, for policy to state as a coverage row. Never throws: a malformed time on another version is not
  * counted, and must not turn this candidate's evaluation into a refusal.
  *
@@ -366,7 +452,7 @@ function validateEvaluationConfig({ config = {}, domainVersionCount } = {}) {
  * THE evaluation path: one candidate, derived from what the proxy holds, to a policy decision.
  *
  * The gate calls it and `chaingate check` calls it; there is no second path. Its input handling is
- * the gate's, unchanged (U-01 plan §2): a missing manifest and any throw from row, placement,
+ * the gate's, unchanged: a missing manifest and any throw from row, placement,
  * candidate or check are policy refusals; a non-string `publishedAt` is passed as null, NOT refused.
  *
  * Call `validateEvaluationConfig` first (the gate does so at construction).
@@ -379,7 +465,7 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
   const version = input.version;
   const manifest = input.rawManifest;
 
-  // The advisory pin FIRST (cft-policy-1.1, D4). It names this exact version and needs neither a manifest, a
+  // The advisory pin FIRST (cft-policy-1.1). It names this exact version and needs neither a manifest, a
   // placement nor a finding, so it is looked up before anything that can fail and carried into every decision below:
   // a refusal can no longer discard it. A lookup that throws is carried as a recorded failure, never as "no pin".
   const looked = POL.lookupPin(seed, pkg, version);
@@ -401,7 +487,8 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
     const row = PK.observationFromManifest(version, manifest,
       typeof input.publishedAt === 'string' ? input.publishedAt : null);
     const publishedS = A.publishedSeconds(row.published_at);
-    place = resolvePlacement(seed, pkg, version, publishedS);
+    place = resolvePlacement(seed, pkg, version, publishedS,
+      { holdingDescription: manifest.description === HOLDING_DESCRIPTION });
     // The candidate's own e-mail is the approver-RESOLVED one, which is what `derive` looks the
     // count up with even though the writer keys the map on the raw address.
     const dvc = resolveDomainVersionCount(domainVersionCount, {
@@ -431,13 +518,13 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
 }
 
 /**
- * Build the D1 gate module.
+ * Build the gate module.
  *
  * @param {object} opts
  *   opts.seed     an open reader Seed (read-only)
  *   opts.config   the operator's policy configuration (see policy.OPEN_CHOICES)
  *   opts.onDecision  optional sink for the full decision, for reporting; the gate still returns
- *                    exactly one GateResult, because that is the shape D1 aggregates.
+ *                    exactly one GateResult, because that is the shape the gate runner aggregates.
  * @returns {{name: string, evaluate: (input: object) => {gate, result, detail}}}
  */
 function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = null } = {}) {
@@ -454,7 +541,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
   function resultFrom(decision, sink) {
     // The decision exists before the sink sees it. A sink that throws used to escape `evaluate`, and the runner then
     // answered with `onError` -- replacing a computed decision (a pin BLOCK included) with the input rule. The decision
-    // stands; the sink's failure is stated beside it (U-05 Amendment 1, G4).
+    // stands; the sink's failure is stated beside it.
     let sinkFailure = null;
     if (sink) {
       try { sink(decision); } catch (e) { sinkFailure = e; }
@@ -472,14 +559,14 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
     const bearing = decision.results.filter((x) => x.result === decision.disposition);
     const why = (bearing.length ? bearing : decision.results)
       .map((x) => `${x.gate}: ${x.detail}`).join(' | ');
-    // cft-policy-1.2 (0.1.4 group 2a, D-N5): contributing rows never bear the disposition, so they are shown after the
+    // cft-policy-1.2 (since 0.1.4): contributing rows never bear the disposition, so they are shown after the
     // bearing rows -- the detail is what `why --cached` and the store keep. (When nothing bears, `why` already lists them.)
     const also = bearing.length ? decision.results.filter((x) => x.result === POL.NOTE)
       .map((x) => ` | also (contributing): ${x.gate}: ${x.detail}`).join('') : '';
     return {
       gate: SEED_V3_GATE,
       result: decision.disposition,
-      // D-N4: the decision's rows, structured (closed vocabulary), so a reader classifies named / contributing / coverage
+      // The decision's rows, structured (closed vocabulary), so a reader classifies named / contributing / coverage
       // rows without parsing the detail text.
       rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
       detail: `${decision.policy_version}: ${why}${also}`
@@ -498,7 +585,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
    * It is not the runner's decision and it is not this module's: an unusable input is exactly the
    * case `on_unusable_input` governs, so policy answers it.
    *
-   * `identity` (U-05 Amendment 1): the caller's request-bound `{packageName, version}` when it holds both, and
+   * `identity`: the caller's request-bound `{packageName, version}` when it holds both, and
    * `overridden: true` when an exact-version override exists for them. With an identity the advisory pin for that
    * exact version is looked up in THIS gate's seed -- the one accepted at wiring -- and a pin BLOCKs, as it does on
    * every other unusable-input path. Without one nothing is looked up and nothing is invented. An overridden version
@@ -526,7 +613,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
       packageName: known ? pkg : null, version: known ? version : null,
     });
     const pinned = looked.pin ? decision.results.find((x) => x.gate === POL.PIN_GATE) : null;
-    // 2b review (dated note 5.2): the failure path carries its structured rows too, so a 1.2 failure decision's facts are
+    // The failure path carries its structured rows too, so a 1.2 failure decision's facts are
     // read from rows, never from the error text.
     return { gate: SEED_V3_GATE, result: decision.disposition, rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
       detail: `${decision.policy_version}: the seed-v3 path could not run (${error.message})`
@@ -541,9 +628,9 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
   return { name: SEED_V3_GATE, evaluate, onError, onErrorResult };
 }
 
-export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
+export { SEED_V3_GATE, PLACEMENTS, resolvePlacement, placeRl2, tagFamily, PLACEMENT_RULE_VERSION, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
   resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor, SEMVER_RE };
-export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, createSeedV3Gate, evaluateCandidate,
+export default { SEED_V3_GATE, PLACEMENTS, resolvePlacement, placeRl2, tagFamily, PLACEMENT_RULE_VERSION, createSeedV3Gate, evaluateCandidate,
   validateEvaluationConfig, majorOf, isStub, isCalverYear, compareToRecorded,
   resolveDomainVersionCount, domainCountsFor, staleSeedGap, gapIndexFor, SEMVER_RE };

@@ -285,10 +285,8 @@ runtime: the tool still reports `authenticated: false`.
 
 ## Platform support
 
-The README's "Tested platforms" table is the qualification of 0.1.3; only those combinations have been tested. On
-Windows that includes a standard (non-administrator) account on Windows 10 with Node 24. 0.1.4 ran its full test suite
-on Linux x64 with Node.js 22.22.2, and CI on its release commit passed all 36 jobs on Linux, macOS (arm64 and x64) and
-Windows Server 2022 with Node.js 22 and 24.
+The README's "Supported platforms" paragraph names the platforms ChainGate is tested on; anything else is untested. On
+Windows that includes a standard (non-administrator) account on Windows 10 with Node 24.
 
 On Windows (from 0.1.2), the active and previous seed bundles are recorded in one file,
 `seeds\activation.json`, which is replaced in a single rename: Windows cannot rename a symbolic link

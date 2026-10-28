@@ -1,10 +1,8 @@
 // Email domain extraction and 5-class provider classification.
 //
-// Sub-step 3a of the V2 publisher pattern. See patterns/publisher.js
+// Part of the V2 publisher pattern. See patterns/publisher.js
 // GATE CONTRACT addition 1 for the consumption rules (provider is a
-// supplementary severity modifier, not a disposition driver) and
-// docs/V2_DESIGN.md Section 11 step 2 sub-step 3 for the taxonomy
-// rationale.
+// supplementary severity modifier, not a disposition driver).
 //
 // Taxonomy (5 classes):
 //   verified-corporate — non-free, non-privacy domain with >=

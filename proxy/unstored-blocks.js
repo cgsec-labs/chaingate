@@ -1,19 +1,19 @@
-// U-05 Amendment 3 (P6b): BLOCKs this proxy process computed but could not store.
+// BLOCKs this proxy process computed but could not store.
 //
-// The tarball gate reads STORED decisions. When the witness database cannot store a BLOCK (Amendment 1, A3:
-// `persisted: false`), the packument already leaves the version out, but a direct tarball request found no stored BLOCK
+// The tarball gate reads STORED decisions. When the witness database cannot store a BLOCK
+// (`persisted: false`), the packument already leaves the version out, but a direct tarball request found no stored BLOCK
 // and was served. This record closes that gap for the life of the process, keyed by the exact canonical package name and
 // the exact version string.
 //
-// Lifecycle, per returned decision for name@version (Amendment 3, Table M; unchanged):
+// Lifecycle, per returned decision for name@version:
 //   BLOCK, not stored                              -> remember (the latest replaces the earlier)
 //   BLOCK, stored                                  -> forget: the database now governs
 //   non-BLOCK, evaluated, not override-based       -> forget ONLY if it definitively clears every reason of the held
-//                                                     BLOCK (owner decision 10, C2: witness/decision-rule.js); else keep
+//                                                     BLOCK (witness/decision-rule.js); else keep
 //   non-BLOCK failure decision (evaluated: false)  -> keep: a failure never erases a known BLOCK
 //   override-based ALLOW                           -> keep: overrides are checked live, so removing one restores the BLOCK
 //
-// Bounded (U-05 gap-closure r2, owner decision 6, revision 2 §3; F2). Nothing is ever evicted or forgotten to make room:
+// Bounded. Nothing is ever evicted or forgotten to make room:
 //   - every retained string has a hard limit; an IDENTITY over its limit (name 214, version 256) is never truncated,
 //     hashed or normalised -- the record enters FULL instead;
 //   - every insert, replacement and removal is charged exactly (estimate T, below); a new key that does not fit (count or
@@ -106,7 +106,7 @@ export function createUnstoredBlocks({ log = null, caps = DEFAULT_CAPS, now = Da
   let fullSince = null;
   const counters = { overflowed: 0, identity_rejected: 0, replacement_detail_kept: 0 };
 
-  // Reporting is never allowed to undo what it reports (Amendment 3, O1).
+  // Reporting is never allowed to undo what it reports.
   const say = (level, msg) => { try { log?.[level]?.(msg); } catch { /* reporting only */ } };
   const iso = () => new Date(now()).toISOString();
 
@@ -138,7 +138,7 @@ export function createUnstoredBlocks({ log = null, caps = DEFAULT_CAPS, now = Da
         + `version ${version.length}/${LIMITS.VERSION_MAX}); it is never truncated`);
       return;
     }
-    // `reasons`: the held BLOCK's reasons as a small fixed-size bit set (C2). Like `charged`, it is covered by the entry's
+    // `reasons`: the held BLOCK's reasons as a small fixed-size bit set. Like `charged`, it is covered by the entry's
     // fixed overhead C_ENTRY in the accepted accounting model, which is therefore unchanged.
     const entry = { remembered_at: iso(), detail: blockDetail(decision), gates: blockGates(decision), charged: 0,
       reasons: reasonBits(decision.results) };
@@ -146,7 +146,7 @@ export function createUnstoredBlocks({ log = null, caps = DEFAULT_CAPS, now = Da
     const pkg = byPackage.get(name);
     const existing = pkg?.versions.get(version);
     if (existing) {
-      // C2: the reasons the new BLOCK does not definitively clear stay held beside its own.
+      // the reasons the new BLOCK does not definitively clear stay held beside its own.
       entry.reasons |= existing.reasons & ~clearedBits(existing.reasons, decision.results);
       const delta = entry.charged - existing.charged;
       if (total + delta <= cap.bytes) { pkg.versions.set(version, entry); total += delta; }
@@ -172,7 +172,7 @@ export function createUnstoredBlocks({ log = null, caps = DEFAULT_CAPS, now = Da
   }
 
   return {
-    /** Apply Table M to one returned decision. */
+    /** Apply the lifecycle table above to one returned decision. */
     note(name, version, decision) {
       if (typeof name !== 'string' || typeof version !== 'string' || !decision || typeof decision !== 'object') return;
       const block = decision.disposition === 'BLOCK';
@@ -180,7 +180,7 @@ export function createUnstoredBlocks({ log = null, caps = DEFAULT_CAPS, now = Da
       if (block && !stored) { remember(name, version, decision); return; }
       if (block) { forget(name, version); return; }
       if (decision.evaluated === false || isOverrideBased(decision)) return;
-      // C2 (owner decision 10): forgotten only when this decision definitively clears EVERY reason of the held BLOCK.
+      // forgotten only when this decision definitively clears EVERY reason of the held BLOCK.
       const held = byPackage.get(name)?.versions.get(version);
       if (!held) return;
       if ((held.reasons & ~clearedBits(held.reasons, decision.results)) === 0) forget(name, version);

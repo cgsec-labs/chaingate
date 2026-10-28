@@ -1,4 +1,4 @@
-// CFT-06 (first half) — JS↔fixture parity over the exact rc3-bound pack.
+// JS-to-fixture parity over the exact bound fixture pack.
 //
 // The JS evaluator computes every finding ITSELF from the seed. It never calls Python and never reads
 // an expected answer before producing its own. Acceptance runs BEFORE any comparison: a harness that

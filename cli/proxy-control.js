@@ -22,7 +22,7 @@ export function isAlive(pid) {
 }
 
 /**
- * Is this pid alive? THREE answers, never two (U-05 gap-closure r2): `alive` (signal 0 delivered), `dead` (ESRCH), or
+ * Is this pid alive? THREE answers, never two: `alive` (signal 0 delivered), `dead` (ESRCH), or
  * `indeterminate` (EPERM or any other error) -- which says only that the operating system refused the check, not that
  * the pid is ours, and not that it is gone. `isAlive` above folds `indeterminate` into "not alive"; nothing that signals
  * or cleans up may rely on it.
@@ -88,7 +88,7 @@ export function fetchSelf(host, port, timeoutMs = 1500) {
 
 /**
  * GET a JSON object from the local proxy. Never throws: { ok: true, json } or { ok: false, why, status? }. `fetchSelf` is
- * this with a 64 KiB cap; `chaingate report` (0.1.4 group 2c) reads `/_chaingate/report` with a larger one.
+ * this with a 64 KiB cap; `chaingate report` (since 0.1.4) reads `/_chaingate/report` with a larger one.
  */
 export function fetchLocalJson(host, port, path, { timeoutMs = 1500, maxBytes = 65536 } = {}) {
   const limit = maxBytes >= 1048576 ? `${maxBytes / 1048576} MiB` : `${maxBytes / 1024} KiB`;
@@ -131,7 +131,7 @@ export const STOP_OUTCOMES = Object.freeze(['not_running', 'stopped', 'stopped_p
   'permission_denied']);
 
 /**
- * Stop the proxy recorded in `pidFile`, truthfully (U-05 gap-closure r2, revision 2 §6, Addendum 1 §D).
+ * Stop the proxy recorded in `pidFile`, truthfully.
  *
  * Nothing is signalled unless the recorded pid is alive AND the process answering /_chaingate/self on the port says it
  * is the ChainGate proxy with that same pid; the pid is probed again immediately before SIGTERM. "Stopped" is reported

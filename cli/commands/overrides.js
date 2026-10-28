@@ -65,11 +65,11 @@ export default async function overrides(args) {
       console.error('Usage: chaingate overrides revoke <package>@<version>');
       return EXIT.ERROR;
     }
-    db.applySchema();                                          // 2d: the adjudication log exists on every writer
+    db.applySchema();                                          // the adjudication log exists on every writer
     const snap = decisionSnapshot(db, parsed.name, parsed.version);
     const deleted = db.deleteOverride(parsed.name, parsed.version);
     if (deleted) {
-      // 0.1.4 group 2d (D-U8): the action is logged; a log failure never undoes the revocation
+      // The action is logged; a log failure never undoes the revocation
       try { adjudicate(db, { action: 'allow-revoke', pkg: parsed.name, version: parsed.version, snapshot: snap }); } catch (err) {
         console.error(fmt.dim(`  (the action could not be logged: ${err.message})`));
       }

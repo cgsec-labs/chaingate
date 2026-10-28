@@ -31,7 +31,7 @@
 //         { gate: module.name, result: 'SKIP', detail: `gate_error: ${msg}` }
 //      Fail-open: a broken gate never escalates to BLOCK.
 //
-//   3. Aggregation (V2 foundation, Section 7 item 1):
+//   3. Aggregation:
 //        blocks = results.filter(r => r.result === 'BLOCK').length
 //        warns  = results.filter(r => r.result === 'WARN').length
 //        if blocks > 0    → 'BLOCK'
@@ -50,19 +50,22 @@ import depStructure from './dep-structure.js';
 import provenanceContinuity from './provenance-continuity.js';
 import releaseAge from './release-age.js';
 import scopeBoundary from './scope-boundary.js';
-// 0.1.4 group 3a (E28): Tier 1 -- T1.1 install-introduced (named), T1.2 size-jump and T1.3 publish-tool-change (contributing)
+// 0.1.4: Tier 1 -- install-introduced (named), size-jump and publish-tool-change (contributing)
 import installIntroduced from './install-introduced.js';
 import sizeJump from './size-jump.js';
 import publishToolChange from './publish-tool-change.js';
-// 0.1.4 group 3b (E32): N1h -- dependency-hooks (named)
+// 0.1.4: N1h -- dependency-hooks (named)
 import dependencyHooks from './dependency-hooks.js';
+// 0.1.5: size-jump-provenance (NAMED; lineage predecessor) and identity-break (contributing)
+import sizeJumpProvenance from './size-jump-provenance.js';
+import identityBreak from './identity-break.js';
+import entryPathChange from './entry-path-change.js';
 import { withRole, validRows, validDeps, validNotes } from './row-class.js';
 
-// NOTE (cft-policy-1.2, 0.1.4 group 2a): a row value meaning "a contributing signal fired"; aggregate() ignores it.
+// NOTE (cft-policy-1.2, 0.1.4): a row value meaning "a contributing signal fired"; aggregate() ignores it.
 const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
 
-// First-seen baseline poisoning protection (V2 foundation, Section 7 item 4
-// of docs/V2_DESIGN.md). The constant lives in `constants.js` because
+// First-seen baseline poisoning protection. The constant lives in `constants.js` because
 // `patterns/publisher.js` also consumes it — one source of truth. Packages
 // with fewer than MIN_HISTORY_DEPTH observed prior versions have every gate
 // NOT in the exempt set short-circuited to SKIP with a poisoning-protection
@@ -73,7 +76,7 @@ const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
 // exempt set must be explicitly justified — the default for any new gate
 // is "pattern-based, requires depth."
 //
-// seed-v3 justification (CFT-05). The protection exists because a first-seen
+// seed-v3 justification. The protection exists because a first-seen
 // package's locally recorded baseline can be attacker-supplied, so a gate that
 // learns its expectations from that baseline can be taught anything. The
 // seed-v3 gate reads NO local baseline: its history comes from the seed
@@ -87,16 +90,18 @@ const VALID_RESULTS = new Set(['ALLOW', 'SKIP', 'WARN', 'BLOCK', 'NOTE']);
 // Re-exported here for backward compatibility with existing callers that
 // import it from this module.
 // TODO: migrate callers to import directly from ../constants.js
-// (test/gates/runner.test.js is the remaining importer as of V2 sub-step 2f).
+// (test/gates/runner.test.js is the remaining importer).
 export { MIN_HISTORY_DEPTH };
 //
-// Tier 1 justification (0.1.4 group 3, dated note 1, D-T7). install-introduced, size-jump and publish-tool-change read NO
+// Tier 1 justification (0.1.4). install-introduced, size-jump and publish-tool-change read NO
 // local baseline: only the packument served in this same request (`rawVersions`, `rawTimes`), the population the counted
-// rule was validated on with no depth requirement (validate_a1.py, A1 0 / 2,982). Under the guard, T1.1 would SKIP on a
+// rule was validated on with no depth requirement. Under the guard, install-introduced would SKIP on a
 // package's first sight -- exactly the case it exists for.
-// dependency-hooks (3b) likewise reads only the served packument (and the dependency's own served packument).
+// dependency-hooks likewise reads only the served packument (and the dependency's own served packument).
+// 0.1.5: size-jump-provenance and identity-break likewise read only the served packument (its versions, times, sizes, gitHead, repository,
+// _npmUser, maintainers, _npmVersion); under the guard they would SKIP on a package's first sight, the case they exist for.
 const HISTORY_INDEPENDENT_GATES = new Set(['content-hash', 'seed-v3', 'install-introduced', 'size-jump', 'publish-tool-change',
-  'dependency-hooks']);
+  'dependency-hooks', 'size-jump-provenance', 'identity-break']);
 
 export const DEFAULT_GATE_MODULES = Object.freeze([
   contentHash,
@@ -109,11 +114,14 @@ export const DEFAULT_GATE_MODULES = Object.freeze([
   sizeJump,
   publishToolChange,
   dependencyHooks,
+  sizeJumpProvenance,
+  identityBreak,
+  entryPathChange,
 ]);
 
 // FAIL-OPEN, AND WHERE IT STOPS.
 //
-// D1's fail-open is right for a pattern gate that could not run: one broken module among several
+// The runner's fail-open is right for a pattern gate that could not run: one broken module among several
 // that still produced evidence should not block an install. It is NOT right for a gate whose BLOCK
 // rests on a recorded advisory naming this exact version -- there, "the gate threw" silently became
 // ALLOW and the known-malware check was simply lost.
@@ -130,7 +138,7 @@ function declaredErrorResult(mod) {
   return VALID_RESULTS.has(mod?.onErrorResult) ? mod.onErrorResult : 'SKIP';
 }
 
-// IDENTITY (U-05 Amendment 1). Every failure below happens for a known package and version -- the runner holds both
+// IDENTITY. Every failure below happens for a known package and version -- the runner holds both
 // in its input -- and a module's `onError(err, identity)` is told them, so a gate whose BLOCK rests on a recorded
 // advisory for that exact version can still find it. A module that declares nothing ignores them: unchanged.
 function identityOf(input) {
@@ -153,8 +161,8 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
       detail: 'malformed gate output',
     };
   }
-  const rows = validRows(raw.rows);   // D-N4: kept only when valid; a malformed `rows` never fails the gate
-  const added = validDeps(raw.added);     // 0.1.4 group 3b (D-N2): N1h's structured lists, kept only when valid
+  const rows = validRows(raw.rows);   // kept only when valid; a malformed `rows` never fails the gate
+  const added = validDeps(raw.added);     // N1h's structured lists, kept only when valid
   const pending = validDeps(raw.pending);
   const unjudgeable = validNotes(raw.unjudgeable);
   return {
@@ -283,7 +291,7 @@ export function createGateRunner({
    * previously manufactured `ALLOW` out of an exception can ask instead of assuming. With no module
    * declaring anything this aggregates to ALLOW, which is exactly the previous behaviour.
    *
-   * `identity` (U-05 Amendment 1): the caller's request-bound `{packageName, version}` when it holds both. The
+   * `identity`: the caller's request-bound `{packageName, version}` when it holds both. The
    * exact-version override is checked here, because no failure path ever reached the override short-circuit above:
    * for an overridden version the modules are told so and consult no advisory, which keeps that version's outcome
    * exactly as it was. An unreadable override store counts as no override, as in runGates.

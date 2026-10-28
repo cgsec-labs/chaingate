@@ -1,4 +1,4 @@
-// Publisher pattern — Section 11 step 2 of docs/V2_DESIGN.md.
+// Publisher pattern.
 //
 // Extracts tenure, transitions, identity profile, and multi-maintainer
 // shape from a package's observed publisher history. Deterministic,
@@ -8,14 +8,14 @@
 // GATE CONTRACT — READ BEFORE CONSUMING PATTERN OUTPUT
 // =====================================================================
 // The publisher pattern emits per-transition feature booleans. The
-// disposition gate (Section 11 step 3) MUST evaluate each transition
+// disposition gate MUST evaluate each transition
 // against THREE axes per event, not against any single aggregate:
 //
-//   axis 1: is_overlap_window_W3     — recency    (sub-step 2d)
-//   axis 2: is_known_contributor_K10 — historicity (sub-step 2e)
-//   axis 3: prior_tenure_versions    — severity    (sub-step 2c)
+//   axis 1: is_overlap_window_W3     — recency
+//   axis 2: is_known_contributor_K10 — historicity
+//   axis 3: prior_tenure_versions    — severity
 //
-// SUFFICIENCY AXIS (sub-step 2f — cross-cuts the three axes above).
+// SUFFICIENCY AXIS (cross-cuts the three axes above).
 //   Before applying any of the three axes, the gate MUST check:
 //
 //     signals.has_sufficient_history
@@ -58,7 +58,7 @@
 // misclassifies every non-trivial package (one legitimate rotation
 // followed by a takeover will have has_overlap_transition=true).
 //
-// AGGREGATE SHORTCUT POLICY (sub-step 2f). Some signals CAN be
+// AGGREGATE SHORTCUT POLICY. Some signals CAN be
 // shortcut on; others cannot. The full policy is documented inline
 // on `extractSignals` — read it before adding a gate that reads the
 // signals object. TL;DR:
@@ -72,7 +72,7 @@
 //   UNSAFE to shortcut: has_overlap_transition — OR across
 //     heterogeneous transitions, misleads on mixed packages.
 //
-// PROVIDER CLASSIFICATION (sub-step 3a — supplementary signal).
+// PROVIDER CLASSIFICATION (supplementary signal).
 //
 //   Addition 1: provider is a severity modifier, NOT a disposition
 //   driver. The gate MUST NOT BLOCK solely on provider alone. On the
@@ -92,7 +92,7 @@
 //   The per-block provider field consumes these classes; identity_profile
 //   aggregates them at the package level.
 //
-// DOMAIN STABILITY (sub-step 3a — package-level context modifier).
+// DOMAIN STABILITY (package-level context modifier).
 //
 //   Addition 2: identity_profile.domain_stability summarizes how this
 //   package's email history looks:
@@ -112,7 +112,7 @@
 //   domain_stability MUST NOT drive disposition on the other three
 //   2×2 cells.
 //
-// SHAPE (sub-step 3b — severity modifier on the cold-handoff cell).
+// SHAPE (severity modifier on the cold-handoff cell).
 //
 //   Addition 3: shape modulates disposition only on the cold-handoff
 //   cell:
@@ -218,20 +218,20 @@
 //
 //   Clean-pool false positives under starter constants: 1 test
 //     (async, publisher cold-handoff false-positive), 31 train;
-//     full false-positive breakdown in validation/reports/validation.md §4.
+//     full false-positive breakdown in validation/reports/validation.md.
 //
 //   See validation/METHODOLOGY.md and validation/reports/validation.md
 //   for full v2 methodology + results.
 //
-// Deferment registry (live in docs/V2_DESIGN.md §0 — mirrored here so
-// anyone editing this file sees what's intentionally NOT done yet):
-//   identity_profile.similarity — domain-similarity / homograph
-//                  scoring (deferred from 3a). Sub-step 4
-//                  calibration + corpus validation completed at
-//                  commits d7adcd7 + f6ebe0a + e71e511 + 94510ca;
-//                  similarity work carried forward.
-//   sub-step 5  — cross-package campaign detection (STRETCH)
-//   step 3      — V2 publisher-identity gate wiring
+// Deferment registry (mirrored from docs/V2_DESIGN.md so anyone
+// editing this file sees what's intentionally NOT done yet):
+//   identity_profile.similarity: domain-similarity / homograph
+//                  scoring. Calibration + corpus validation
+//                  completed at commits d7adcd7 + f6ebe0a +
+//                  e71e511 + 94510ca; similarity work carried
+//                  forward.
+//   cross-package campaign detection (stretch goal)
+//   V2 publisher-identity gate wiring
 
 import {
   CHURNING_WINDOW,
@@ -242,7 +242,7 @@ import { normalizeIdentity } from './identity.js';
 import { classifyProvider, extractDomain } from './provider.js';
 import { compareSemver } from './semver.js';
 
-// Window size for overlap detection (sub-step 2d, definition (a)).
+// Window size for overlap detection (definition (a), see extractOverlap).
 // "How many most-recent tenure blocks we consider when asking whether an
 // incoming identity has appeared before." W=3 is a defensible starter
 // value, not a magic number — it catches rotation in 2–5 person
@@ -250,7 +250,7 @@ import { compareSemver } from './semver.js';
 // keeping the window tight enough that reappearances after multi-block
 // silence count as cold, not overlap.
 //
-// Subject to revision in sub-step 4 (calibrate.js) against the seed.
+// Subject to revision by calibration (calibrate.js) against the seed.
 // Changing this constant will flip fixtures H and I in
 // test/patterns/publisher.test.js — that is BY DESIGN, the regression
 // alarm that tells a future contributor calibration moved.
@@ -264,7 +264,7 @@ export const WINDOW_W = Number.isFinite(Number(process.env.CHAINGATE_PARAM_W))
   ? Number(process.env.CHAINGATE_PARAM_W)
   : 3;
 
-// Threshold for known_contributor detection (sub-step 2e).
+// Threshold for known_contributor detection.
 // "How many prior releases does an incoming identity need to be treated
 // as a known contributor?" K=10 is a defensible starter — above the
 // drive-by range (1–3 patches) but reachable by legitimate committee
@@ -272,7 +272,7 @@ export const WINDOW_W = Number.isFinite(Number(process.env.CHAINGATE_PARAM_W))
 // returning-dormant-maintainer (ALLOW-biasing) from cold-handoff
 // attacker (BLOCK-biasing when paired with high prior_tenure).
 //
-// Subject to revision in sub-step 4. Changing this constant will flip
+// Subject to revision by calibration. Changing this constant will flip
 // fixtures L and M — the inclusive >= K boundary guard.
 //
 // Env-var override: see WINDOW_W above.
@@ -441,7 +441,7 @@ function extractTenure(sortedRows) {
 // deterministically and explain the distinction in a decision log.
 //
 // from_index is the tenure-array index of the outgoing block, kept so
-// sub-step 2d overlap detection can look up the W-window around a
+// overlap detection can look up the W-window around a
 // transition in O(1) without re-scanning.
 function extractTransitions(tenure) {
   const transitions = [];
@@ -463,7 +463,7 @@ function extractTransitions(tenure) {
 }
 
 // ---------------------------------------------------------------------------
-// Overlap detection — sub-step 2d, definition (a), W=WINDOW_W.
+// Overlap detection, definition (a), W=WINDOW_W.
 //
 // SIGNAL SEMANTICS (read carefully before reasoning about this field):
 //
@@ -518,7 +518,7 @@ function extractOverlap(transitions, tenure) {
 }
 
 // ---------------------------------------------------------------------------
-// Known-contributor detection — sub-step 2e, K=WINDOW_K.
+// Known-contributor detection, K=WINDOW_K.
 //
 // SIGNAL SEMANTICS (read carefully before reasoning about this field):
 //
@@ -542,7 +542,7 @@ function extractOverlap(transitions, tenure) {
 //
 // Companion field `prior_contribution_count` is the raw integer count.
 // Emitted alongside the boolean so the gate layer can tier severity
-// (e.g., K-1 looks different from 0) and so calibration in sub-step 4
+// (e.g., K-1 looks different from 0) and so calibration
 // can sweep K against the seed corpus without re-running extract().
 //
 // Why count across ALL prior tenure (not just within W):
@@ -570,23 +570,23 @@ function extractKnownContributor(transitions, tenure) {
 }
 
 // ---------------------------------------------------------------------------
-// Signals aggregation — sub-step 2f.
+// Signals aggregation.
 //
 // Collapses per-transition detail into package-level aggregates, in three
 // tiers, so the gate can answer disposition questions cheaply without
 // re-scanning `transitions[]`:
 //
-//   Tier 1 — sufficiency (populated below, step 2 of 2f)
+//   Tier 1 — sufficiency
 //     observed_versions_count   — valid rows that survived normalizeAndFilter
 //     unique_identity_count     — distinct identities across tenure blocks
 //     has_sufficient_history    — observed >= MIN_HISTORY_DEPTH (constants.js)
 //
-//   Tier 2 — severity extrema + 2×2 cell histogram (step 3 of 2f)
+//   Tier 2 — severity extrema + 2×2 cell histogram
 //     max_prior_tenure_versions, max_cold_handoff_prior_tenure,
 //     cold_handoff_count, new_committee_member_count,
 //     returning_dormant_count, recurring_member_count
 //
-//   Tier 3 — temporal summary (step 4 of 2f)
+//   Tier 3 — temporal summary
 //     total_history_duration_ms, longest_tenure_versions,
 //     longest_tenure_duration_ms
 //
@@ -596,7 +596,7 @@ function extractKnownContributor(transitions, tenure) {
 // is the load-bearing contract that makes the gate's short-circuit path
 // simple and inspection-friendly.
 //
-// Temporal-field caveat (risk #4 decision): normalizeAndFilter drops
+// Temporal-field caveat: normalizeAndFilter drops
 // degraded rows BEFORE tenure runs, so total_history_duration_ms and
 // longest_tenure_duration_ms reflect the span of OBSERVED rows only.
 // A history like [A@day-0, A@day-1000, (null-row at day-500)] reports
@@ -644,7 +644,7 @@ function extractSignals(rows, tenure, transitions, skippedVersionsCount) {
   // derived deterministically from observable history. An auditor can
   // read the package's entire publisher shape in one line.
   //
-  // Zero semantics (risk #3 decision): max_cold_handoff_prior_tenure
+  // Zero semantics: max_cold_handoff_prior_tenure
   // is 0 when no (F,F) transition exists. Paired with cold_handoff_count
   // (also 0 in that case) this disambiguates from the degenerate state
   // "(F,F) transition with prior_tenure=0" — which cannot arise from a
@@ -689,7 +689,7 @@ function extractSignals(rows, tenure, transitions, skippedVersionsCount) {
   // history: total_history_duration_ms=0, longest_tenure_versions=1,
   // longest_tenure_duration_ms=0 (a one-version block has no span).
   //
-  // Gap-filling policy (risk #4 decision): degraded rows are already
+  // Gap-filling policy: degraded rows are already
   // dropped in normalizeAndFilter before tenure runs. A history like
   // [A@day-0, A@day-1000, (null-row @day-500)] reports
   // total_history_duration_ms = 1000 * DAY_MS — span of OBSERVED rows
@@ -729,7 +729,7 @@ function extractSignals(rows, tenure, transitions, skippedVersionsCount) {
     longest_tenure_versions: longestTenureVersions,
     longest_tenure_duration_ms: longestTenureDurationMs,
 
-    // Pre-2f signals kept: these predate the tiered aggregation and are
+    // Earlier signals kept: these predate the tiered aggregation and are
     // still referenced by tests / future wiring.
     transition_count: transitions.length,
     skipped_versions_count: skippedVersionsCount,
@@ -745,7 +745,7 @@ function extractSignals(rows, tenure, transitions, skippedVersionsCount) {
   };
 }
 
-// Sub-step 3a: annotate each tenure block with domain/provider/
+// Annotate each tenure block with domain/provider/
 // first_seen_in_package_ms based on the package-wide domain footprint.
 // The domain-version-count map drives the verified-corporate vs
 // unverified distinction; the earliest-ts map means the two acme blocks
@@ -783,7 +783,7 @@ function annotateTenureWithIdentityProfile(sortedRows, tenure) {
   return rowDomains;
 }
 
-// Sub-step 3a: package-level aggregate derived from the annotated
+// Package-level aggregate derived from the annotated
 // tenure blocks + per-row domain array.
 //
 // domain_stability uses the new-to-window rule: a non-null domain
@@ -831,12 +831,11 @@ function computeDomainStability(rowDomains) {
   return allDomains.size >= 3 ? 'mixed' : 'stable';
 }
 
-// Sub-step 3b: multi-maintainer shape classification from tenure blocks.
+// Multi-maintainer shape classification from tenure blocks.
 //
 // Decision cascade — 5 steps, short-circuit on first match. Future
 // additions (e.g., a "lead-with-deputies" refinement, or collapsing
-// alternating into committee — no longer gated on sub-step 4, which
-// has closed; remains future work) MUST slot into this order so
+// alternating into committee) MUST slot into this order so
 // the branch semantics stay explicit:
 //
 //   1. !hasSufficientHistory              → 'unknown'
@@ -902,7 +901,7 @@ export default {
     validateInput(input);
     const { rows, skipped } = normalizeAndFilter(input.history);
     // Sort runs even when rows is empty — keeps behaviour uniform and
-    // guarantees downstream sub-steps can assume sorted input.
+    // guarantees downstream steps can assume sorted input.
     const sorted = sortRows(rows);
     const tenure = extractTenure(sorted);
     const transitions = extractTransitions(tenure);
@@ -910,9 +909,9 @@ export default {
     extractKnownContributor(transitions, tenure);
     const signals = extractSignals(sorted, tenure, transitions, skipped);
 
-    // Sub-step 3a: annotate tenure blocks with domain/provider/
-    // first_seen_in_package_ms and build the identity_profile aggregate.
-    // Sub-step 3b: classify multi-maintainer shape from tenure.
+    // Annotate tenure blocks with domain/provider/
+    // first_seen_in_package_ms and build the identity_profile aggregate,
+    // then classify multi-maintainer shape from tenure.
     const rowDomains = annotateTenureWithIdentityProfile(sorted, tenure);
     const identity_profile = buildIdentityProfile(rowDomains, tenure);
     const shape = computeShape(tenure, signals.has_sufficient_history);

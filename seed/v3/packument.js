@@ -1,4 +1,4 @@
-// CFT-05 — the npm PACKUMENT adapter: registry JSON -> explicit observation rows.
+// The npm PACKUMENT adapter: registry JSON -> explicit observation rows.
 //
 // WHY THIS IS A SEPARATE LAYER. `adapter.js` consumes a producer EXTRACT row: a flat record whose
 // fields have already been chosen, named and normalised by the collector. A packument is none of

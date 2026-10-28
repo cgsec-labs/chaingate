@@ -1,8 +1,8 @@
-// 0.1.4 group 3a (D-T4, D-T5): the release a Tier 1 detail row compares against -- the highest version of the same major
+// The release a Tier 1 detail row compares against -- the highest version of the same major
 // with no prerelease and lower SemVer precedence, published before the candidate, for which `has(manifest)` holds.
-// Siblings (prerelease builds such as -slim or platform variants) are never predecessors (r3 T1.2: recon cmp-rule-3).
+// Siblings (prerelease builds such as -slim or platform variants) are never predecessors.
 //
-// Cost (G3 dated note 2.1): an index per packument -- eligible versions parsed once, grouped by major and sorted -- memoised
+// Cost: an index per packument -- eligible versions parsed once, grouped by major and sorted -- memoised
 // per (versions, time) object. A candidate is a binary search plus a walk down at most MAX_WALK lower releases; past that
 // there is no predecessor (stated), so a packument costs O(n log n) however many versions it lists.
 import semver from 'semver';

@@ -1,11 +1,11 @@
-// 0.1.4 group 2c (D-R5, dated note 6.1-6.3): the last version without the signal ("K") for a named warning -- the version
+// Since 0.1.4: the last version without the signal ("K") for a named warning -- the version
 // `chaingate report` offers to stay on. Computed by the proxy when the named tarball is served, from this proxy's own
 // records, and stored with the event: never recomputed later.
 //
 // K is the highest version of the same package that meets all of these:
 //   - a release (no prerelease), lower than the warned version, inside npm's caret boundary of it (major >= 1: the same
 //     major; 0.y.z with y >= 1: the same 0.y; 0.0.z: none);
-//   - published at least 24 h before the warned version (the T1.1 settled window); the warned version needs a time too;
+//   - published at least 24 h before the warned version (the settled window, SETTLED_MS); the warned version needs a time too;
 //   - seen in the latest packument this proxy observed for the package (its `last_seen_at` within 60 s of the newest);
 //   - its applicable stored decision is not a BLOCK, leaves nothing pending, is not override-based, carries no named row
 //     and no fact, and a named rule checked it (coverage class `checked`).
@@ -29,7 +29,7 @@ function caretMates(warned) {
   return () => false;
 }
 
-/** Whether `version` was in the latest packument this proxy observed (dated note 6.1); shared with `chaingate pin`. */
+/** Whether `version` was in the latest packument this proxy observed; shared with `chaingate pin`. */
 export function seenInLatest(history, version) {
   const newest = history.reduce((m, h) => { const t = seenAt(h.last_seen_at); return Number.isNaN(t) ? m : Math.max(m, t); }, -Infinity);
   const h = history.find((x) => x.version === version);
@@ -58,7 +58,7 @@ export function lastVersionWithoutSignal(db, packageName, version, { settledMs =
     const rows = latest.gates_fired;
     if (isOverrideRow(rows)) continue;
     const c = classify(rows);
-    if (c.named.length || c.facts.length || !namedRuleChecked(rows)) continue;          // D-T3: any named rule determinate
+    if (c.named.length || c.facts.length || !namedRuleChecked(rows)) continue;          // any named rule determinate
     return h.version;
   }
   return null;

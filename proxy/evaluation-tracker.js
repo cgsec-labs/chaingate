@@ -1,4 +1,4 @@
-// U-05 owner decision 10, C1: which EXACT versions this proxy process has evaluated, and the bounded evaluation work.
+// Which EXACT versions this proxy process has evaluated, and the bounded evaluation work.
 //
 // A tarball is served only on a decision this process made for that exact (canonical name, version). This module
 // remembers which versions were actually evaluated (witness/decision-rule.js isActualEvaluation) and runs at most one
@@ -10,7 +10,7 @@
 // therefore only means that a version is evaluated again before it is served: it never grants permission and never
 // releases a held BLOCK.
 //
-// Bounds (owner decision 10, F5): the tracked versions (the oldest package's entries are evicted first), the evaluations
+// Bounds: the tracked versions (the oldest package's entries are evicted first), the evaluations
 // running at once, and the requests waiting for one. A request beyond the waiting bound is refused
 // (chaingate_evaluation_busy), never served.
 

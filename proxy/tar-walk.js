@@ -1,8 +1,8 @@
-// 0.1.4 group 3c (D-M2): a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers. It keeps the root
+// Since 0.1.4: a constant-memory walk of a .tgz as it streams -- gunzip, then tar headers. It keeps the root
 // package.json entries and skips every other content byte. It never touches the bytes npm receives: the caller feeds it a
 // copy of each chunk.
 //
-// It reads the archive the way npm's extractor does (G4 tables dated notes 4 and 5): pacote over node-tar 7.5.11 (npm 10.9.7)
+// It reads the archive the way npm's extractor does: pacote over node-tar 7.5.11 (npm 10.9.7)
 // and 7.5.19 (npm 11.19.0).
 //   Framing and names as node-tar: a header is valid only with the unsigned checksum; a header node-tar rejects (bad checksum,
 //   empty path, a link without a link name or a non-link with one, an invalid base-256 number) is skipped by ONE block and
@@ -19,11 +19,29 @@
 //   Windows file system MAY also map there (Unicode case folds, the 8.3 name, trailing dots or spaces) are separate
 //   candidates that never replace a view's entry: MC compares each of them on its own, so they can only add a detection.
 // Past a cap, on a gunzip error or a truncated archive, the outcome is "not checked", with the reason.
+// 0.1.5 static checks: an optional KEEP LIST. `createTarWalker({ keep })` also keeps the bodies of at most `maxKeep` named
+// files (`maxKeepBytes` each) on the Linux view -- the files the manifest points npm at (main, bin, install-hook targets) -- exactly
+// as it keeps the root package.json; every other byte is still skipped. `keep` is a list of package-relative paths known before
+// the first byte (the registry manifest), or a function of the parsed root package.json applied when that entry completes (entries
+// that preceded it are stated as not kept). The result then carries `files` [{ path, buf, name, platformsNotChecked }] and `notKept`
+// [{ path, reason, size? }] (size: the header size of a target not kept for a cap, static-checks-1.2 S5); without `keep` the result is unchanged, key for key. Where macOS or Windows would install ANOTHER entry at a
+// kept path (a case alias, a backslash separator), that platform is listed in platformsNotChecked: the body read is the Linux one.
+// 0.1.5 shadow facts: an optional `onFile(path, size)` is called for each regular file on the Linux view, its header size;
+// the result is unchanged, key for key.
+// 0.1.5 static-checks-1.6: an optional `onMember(path, size, window)` is called as each regular
+// file on the Linux view completes, with its header size and its first `memberWindow` bytes (only those are held, one member at a
+// time; every duplicate is reported, the caller keeps the last); an optional `shareOf()` makes a streaming counter ({ push, end }) that
+// reads the WHOLE body of each keep-list target over the kept-file cap, its result on that not-kept entry as `base64`. With either, the
+// result also carries `memberMs`: the time the member windows, the onMember calls and the counter's calls spent, in milliseconds to
+// three places (what 1.6 adds to an armed walk; no time limit in 0.1.5). Without either the result is
+// unchanged, key for key.
 import zlib from 'node:zlib';
 import { posix, win32 } from 'node:path';
 
 export const DEFAULTS = Object.freeze({ maxCompressed: 64 * 1024 * 1024, maxUncompressed: 256 * 1024 * 1024,
-  maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024, maxApprox: 8, maxApproxBytes: 2 * 1024 * 1024 });
+  maxPackageJson: 1024 * 1024, maxMeta: 64 * 1024, maxBehind: 16 * 1024 * 1024, maxApprox: 8, maxApproxBytes: 2 * 1024 * 1024,
+  maxKeep: 6, maxKeepBytes: 1024 * 1024 });
+const MAX_SEEN_BEFORE = 4096;                               // entry paths remembered until a keep FUNCTION resolves
 const stats = { created: 0 };
 export const walkerStats = () => ({ ...stats });
 
@@ -124,6 +142,58 @@ export function createTarWalker(opts = {}) {
   let ex = null; let gex = {}; let sawNull = false;
   const views = { linux: null, macos: null, windows: null };   // view -> { buf, name }: the last entry npm installs there
   const approx = []; let approxBytes = 0;
+  // 0.1.5 keep list: targets (normalised Linux-view paths), kept bodies (last entry wins, as node-tar overwrites), what was not kept
+  const keepOpt = o.keep; const keepGiven = keepOpt !== undefined;
+  const onFile = typeof o.onFile === 'function' ? o.onFile : null;
+  const onMember = typeof o.onMember === 'function' ? o.onMember : null; const memberWindow = Number.isFinite(o.memberWindow) ? Math.max(0, o.memberWindow) : 0;
+  const shareOf = typeof o.shareOf === 'function' ? o.shareOf : null;
+  let member = null;                                       // { path, size, chunks, got }: the member window being read
+  let share = null;                                        // { entry, counter }: an over-cap keep target streamed whole
+  let memberMs = 0;                                        // the time the two above spent
+  let keepTargets = Array.isArray(keepOpt) ? null : (typeof keepOpt === 'function' ? null : new Set());
+  const keepOrder = []; const kept = new Map(); const notKept = []; const aliases = new Map();
+  const seenBefore = new Set(); let seenOverflow = false;
+  const normKeep = (p) => {
+    if (typeof p !== 'string' || p.includes('\0')) return null;
+    const n = posix.normalize(p).replace(/^\.\//, '');
+    return n === '' || n === '.' || n === '..' || n.startsWith('../') || n.startsWith('/') ? null : n;
+  };
+  const pushNotKept = (path, reason, size) => { if (!notKept.some((x) => x.path === path)) notKept.push(size === undefined ? { path, reason } : { path, reason, size }); };
+  function setKeep(list) {
+    keepTargets = new Set();
+    for (const p of Array.isArray(list) ? list : []) {
+      const n = normKeep(p);
+      if (n === null) { pushNotKept(typeof p === 'string' ? p : String(p), 'outside the package'); continue; }
+      if (n === 'package.json') { pushNotKept(n, 'the root package.json is read by the manifest check, not kept'); continue; }
+      if (!keepTargets.has(n)) { keepTargets.add(n); keepOrder.push(n); }
+    }
+  }
+  if (Array.isArray(keepOpt)) setKeep(keepOpt);
+  else if (keepGiven && typeof keepOpt !== 'function') pushNotKept(null, 'keep list not computed: `keep` is neither a list of paths nor a function');
+  /** The keep FUNCTION, once the FIRST Linux-view package.json is complete: it decides on the parsed object (null when unparseable).
+   *  A later root package.json (MC reads the last) does not re-decide: the bodies between could not be kept anyway. */
+  function resolveKeep(body) {
+    let pj = null; try { pj = JSON.parse(body.toString('utf8')); } catch { pj = null; }
+    if (pj === null || typeof pj !== 'object' || Array.isArray(pj)) pj = null;
+    let list;
+    try { list = keepOpt(pj); } catch (err) { setKeep([]); pushNotKept(null, `keep list not computed: ${err?.message ?? err}`); return; }
+    setKeep(list);
+    for (const t of keepOrder) if (seenBefore.has(t)) pushNotKept(t, 'preceded package.json');
+    if (seenOverflow) pushNotKept(null, `entries before package.json beyond ${MAX_SEEN_BEFORE} not tracked`);
+    seenBefore.clear();
+  }
+  /** Another entry that a case-insensitive or Windows file system installs at a kept path (the Linux body is the one read). */
+  function noteAliases(entryPath, lx) {
+    if (!keepTargets || !keepTargets.size) return;
+    const wx = writtenRel(entryPath, true); const wxn = wx != null ? wx.replace(/\\/g, '/') : null;
+    for (const t of keepTargets) {
+      if (lx === t) continue;
+      const tl = t.toLowerCase(); const hit = aliases.get(t) ?? new Set();
+      if (lx != null && (lx.toLowerCase() === tl || fold(lx) === fold(t))) hit.add('macOS');
+      if (wxn != null && (wxn.toLowerCase() === tl || fold(wxn.replace(/[. ]+$/, '')) === fold(t))) hit.add('Windows');
+      if (hit.size) aliases.set(t, hit);
+    }
+  }
   const gunzip = zlib.createGunzip();
   let resolveSettled;
   const settled = new Promise((r) => { resolveSettled = r; });
@@ -137,12 +207,23 @@ export function createTarWalker(opts = {}) {
   gunzip.once('end', () => resolveSettled());
   gunzip.on('error', (e) => fail(`gunzip: ${e.message}`));
 
+  /** The end of a regular file's body: its window to onMember, its streamed share to its not-kept entry (neither ever fails the walk). */
+  function endMember() {
+    if (!member && !share) return;
+    const t0 = performance.now();
+    if (member) { const m = member; member = null; try { onMember(m.path, m.size, Buffer.concat(m.chunks)); } catch { /* a member tally never fails the walk */ } }
+    if (share) { const x = share; share = null; try { x.entry.base64 = x.counter.end(); } catch { /* likewise */ } }
+    memberMs += performance.now() - t0;
+  }
   function complete() {
+    endMember();
     if (!collect) return;
     const body = Buffer.concat(collect.chunks);
     const c = collect; collect = null;
+    if (c.kind === 'keep') { kept.set(c.path, { buf: body, name: c.name }); return; }
     if (c.kind === 'pj') {
       for (const v of c.exact) views[v] = { buf: body, name: c.name };
+      if (typeof keepOpt === 'function' && keepTargets === null && c.exact.includes('linux')) resolveKeep(body);
       if (c.approx.length) {
         approxBytes += body.length;
         if (approx.length >= o.maxApprox || approxBytes > o.maxApproxBytes) { fail('too many possible package.json entries'); return; }
@@ -216,11 +297,30 @@ export function createTarWalker(opts = {}) {
     ex = null;                                               // a pending extended header applies to this entry only
     collect = null;
     if (type === '0' || type === '7') {                      // pacote installs File / OldFile / ContiguousFile
+      // 0.1.5 shadow facts: every regular file's Linux-view path and header size, to the caller's tally (constant memory)
+      if (onFile) { const lx = writtenRel(entryPath, false); if (lx != null) try { onFile(lx, size); } catch { /* a tally never fails the walk */ } }
       const tg = installTargets(entryPath);
       if (tg.exact.length || tg.approx.length) {
         if (size > o.maxPackageJson) throw new BadHeader(`package.json over ${o.maxPackageJson} bytes`);
         collect = { kind: 'pj', chunks: [], exact: tg.exact, approx: tg.approx, name: entryPath };
+      } else if (keepGiven) {                                 // 0.1.5: a keep-list target, on the Linux view (writtenRel, as package.json)
+        const lx = writtenRel(entryPath, false);
+        if (keepTargets === null) { if (lx != null) { if (seenBefore.size < MAX_SEEN_BEFORE) seenBefore.add(lx); else seenOverflow = true; } }
+        else {
+          if (lx != null && keepTargets.has(lx)) {
+            if (size > o.maxKeepBytes) {
+              pushNotKept(lx, `over the kept-file cap (${o.maxKeepBytes} bytes)`, size);
+              const entry = shareOf ? notKept.find((x) => x.path === lx) : null;
+              if (entry) try { share = { entry, counter: shareOf() }; } catch { share = null; }
+            }
+            else if (!kept.has(lx) && kept.size >= o.maxKeep) pushNotKept(lx, `beyond ${o.maxKeep} kept files`, size);
+            else collect = { kind: 'keep', chunks: [], path: lx, name: entryPath };
+          }
+          noteAliases(entryPath, lx);
+        }
       }
+      // static-checks-1.6: this member's window for the caller's member facts, read beside whatever else collects its body
+      if (onMember) { const lx = writtenRel(entryPath, false); if (lx != null) member = { path: lx, size, chunks: [], got: 0 }; }
     }
     return size;
   }
@@ -249,6 +349,12 @@ export function createTarWalker(opts = {}) {
       if (state === 'content') {
         const take = Math.min(remaining, buf.length - off);
         if (collect) collect.chunks.push(Buffer.from(buf.subarray(off, off + take)));
+        if ((member && member.got < memberWindow) || share) {
+          const t0 = performance.now();
+          if (member && member.got < memberWindow) { const t = Math.min(take, memberWindow - member.got); member.chunks.push(Buffer.from(buf.subarray(off, off + t))); member.got += t; }
+          if (share) try { share.counter.push(buf.subarray(off, off + take)); } catch { share = null; }
+          memberMs += performance.now() - t0;
+        }
         off += take; remaining -= take;
         if (remaining === 0) {
           try { complete(); } catch (err) {
@@ -265,6 +371,15 @@ export function createTarWalker(opts = {}) {
     }
   }
   gunzip.on('data', onData);
+  /** 0.1.5: `files` in keep order (kept bodies, Linux view) and `notKept` with one reason each; a target never seen is stated. */
+  function keepResult() {
+    if (typeof keepOpt === 'function' && keepTargets === null) { setKeep([]); pushNotKept(null, 'keep list not computed: no root package.json in the archive'); }
+    const plat = (t) => ['macOS', 'Windows'].filter((x) => aliases.get(t)?.has(x));
+    for (const t of keepOrder) if (!kept.has(t) && !notKept.some((x) => x.path === t)) {
+      const a = plat(t); pushNotKept(t, a.length ? `not in the archive (an entry installs there on ${a.join(', ')})` : 'not in the archive');
+    }
+    return { files: keepOrder.filter((t) => kept.has(t)).map((t) => ({ path: t, buf: kept.get(t).buf, name: kept.get(t).name, platformsNotChecked: plat(t) })), notKept };
+  }
   function grouped() {
     const out = [];
     for (const [v, label] of [['linux', 'Linux'], ['macos', 'macOS'], ['windows', 'Windows']]) {
@@ -293,7 +408,8 @@ export function createTarWalker(opts = {}) {
       if (!failed && !ended) { gunzip.end(); await settled; }
       if (failed) return { ok: false, reason: failed };
       const done = () => ({ ok: true, packageJson: views.linux?.buf ?? null, views: grouped(),
-        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })) });
+        approx: approx.map((a) => ({ platforms: a.platforms, packageJson: a.buf, name: a.name })), ...(keepGiven ? keepResult() : {}),
+        ...(onMember || shareOf ? { memberMs: Number(memberMs.toFixed(3)) } : {}) });
       if (ended) { try { gunzip.destroy(); } catch { /* gone */ } return done(); }   // the end is final
       if (state !== 'header' || pending.length) return { ok: false, reason: 'tar: truncated archive' };
       return done();

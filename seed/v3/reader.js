@@ -1,7 +1,7 @@
-// CFT-04 — the offline v3 seed reader in native JavaScript. Mirrors tools/seedgen/reader.py:
-// R1 compatibility declared AND checked · R2 trust before use, modes explicit · R2.1 candidate facts
-// supplied never invented · R3 read-only and offline · R4 check evaluates · R5 coverage is an outcome
-// · R6 why is derived, deterministic, inert and complete · R7 full-corpus capability.
+// The offline v3 seed reader in native JavaScript. Mirrors tools/seedgen/reader.py:
+// compatibility declared AND checked; trust before use, modes explicit; candidate facts
+// supplied, never invented; read-only and offline; check evaluates; coverage is an outcome;
+// why is derived, deterministic, inert and complete; full-corpus capability.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -13,15 +13,29 @@ import { pyStrip } from './normalize.js';
 import { CAPS, FileRefused, openRegular, readBounded, readBoundedIfPresent, sha256Regular } from './bounded-file.js';
 
 const SUPPORTED_SCHEMA_VERSIONS = [3];
-// 1.1 (U-05, D4): advisory pins are keyed by package NAME, so a pin no longer presumes a represented package.
+// 1.1: advisory pins are keyed by package NAME, so a pin no longer presumes a represented package.
 // Its pin table carries `package_name` with an index on (package_name, version); see pinLayoutProblem().
 const SEED_CONTRACT_1_0 = 'cft-seed-v3-contract-1.0';
 const SEED_CONTRACT_1_1 = 'cft-seed-v3-contract-1.1';
-const SUPPORTED_SEED_CONTRACT_VERSIONS = [SEED_CONTRACT_1_0, SEED_CONTRACT_1_1];
+// 1.2: chains per (lineage key, tag family) in `lineages.tag_family`, and `cross_links` for every
+// predecessor that is not the previous row of its own chain. Read ONLY together with the pipeline-key identifiers below; a
+// 1.1 reader would take ord - 1 as every predecessor, so it refuses 1.2 by its contract version.
+const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
+const SUPPORTED_SEED_CONTRACT_VERSIONS = [SEED_CONTRACT_1_0, SEED_CONTRACT_1_1, SEED_CONTRACT_1_2];
+const PIPEKEY_CHANNEL_A = 'infra5d-1.2+fu2final+norm1+sizeshrink+pipekey1';
+// This reader's own literals for what a 1.2 seed must declare, as the seed side's reader.py and versions.py pin them. The
+// stub instant and the tag-family definition decide predecessors, so a seed built under others would disagree with the gate.
+const RL2_IDENTIFIERS = Object.freeze({
+  lineage_rule_version: 'fu2-final+e1e4e5+pipekey1+stubpred1',
+  stub_detector_effective_at: '2026-10-13T22:00:00+00:00',
+  storage_layout: 'wr1/noeidx/p8k/pinname1/xlink1',
+  tag_family_fixture: '{"sha256":"f4be8bc5ab9eaeb5a59eef8c4f206483cfc545a3aba8e90437fde21c542a7061","version":"lineage-tag-family-cases-0.2"}',
+});
+const CROSS_LINK_COLUMNS = ['lineage_id', 'ord', 'pred_lineage_id', 'pred_ord', 'pred_version', 'pred_size_bytes', 'pred_tool_key'];
 const IMPLEMENTED_DETECTION_CONTRACT = K.CONTRACT_VERSION;
 const REQUIRED_TABLES = ['seed_metadata', 'packages', 'lineages', 'lineage_state', 'spine', 'events'];
 const SUPPORTED_RULE_VERSIONS = {
-  channel_a: ['infra5d-1.2+fu2final+norm1+sizeshrink'],
+  channel_a: ['infra5d-1.2+fu2final+norm1+sizeshrink', PIPEKEY_CHANNEL_A],
   dac_trajectory: ['dac-trajectory-1.0'],
 };
 const REQUIRED_BINDING_KEYS = ['schema_version', 'contract_version', 'corpus_snapshot_digest',
@@ -65,7 +79,7 @@ class CandidateRejected extends Error {
   constructor(reasons) { super(reasons.join('; ')); this.name = 'CandidateRejected'; this.reasons = reasons; }
 }
 
-// U-05 R2-2 (c): through one non-blocking descriptor that must be a regular file, read from explicit positions.
+// Through one non-blocking descriptor that must be a regular file, read from explicit positions.
 function sha256File(p) { return sha256Regular(p); }
 
 /** What a refusal says, without the path the caller already names. */
@@ -89,6 +103,16 @@ function pinLayoutProblem(db, tables) {
     return keys[0] === 'package_name' && keys[1] === 'version';
   });
   return indexed ? null : 'known_malicious_pins has no index on (package_name, version)';
+}
+
+/** The lineage layout a 1.2 seed must carry, or null; the seed side's reader.py rl2_layout_problem. */
+function rl2LayoutProblem(db, tables) {
+  if (!tables.has('cross_links')) return 'missing table cross_links';
+  const cols = db.prepare("PRAGMA table_info('cross_links')").all().map((r) => r.name);
+  const missing = CROSS_LINK_COLUMNS.filter((c) => !cols.includes(c));
+  if (missing.length) return `cross_links lacks ${missing.join(', ')} (columns: ${cols.join(', ')})`;
+  if (!db.prepare("PRAGMA table_info('lineages')").all().some((r) => r.name === 'tag_family')) return 'lineages has no tag_family column';
+  return null;
 }
 
 // Python's int() strips Python whitespace, which is not JavaScript's; and [0-9] rather than \d
@@ -195,7 +219,7 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
   const base = { trust_mode: trust, authenticated: false, path: String(dbPath) };
   if (!fs.existsSync(dbPath)) return { ...base, ok: false, checks: { present: `no such file: ${dbPath}` }, meta: {} };
   checks.present = true;
-  // Before SQLite opens it by path: a FIFO or a device there would block that open (R2-2 §3.1).
+  // Before SQLite opens it by path: a FIFO or a device there would block that open.
   try { fs.closeSync(openRegular(dbPath).fd); } catch (e) {
     return { ...base, ok: false, checks: { ...checks, openable: whyOf(e) }, meta: {} };
   }
@@ -235,9 +259,17 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
       : `seed declares contract_version=${JSON.stringify(raw.contract_version)}; this reader implements ${JSON.stringify(SUPPORTED_SEED_CONTRACT_VERSIONS)}`;
     meta.seed_contract_version = raw.contract_version === undefined ? null : raw.contract_version;
     meta.detection_contract_version = IMPLEMENTED_DETECTION_CONTRACT;
-    if (raw.contract_version === SEED_CONTRACT_1_1) {
+    if (raw.contract_version === SEED_CONTRACT_1_1 || raw.contract_version === SEED_CONTRACT_1_2) {
       const bad = pinLayoutProblem(db, tables);
-      checks.pin_layout = bad === null ? true : `seed declares ${SEED_CONTRACT_1_1} but ${bad}`;
+      checks.pin_layout = bad === null ? true : `seed declares ${raw.contract_version} but ${bad}`;
+    }
+    if (raw.contract_version === SEED_CONTRACT_1_2) {
+      const bad = rl2LayoutProblem(db, tables);
+      checks.rl2_layout = bad === null ? true : `seed declares ${SEED_CONTRACT_1_2} but ${bad}`;
+      for (const [k, want] of Object.entries(RL2_IDENTIFIERS)) {
+        checks[k] = raw[k] === want ? true
+          : `seed declares ${SEED_CONTRACT_1_2} with ${k}=${JSON.stringify(raw[k] ?? null)}; this reader reads 1.2 only under ${want}`;
+      }
     }
 
     const absent = REQUIRED_BINDING_KEYS.filter((k) => !raw[k]);
@@ -255,9 +287,13 @@ function verify(dbPath, { trust = TRUST_AUTHENTICATED, pubkeyPath = null, pubkey
           + `(supported: ${JSON.stringify(SUPPORTED_RULE_VERSIONS)})`;
       } else if (extra.length) {
         checks.rule_versions = `seed carries rule families this reader does not implement: ${JSON.stringify(extra)}`;
+      } else if ((rv.channel_a === PIPEKEY_CHANNEL_A) !== (raw.contract_version === SEED_CONTRACT_1_2)) {
+        // no inference: the pipeline-key rule and the 1.2 layout come together or the seed is refused
+        checks.rule_versions = `channel_a=${JSON.stringify(rv.channel_a)} with contract_version=${JSON.stringify(raw.contract_version)}: `
+          + `${PIPEKEY_CHANNEL_A} is read only from a ${SEED_CONTRACT_1_2} seed, and a ${SEED_CONTRACT_1_2} seed only under it`;
       } else checks.rule_versions = true;
     }
-    // G10 EXPERIMENTAL read layout (read-layout.js): checked only when the seed declares one; a legacy seed's report is unchanged
+    // EXPERIMENTAL read layout (read-layout.js): checked only when the seed declares one; a legacy seed's report is unchanged
     const rl = RL.verifyReadLayout(db, raw, tables);
     if (rl !== null) { checks.read_layout = rl; readLayout = { id: raw.read_layout, digest: raw.read_layout_digest ?? null }; }
   } finally { db.close(); }
@@ -353,7 +389,7 @@ function openSeed(dbPath, opts = {}) {
 
 export {
   SUPPORTED_SCHEMA_VERSIONS, SUPPORTED_SEED_CONTRACT_VERSIONS, SEED_CONTRACT_1_0, SEED_CONTRACT_1_1,
-  IMPLEMENTED_DETECTION_CONTRACT,
+  SEED_CONTRACT_1_2, PIPEKEY_CHANNEL_A, RL2_IDENTIFIERS, CROSS_LINK_COLUMNS, IMPLEMENTED_DETECTION_CONTRACT,
   REQUIRED_TABLES, SUPPORTED_RULE_VERSIONS, REQUIRED_BINDING_KEYS,
   TRUST_AUTHENTICATED, TRUST_UNSIGNED_DEV, TRUST_MODES,
   CANDIDATE_SPEC, CANDIDATE_REQUIRED, PROVIDER_CLASSES,
@@ -365,7 +401,7 @@ export {
 // A default export as well: the consumer is used both as `import R from` and
 // `import { verify } from`, and the runtime package is ESM.
 export default { SUPPORTED_SCHEMA_VERSIONS, SUPPORTED_SEED_CONTRACT_VERSIONS, SEED_CONTRACT_1_0,
-  SEED_CONTRACT_1_1, IMPLEMENTED_DETECTION_CONTRACT, REQUIRED_TABLES, SUPPORTED_RULE_VERSIONS,
+  SEED_CONTRACT_1_1, SEED_CONTRACT_1_2, PIPEKEY_CHANNEL_A, RL2_IDENTIFIERS, CROSS_LINK_COLUMNS, IMPLEMENTED_DETECTION_CONTRACT, REQUIRED_TABLES, SUPPORTED_RULE_VERSIONS,
   REQUIRED_BINDING_KEYS, TRUST_AUTHENTICATED, TRUST_UNSIGNED_DEV, TRUST_MODES, CANDIDATE_SPEC,
   CANDIDATE_REQUIRED, PROVIDER_CLASSES, SeedRefused, CandidateRejected, sha256File,
   validateField, candidateFromMapping, verify, verifySignature, Seed, openSeed

@@ -1,6 +1,6 @@
-// T1.3 publishing-tool change -- a CONTRIBUTING row in cft-policy-1.2 (r3 T1.3, §18.7; group 3 tables D-T5). Direction-aware:
+// publish-tool-change -- a CONTRIBUTING row in cft-policy-1.2. Direction-aware:
 // the candidate's _npmVersion LOWER than its predecessor's (gates/predecessor.js) is the signal (same-account abuse:
-// npm@11.12.1 -> 9.2.0); an upgrade is not (migration to CI, recon item 1). Recorded as NOTE by the runner's role table.
+// npm@11.12.1 -> 9.2.0); an upgrade is not (migration to CI). Recorded as NOTE by the runner's role table.
 import semver from 'semver';
 import { predecessorOf, MAX_WALK } from './predecessor.js';
 

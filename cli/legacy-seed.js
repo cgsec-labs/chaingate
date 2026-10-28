@@ -1,5 +1,5 @@
-// U-05 R2-2, legacy part: installing or refreshing the LEGACY witness seed (the seed IS the witness database) without
-// ever renaming a file over an existing database (owner decision 7; Addendum 2 §2.4 and §3.2; decision 7 §2).
+// Installing or refreshing the LEGACY witness seed (the seed IS the witness database) without ever renaming a file over
+// an existing database.
 //
 //   * An existing witness.db is refreshed IN PLACE, in ONE SQLite transaction: the seed tables are replaced from the
 //     verified staged seed (ATTACHed), the seed's own decisions and overrides are imported only where no local row has
@@ -46,7 +46,7 @@ function fsyncDir(dir) {
 /**
  * Read-only: { state: 'none' } | { state: 'pending', marker } | { state: 'invalid', why } | { state: 'unreadable', why }.
  * Doctor and the gate use it. Only a marker that is genuinely ABSENT (ENOENT) is "none": a location that cannot be
- * checked (EACCES, EIO, ...) is 'unreadable', never "no marker" (owner decision 8, Q1/Q2).
+ * checked (EACCES, EIO, ...) is 'unreadable', never "no marker".
  */
 export function readInstallMarker(paths) {
   const file = markerPath(paths);
@@ -81,7 +81,7 @@ function removeMarker(paths) {
   fsyncDir(path.dirname(markerPath(paths)));
 }
 
-// ---- the real schema, by owner (decision 7 §2.1) ---------------------------------------------------------------------
+// ---- the real schema, by owner ---------------------------------------------------------------------------------------
 /** Columns of the RUNTIME schema (witness/db.js) of each replaced table: what the runtime reads and writes. */
 export const RUNTIME_COLUMNS = Object.freeze({
   packages: ['id', 'ecosystem', 'package_name'],
@@ -102,7 +102,7 @@ export const OPTIONAL_SEED_TABLES = ['attack_labels'];
 const DELETE_ORDER = ['version_files', 'attack_labels', 'versions', 'packages', 'seed_metadata'];
 const INSERT_ORDER = ['packages', 'versions', 'version_files', 'attack_labels', 'seed_metadata'];
 const ORDER_KEY = { seed_metadata: 'key' };
-/** Local tables: never replaced. gate_decisions and overrides receive the seed's rows by natural key (§2.3). */
+/** Local tables: never replaced. gate_decisions and overrides receive the seed's rows by natural key. */
 export const LOCAL_TABLES = ['gate_decisions', 'overrides', 'dep_first_publish'];
 const DECISION_COLUMNS = ['package_name', 'version', 'disposition', 'gates_fired', 'decided_at'];
 const OVERRIDE_COLUMNS = ['package_name', 'version', 'reason', 'created_at'];
@@ -194,7 +194,7 @@ export function refreshLegacyWitness(witnessPath, stagedPath, { hooks = {}, busy
       db.exec(`INSERT INTO main.${q(t)} (${cols}) SELECT ${cols} FROM seed.${q(t)} ORDER BY ${q(ORDER_KEY[t] ?? 'id')}`);
       result.replaced.push(t);
     }
-    // The seed's own decisions and overrides, by NATURAL KEY (decision 7 §2.3): only where no local row exists for that
+    // The seed's own decisions and overrides, by NATURAL KEY: only where no local row exists for that
     // (package, version); never by id; in the seed's order. Constraint violations abort the transaction, never skip.
     if (plan.imports.includes('gate_decisions')) {
       const c = DECISION_COLUMNS.map(q).join(', ');
@@ -247,7 +247,7 @@ function closeQuietly(db, attached) {
 const LINK_UNSUPPORTED = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'ENOSYS', 'EMLINK']);
 
 /**
- * First creation (decision 7 §2.6): a complete, verified, closed copy in the DESTINATION directory, published with
+ * First creation: a complete, verified, closed copy in the DESTINATION directory, published with
  * link(2) -- which fails if the destination exists. Returns 'created' or 'exists' (someone created it first: the caller
  * takes the existing-database path). An unsupported link refuses; there is no copy fallback.
  */
@@ -261,7 +261,7 @@ export function createWitnessFromStaged(paths, staged, { hooks = {}, fsImpl = {}
     copyFdExact(src.fd, staged.size, tmp, staged.path, hooks);
   } catch (e) { fs.rmSync(tmp, { force: true }); throw e; } finally { fs.closeSync(src.fd); }
   // Once link() has PUBLISHED witness.db, any later failure is reported as such (committed), so the caller keeps the
-  // pending marker and the same command completes the installation (owner decision 8, Q3/Q4).
+  // pending marker and the same command completes the installation.
   const afterPublication = (what, e) => new LegacyInstallRefused(`the witness database was created (published), but `
     + `${what} failed (${e.code || e.message}); the installation stays pending: re-run the same command with the same `
     + 'seed to complete it', { committed: true, kind: 'published' });
@@ -293,7 +293,7 @@ export function createWitnessFromStaged(paths, staged, { hooks = {}, fsImpl = {}
 }
 
 /**
- * The persisted pair, NEVER mixed (decision 7 §2.4 step 6): the new files are written and fsynced under staging names,
+ * The persisted pair, NEVER mixed: the new files are written and fsynced under staging names,
  * then the old .sig, the old .sha256 are removed, the new .sha256 and the new .sig renamed in. At every instant the
  * pair on disk is the old pair, a partial pair (read as absent) or the new pair. Hook: betweenSidecarOps.
  */

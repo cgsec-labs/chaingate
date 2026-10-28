@@ -25,6 +25,7 @@ import { syntheticCases, buildSyntheticSeed } from './u01-cases.mjs';
 import { EXPLAIN_GOLDEN_IDS } from './u01-explain-goldens.capture.mjs';
 import { buildSeed, openFixtureSeed, docFor, after, LIVE, WARNCFG } from './u05-fixtures.mjs';
 import { explanationG2a } from './cft014-g2a-transform.mjs';
+import { plainWording } from './cft015-plain-wording.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const V3 = path.join(HERE, '..', '..', 'seed', 'v3');
@@ -169,7 +170,7 @@ test('T-2 D3 + E1/E4 the 0.1.4 explanation of each explain-golden case is the en
             decided_by: [{ gate: 'seed-v3:input', detail: reason }] },
         };
       }
-      assert.deepEqual(rec.explanation, want, id);
+      assert.deepEqual(rec.explanation, plainWording(want), id);   // 0.1.5 plain wording
     }
   } finally { seed.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

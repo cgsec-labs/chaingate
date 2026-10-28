@@ -6,8 +6,7 @@
 // the overlap window) stay with their layer so the read-site and the
 // definition stay adjacent.
 
-// First-seen baseline poisoning protection (V2 foundation, Section 7
-// item 4 of docs/V2_DESIGN.md). Packages with fewer than this many
+// First-seen baseline poisoning protection. Packages with fewer than this many
 // observed prior versions do not carry enough signal to evaluate
 // pattern-based gates or compute meaningful per-package patterns — an
 // attacker who publishes a brand-new package and has it observed first
@@ -23,12 +22,12 @@
 //
 // Keeping the constant here — not duplicated at each call site — is
 // the load-bearing choice: changing the threshold during calibration
-// (sub-step 4) touches exactly one line.
+// touches exactly one line.
 export const MIN_HISTORY_DEPTH = 8;
 
-// Provider classification starter lists (V2 sub-step 3a).
+// Provider classification starter lists.
 //
-// These lists are intentionally narrow starter sets. Sub-step 4 corpus
+// These lists are intentionally narrow starter sets. Corpus
 // validation against the 130-package seed will reveal missing entries
 // (particularly regional providers: yandex.ru, mail.ru, qq.com, etc.).
 // List expansion is a calibration output, not a pre-optimization.
@@ -68,7 +67,7 @@ export const PRIVACY_PROVIDER_DOMAINS = new Set([
 
 // Minimum version count across a package's history for a non-free,
 // non-privacy domain to classify as verified-corporate. Starter value.
-// Sub-step 4 validates; raise if single-version domains false-positive
+// Calibration validates it; raise if single-version domains false-positive
 // as verified-corporate.
 //
 // Env-var override (CHAINGATE_PARAM_MIN_VERIFIED_VERSIONS) is consumed
@@ -107,13 +106,13 @@ export const CHURNING_WINDOW = Number.isFinite(Number(process.env.CHAINGATE_PARA
 // classification error is bounded — shape modulates severity only on
 // the cold-handoff cell (publisher.js GATE CONTRACT addition 3), so a
 // mislabeled-solo committee with ongoing recurring-member transitions
-// is still ALLOWed on those transitions. Calibrated in sub-step 4
+// is still ALLOWed on those transitions. Calibrated
 // against the seed corpus; raise if the dominant-maintainer false-
 // positive rate is high.
 //
 // Consumed by:
-//   patterns/publisher.js — computeShape() cascade step 3 (dominance
-//                            override: vmax/total >= SOLO_DOMINANCE).
+//   patterns/publisher.js - computeShape() cascade, the dominance
+//                            override (vmax/total >= SOLO_DOMINANCE).
 //
 // Env-var override: see MIN_VERIFIED_VERSIONS comment above. Unlike the
 // integer overrides, SOLO_DOMINANCE carries a float; Number() handles

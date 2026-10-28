@@ -23,7 +23,7 @@ export class SeedVerificationError extends Error {
 }
 
 /**
- * SHA-256 of a regular file, through one non-blocking descriptor read from explicit positions (U-05 R2-2 (c)): a FIFO
+ * SHA-256 of a regular file, through one non-blocking descriptor read from explicit positions: a FIFO
  * or a device is refused instead of stalling the command. Async for its existing callers.
  */
 export async function sha256File(path) {
@@ -92,7 +92,7 @@ export async function verifyPersistedSignature(sha256Path, sigPath, opts = {}) {
 }
 
 /**
- * Install-time verification of bytes ALREADY STAGED privately (U-05 R2-2 (d)): the signature over the claimed digest --
+ * Install-time verification of bytes ALREADY STAGED privately: the signature over the claimed digest --
  * the sidecar bytes read once, bounded -- and that digest equal to the one computed over the STAGED bytes. Nothing is
  * read by path here, so nothing about the caller's files can change between the check and the install. Same order and
  * codes as verifySeed.
