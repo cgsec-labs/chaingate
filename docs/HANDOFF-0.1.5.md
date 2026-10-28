@@ -388,3 +388,23 @@ Coverage after R13: every rule of the consult is encoded as a fact: 6, 7, 8a, 8d
   unchanged.
 - Next: CI 40588812255 on ee2b16f; then the v3.2 session and the operator (re-registration and re-issue scope; the M6 field
   deviation was scoped to d97036f4); then the release sequence; main is a squash.
+
+## Release readiness (2026-10-28; the operator: "Consult and then release")
+
+- CI 40588812255 on ee2b16f: 36/36 success. Full suite 1,645 / 0 fail on ee2b16f and on 8cb1911.
+- Recon v6.17 (static-checks-1.8) LIVE 2026-10-28 05:30Z, merged chaingate-ops main 916140f; drift PASS (handover 12.7). The live
+  static-checks.mjs lines 579-672 hash to 8dc3e357..., the block this runtime pins. The 1.8 hold condition is met.
+- seed-v3.2-full qualified on a8c362ca after publication (operator ruling A2; the v3.2 session): record
+  runtime-qualification-a8c362ca4a142c7c.json sha256 042c2c362e34baa2c3f7ba5634c45a830b99524c020cf0664eb2cfe2b1c39f6a, checked
+  here (runtime a8c362ca, seed 1408e015, outcome PASS, gates-14 @15651cb retires d97036f4). Seed, signatures and release unchanged.
+- #18 PASS on a8c362ca (record E2E-18-a8c362ca.txt 23aada36...): clean global install of the candidate tarball; published assets
+  (v3.1 db a4c4e364, v3.2 gz 685ee0fe, manifest 87caaabf, sig fbd5550f); signed init v3.1 (bundle 378a319b0181999f) -> update-seed
+  gz v3.2 (fa41735ffad28100) -> --rollback -> swap again -> stop/init on v3.2, every step authenticated, rc 0; doctor rc 0; reader
+  verify authenticated, 4000 cross-link packages 0 errors; 37-version check 37 ALLOW, 0 differences from 10-19 in action or any gate;
+  82-package npm ci through the proxy: same 82 and classes as 10-19, 0 WARN / 0 BLOCK / 0 named / 0 notices.
+- Release sequence (in progress on the operator's word): docs/HANDOFF-0.1.5.md removed (copy kept outside the repo); one signed
+  commit "ChainGate 0.1.5" on main with this branch's tree; signed tag v0.1.5; re-pack from the tag must be a8c362ca; the operator
+  pushes main and the tag and publishes to npm; registry shasum and integrity checked; GitHub release; branch deleted on the
+  operator's go.
+- Question for the review session: any objection to this sequence on a8c362ca? Silence is not taken as agreement; the operator
+  relays.
