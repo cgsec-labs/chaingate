@@ -6,11 +6,70 @@ through the maintainer's git signing key, independently of the release page that
 
 A v3 seed is never downloaded automatically: you pass it to `chaingate init --seed`.
 
-## seed-v3.1-full: signed v3 detection seed (current)
+## seed-v3.2-full: signed v3 detection seed (current)
+
+**Status:** published as the GitHub pre-release
+[seed-v3.2-full](https://github.com/r-bedekar/chaingate/releases/tag/seed-v3.2-full), for
+`@cgsec/chaingate` 0.1.5 or later. 0.1.4 and earlier cannot read it.
+
+- **Signed.** The seed is signed with the ChainGate seed key `ed25519:09f6c9fdb8f5a2ea`, the key built into the
+  runtime (`witness/seed_verify.js`). The runtime checks the signature before it imports anything, and the seed
+  installs in `authenticated` mode.
+- **Git record.** The signed annotated tag `seed-v3.2-full` points at the signed marker commit
+  `d508535b6d788d610fd28c00a627b2fcefee612f`, whose `SEED-RELEASE.md` records the seed, key, record and asset digests.
+- **Compressed only.** The database is larger than a single GitHub release asset can be, so it is published as
+  `chaingate-seed-v3.db.gz`. The `.sha256` and `.sig` files are over the decompressed database.
+
+| Field | Value |
+|---|---|
+| file | `chaingate-seed-v3.db` (decompressed), 2,359,566,336 bytes; `chaingate-seed-v3.db.gz`, 983,721,048 bytes |
+| file SHA-256 | `1408e015a7026ea292624e25fb709b4fb6085de2a9a2549cd403caecdc1b0bf7` (decompressed) |
+| data cutoff | 2026-10-18T19:15:48Z; advisories reviewed up to 2026-10-19T10:32:00Z |
+| content | 367,611 npm packages and 1,018,655 lineages; 2,913 pinned package versions |
+| signing key | `ed25519:09f6c9fdb8f5a2ea` |
+
+### Verify the download
+
+Use the seed key from the seed-v3.1-full section below. The signature is Ed25519 over the decompressed database's
+SHA-256 written as 64 lower-case hex characters, with no newline. With OpenSSL 3:
+
+```
+H=$(gzip -dc chaingate-seed-v3.db.gz | sha256sum | cut -d' ' -f1)
+[ "$H" = "$(cut -c1-64 chaingate-seed-v3.db.sha256)" ] && echo "digest OK"
+printf '%s' "$H" > msg.txt
+openssl pkeyutl -verify -pubin -inkey chaingate-seed-key.pem -rawin -in msg.txt -sigfile chaingate-seed-v3.db.sig
+```
+
+The expected output is `digest OK`, then `Signature Verified Successfully`.
+
+### Asset digests (sha256)
+
+```
+685ee0fed454f5f4523c9a3c6f82b670f5661a58743254cb2032721471e66e1e  chaingate-seed-v3.db.gz
+eff6b8a39584b41d6b7bee6ab1b8b09be0a0c35c90868fc18c93d6281d30d131  chaingate-seed-v3.db.sha256
+87caaabf1d806a202fe66fd25468f01a548ebbfc26b07a001e1f4e2a73ef386c  chaingate-seed-v3.db.manifest.json
+fbd5550f2e86c13a50f83af43159e161906a837fbb52e8a449cd4c7b7dc67ec4  chaingate-seed-v3.db.sig
+506a51ed20580d5f1d7d93a2e6f3d9c333bb12dca02dbbc3426d153dc4c095a8  chaingate-seed-v3.db.manifest.sig
+7e6f7d4583345ec8fc1820c80640fb8d9c37737b45fd0359033e298c2bd8f4b0  THIRD_PARTY_NOTICES.txt
+```
+
+### Use it
+
+Download `chaingate-seed-v3.db.gz`, `chaingate-seed-v3.db.sha256` and `chaingate-seed-v3.db.sig` into one folder, then:
+
+```bash
+chaingate update-seed --seed <folder>/chaingate-seed-v3.db.gz     # an existing install
+chaingate init --seed <folder>/chaingate-seed-v3.db.gz            # a new install
+```
+
+Upgrade the runtime to 0.1.5 before you switch to this seed. To go back to 0.1.4, first return to seed-v3.1-full with
+`chaingate update-seed --rollback`. Do not add `--unsigned-development`: this seed is signed and never needs it.
+
+## seed-v3.1-full: signed v3 detection seed (previous)
 
 **Status:** published as the GitHub pre-release
 [seed-v3.1-full](https://github.com/r-bedekar/chaingate/releases/tag/seed-v3.1-full), for
-`@cgsec/chaingate` 0.1.4.
+`@cgsec/chaingate` 0.1.4. 0.1.5 also reads it.
 
 - **Signed.** The seed is signed with the ChainGate seed key `ed25519:09f6c9fdb8f5a2ea`, the key built into the
   runtime (`witness/seed_verify.js`). The runtime checks the signature before it imports anything, and the seed
