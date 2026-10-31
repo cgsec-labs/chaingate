@@ -80,7 +80,7 @@ const gypOf = async (text, p = 'binding.gyp') => (await SC()).memberFacts({ path
 // ------------------------------------------------------------------ identity, vocabulary, roles
 test('C0 identity: static-checks-1.8; S8 and S9 appended after S7 with recon\'s gate, class and notice; S8_LIMITS, GYP_LIMITS and ADDON_LOADS as ruled', async () => {
   const S = await SC();
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.8');
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.9');
   assert.deepEqual(S.CHECKS.map((c) => c.id), ['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9']);
   assert.deepEqual(JSON.parse(JSON.stringify(S.CHECKS.find((c) => c.id === 'S8'))), { id: 'S8', gate: S8G, cls: 'prebuilt-addon-dropper-in-hook', roles: null, notice: S8_NOTICE });
   assert.deepEqual(JSON.parse(JSON.stringify(S.CHECKS.find((c) => c.id === 'S9'))), { id: 'S9', gate: S9G, cls: 'hidden-script-in-gyp-build', roles: null, notice: S9_NOTICE });
@@ -103,7 +103,7 @@ test('C2 roles: S8 and S9 are named runner gates with the CHECKS notice text byt
   for (const g of [S8G, S9G]) { assert.ok(!R.CONTRIBUTING_GATES.has(g), g); assert.equal(R.withRole({ gate: g, result: 'WARN', detail: 'd' }).result, 'WARN', g); }
   assert.equal(N.labelFor(S8G), S8_NOTICE); assert.equal(N.labelFor(S9G), S9_NOTICE);
   assert.deepEqual(S.withholdingChecks([{ gate: S8G, result: 'WARN', detail: 'd' }, { gate: S9G, result: 'WARN', detail: 'd' }]), [S8G, S9G]);
-  assert.equal(POL.POLICY_CONTRACT_VERSION, 'cft-policy-1.2', 'policy identity unchanged');
+  assert.equal(POL.POLICY_CONTRACT_VERSION, 'cft-policy-1.3', 'policy identity: 1.3 since 0.1.6 (the strict-row re-tier), not static checks 1.8');
 });
 
 // ------------------------------------------------------------------ member facts
@@ -301,7 +301,7 @@ test('C14 chaingate check --tarball reads the member facts too: S8 and S9 rows i
     const env = { ...process.env, CHAINGATE_HOME: dir, CHAINGATE_SEED_V3: s.dbPath, CHAINGATE_SEED_V3_TRUST: 'unsigned-development',
       CHAINGATE_POLICY_ON_UNUSABLE_INPUT: 'WARN', CHAINGATE_POLICY_ON_NO_EVIDENCE: 'WARN', CHAINGATE_WITNESS_DB: path.join(dir, 'w.db') };
     const { record } = await runCheck({ name: 'p', version: '1.3.0', packument: pk, tarball: tb, env, cwd: dir });
-    assert.equal(record.tarball.static_checks_version, 'static-checks-1.8');
+    assert.equal(record.tarball.static_checks_version, 'static-checks-1.9');
     const r8 = record.tarball.rows.find((x) => x.gate === S8G); const r9 = record.tarball.rows.find((x) => x.gate === S9G);
     assert.equal(r8?.result, 'ALLOW', `a binding.gyp is native source for S8 only when it names one: ${JSON.stringify(r8)}`);
     assert.equal(r9?.result, 'WARN', JSON.stringify(r9));

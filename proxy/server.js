@@ -15,6 +15,9 @@ import {
   UpstreamError,
 } from './registry.js';
 import { openWitnessDB } from '../witness/db.js';
+import { refreshPins, urlSource, PINS_REFRESH_MS } from '../cli/pins-feed.js';
+import { shardSource } from '../cli/seed-shards.js';
+import { createSeedCache, DEFAULT_SEED_CACHE_WAIT_MS, SEED_CACHE_REFRESH_MS } from './seed-cache.js';
 import { DepCache } from '../witness/dep-cache.js';
 import { createWitness } from '../witness/store.js';
 import { createGateRunner, DEFAULT_GATE_MODULES } from '../gates/index.js';
@@ -27,7 +30,7 @@ import { createEvaluationTracker, EvaluationBusy } from './evaluation-tracker.js
 import { createLogBoundary } from './log-boundary.js';
 // The deciding reason, the row classes, and ChainGate's npm-notice.
 import { classify as classifyRows, decidingReason, factsFromBits, pendingFacts, policyPrefix, servedClass } from '../witness/row-class.js';
-import { buildNotice, pinNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
+import { buildNotice, factLabels, pinNotice, sanitizeUpstreamNotice, identity, NOTICE_CACHE_CONTROL } from './notice.js';
 // The user's pins (a live serving overlay) and acceptances.
 import { createPinSet, withheldBy } from '../witness/pins.js';
 // N1h judged at tarball time, bounded; the dependency cache's stats on /self
@@ -35,8 +38,11 @@ import { judgeAtTarball } from './dependency-judge.js';
 import { dependencyCacheStats, setDependencyDoc } from '../gates/dependency-cache.js';
 // MC while the tarball streams
 import { createTarWalker } from './tar-walk.js';
-import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, GATE as MC_GATE } from './manifest-check.js';
-import { armedBy, keepListFor, staticRows, unarmedRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
+import { rememberManifestHooks, manifestHooksFor, manifestEntryFor, mcRow, recordLate, mcDeterminate, hookDict, GATE as MC_GATE } from './manifest-check.js';
+import { tarballRow } from '../gates/install-introduced.js';
+import { reraise } from '../gates/retier-late.js';
+import { DEFAULT_STATIC_WALK_WAIT_MS } from '../config-store.js';
+import { armedBy, walkReason, keepListFor, staticRows, budgetRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
   withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, FACTS_LIMITS, makeBase64Share, createMemberTally,
   staticFactsOf } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
@@ -48,6 +54,31 @@ function parsedPackageJson(walk) {
 }
 let factsWalks = 0;                                         // 0.1.5: entry-facts-only walks in flight (ceiling MAX_FACTS_WALKS)
 let armedWalks = 0;                                        // 0.1.5: armed keep-list walks in flight (process-wide ceiling MAX_ARMED_WALKS)
+// Since 0.1.6 a download that finds every walk slot busy waits for one, first come first served, up to static_walk_wait_ms
+// (default 10 s, at most half the upstream body timeout so a waiting body never times out); past it it is served unwalked.
+const walkWaiters = [];
+function takeWalkSlot(waitMs) {
+  if (armedWalks < MAX_ARMED_WALKS && !walkWaiters.length) { armedWalks += 1; return Promise.resolve({ ok: true, waitedMs: 0 }); }
+  if (!(waitMs > 0)) return Promise.resolve({ ok: false, waitedMs: 0 });
+  const t0 = performance.now();
+  return new Promise((resolve) => {
+    const w = { done: false };
+    w.take = () => {
+      if (w.done) return false;
+      w.done = true; clearTimeout(w.timer); armedWalks += 1; resolve({ ok: true, waitedMs: performance.now() - t0 }); return true;
+    };
+    w.timer = setTimeout(() => {
+      if (w.done) return;
+      w.done = true; const i = walkWaiters.indexOf(w); if (i >= 0) walkWaiters.splice(i, 1);
+      resolve({ ok: false, waitedMs: performance.now() - t0 });
+    }, waitMs);
+    walkWaiters.push(w);
+  });
+}
+function freeWalkSlot() {
+  armedWalks -= 1;
+  while (walkWaiters.length && armedWalks < MAX_ARMED_WALKS) if (walkWaiters.shift().take()) break;
+}
 let claimFetches = 0;                                      // 0.1.5: attestation bundle fetches in flight (REPO_CLAIM_LIMITS.maxInFlight)
 // The install summary, the disk record and the last version without the signal.
 import { createInstallSummary, isLoopbackPeer } from './install-summary.js';
@@ -329,6 +360,8 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
   if (parsed && witness) {
     // Only the observation itself is guarded here. Reporting it comes after: a failure while
     // reporting used to land in this catch and let fallback decisions replace the ones just returned.
+    // since 0.1.6: a seed cache fetches this package's bucket first, waiting a bounded time (never throws)
+    if (ctx.seedCache) await ctx.seedCache.need(packageName);
     try {
       observed = witness.observePackument(packageName, parsed);
     } catch (err) {
@@ -433,7 +466,8 @@ async function observeAndSendPackument(res, upstream, witness, packageName, log,
           if (!facts.length) continue;
           const tag = /^[A-Za-z0-9._-]{1,64}$/.test(String(d.tag)) ? d.tag : 'a dist-tag';
           const to = d.to == null ? 'dropped' : (identity('x', String(d.to)) ? `moved to ${d.to}` : 'moved');
-          tagNotice = buildNotice({ kind: 'BLOCKED', pkg: packageName, version: d.from, labels: facts,
+          const dd = decisions.get(d.from);
+          tagNotice = buildNotice({ kind: 'BLOCKED', pkg: packageName, version: d.from, labels: factLabels(facts, dd?.held?.rows ?? dd?.results),
             tail: `(dist-tag ${tag} ${to})` });
           break;
         }
@@ -728,6 +762,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   let witness = null;
   let witnessDb = null;
   let seedV3 = null;
+  const integrityLogged = new Set();       // since 0.1.6: capture pins already logged as differing from the registry
   let depCache = null;
   let depFetcher = null;
   let witnessDbReal = null;               // reported by /_chaingate/self
@@ -779,7 +814,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         // `authenticated` could never actually authenticate: the reader refuses that combination,
         // and any signature present went unchecked. The anchor is the same embedded literal the
         // CLI verifies bundles with, so startup and `chaingate init` agree about what is trusted.
-        seedV3 = openSeed(config.seedV3Path, { trust, pubkey: CHAINGATE_SEED_PUBKEY_B64 });
+        // since 0.1.6 the path may be a seed cache, checked on its signed root (tests pass their own key, bits and clock)
+        seedV3 = openSeed(config.seedV3Path, { trust, pubkey: config.seedCacheKey ?? CHAINGATE_SEED_PUBKEY_B64,
+          ...(config.seedCacheBits ? { shardBits: config.seedCacheBits } : {}), ...(config.seedCacheNow ? { now: config.seedCacheNow } : {}) });
         // UNRESOLVED ENFORCEMENT POLICY MUST NOT BECOME PERMISSION. An unset choice makes policy
         // decline, the gate can only answer SKIP, SKIP does not count, and the package installs --
         // so silence permitted. A proxy that ENFORCES must be told what these cases mean.
@@ -798,7 +835,20 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           on_no_evidence: config.policyOnNoEvidence,
         };
         seedV3Gate = createSeedV3Gate({
-          seed: seedV3, config: policyConfig, domainVersionCount: config.domainVersionCount });
+          seed: seedV3, config: policyConfig, domainVersionCount: config.domainVersionCount,
+          // since 0.1.6: the pins feed overlay in the witness store, read after the seed's own pins
+          pinOverlay: (p, v) => (witnessDb ? witnessDb.advisoryPinFor(p, v) : null),
+          // since 0.1.6: a capture pin whose analysed tarball differs from the registry's integrity is logged once per
+          // version, so a wrong record is seen and corrected; the BLOCK stands
+          onDecision: (d) => {
+            if (d.pin?.integrity !== 'differs') return;
+            const key = `${d.package}@${d.version}`;
+            if (integrityLogged.has(key)) return;
+            if (integrityLogged.size >= 10_000) integrityLogged.clear();
+            integrityLogged.add(key);
+            log.warn(`[advisories] ${key}: the registry's integrity differs from the tarball the advisory feed record was made from; `
+              + 'the version stays blocked');
+          } });
         log.info?.(`[seed-v3] ${config.seedV3Path} opened (trust=${config.seedV3Trust}`
           + `${seedV3.report?.authenticated ? ` anchor=${CHAINGATE_SEED_PUBKEY_FINGERPRINT}` : ''}, `
           + `snapshot=${seedV3.meta.corpus_snapshot_digest?.slice(0, 12)}, `
@@ -855,7 +905,16 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
   const tracker = witness ? createEvaluationTracker(hooks.c1 ?? {}) : null;
   // The user's pins, read live (PRAGMA data_version), last good set kept on a read failure
   const pinSet = witnessDb ? createPinSet(witnessDb, { log }) : null;
-  const ctx = { unstored, failuresBlock, lookupErrorsRefuse, overriddenLive, counters, tracker, pins: pinSet };
+  // Since 0.1.6: the seed cache, kept current while the proxy runs (proxy/seed-cache.js). Its bucket fetch waits at most 5 s
+  // per decision and never more than half the body timeout. With no cache in use yet it is fetched for the next start.
+  const seedCache = config.seedCacheUrl && config.seedCachePath ? createSeedCache({
+    get: config.seedCacheGet ?? shardSource(config.seedCacheUrl), cachePath: config.seedCachePath, seedKey: config.seedCacheKey ?? null,
+    ...(config.seedCacheBits ? { bits: config.seedCacheBits } : {}), ...(config.seedCacheNow ? { now: config.seedCacheNow } : {}),
+    waitMs: Math.min(config.seedCacheWaitMs ?? DEFAULT_SEED_CACHE_WAIT_MS, Math.floor((config.bodyTimeoutMs ?? 30_000) / 2)),
+    feedKeys: async () => (pinsGet ? pinsGet('keys.json') : null), log,
+  }) : null;
+  seedCache?.attach(seedV3);
+  const ctx = { unstored, failuresBlock, lookupErrorsRefuse, overriddenLive, counters, tracker, pins: pinSet, seedCache };
 
   // What this process served and refused, per install (memory), and the named and fact events
   // also kept on disk, once per install. Neither can fail a request: a recording error is logged and counted.
@@ -922,6 +981,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
       return { ok: false, why: 'the metadata lists no versions' };
     }
     let observed;
+    if (seedCache) await seedCache.need(canonicalName);
     try {
       observed = witness.observePackument(canonicalName, parsed);
     } catch (err) {
@@ -990,6 +1050,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           // identity, not against a path: a symlink before and after an update has the same path
           // over different bytes.
           sha256: seedV3.report?.content_sha256 ?? null,
+          // since 0.1.6, a seed cache: the digest of the root it is read under (no file digest: imports change the file)
+          seed_cache_root: seedV3.shards?.root.digest ?? null,
           trust: config.seedV3Trust,
           authenticated: Boolean(seedV3.report?.authenticated),
           schema_version: seedV3.meta?.schema_version ?? null,
@@ -1067,8 +1129,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           let final = true;
           try {
             const app = witnessDb.getApplicableDecision(canonicalName, version, { overrideLive: false });
-            // 0.1.5 static checks: a version whose armed static walk is still due needs the manifest too (the keep list's source)
-            final = Boolean(app.block) || (mcDeterminate(app.latest) && !(armedBy(app.latest?.gates_fired) && !staticSettled(app.latest)))
+            // a version whose static walk is still due needs the manifest too (the keep list's source); since 0.1.6 every version's is
+            final = Boolean(app.block) || (mcDeterminate(app.latest) && staticSettled(app.latest))
               || Boolean(pinSet && withheldBy(pinSet.forPackage(canonicalName), canonicalName, version));
           } catch { final = true; }
           if (!final) {
@@ -1093,7 +1155,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           noteInstall(req, { kind: 'refused', package: canonicalName, version: blocked.version, facts, status: 403, reason, policy },
             facts.length ? { kind: 'fact-refused', package_name: canonicalName, version: blocked.version, classes: { facts },
               reason, policy_version: policy } : null);
-          const notice = facts.length ? buildNotice({ kind: 'BLOCKED', pkg: canonicalName, version: blocked.version, labels: facts }) : null;
+          const notice = facts.length ? buildNotice({ kind: 'BLOCKED', pkg: canonicalName, version: blocked.version,
+            labels: factLabels(facts, blocked.gates) }) : null;
           writeJson(res, 403, { error: 'blocked_by_chaingate', ...blocked }, notice ? { 'npm-notice': notice } : {});
           return;
         }
@@ -1190,19 +1253,24 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         const current = state.applicable?.latest?.gates_fired?.some?.((g) => g && g.gate === 'install-introduced');
         const walkLatest = upstream.statusCode === 200 && state.tarballVersion != null && !state.override && witnessDb
           && current && !(state.c1 && !state.c1.ok) ? state.applicable.latest : null;
-        // 0.1.5 static checks: the keep list is ARMED by a named WARN row, the identity-break NOTE, the
-        // entry-path-change NOTE or the seed's coverage WARN, from the registry manifest remembered with the
-        // hook map; a settled static outcome is never walked for again (tarballs are immutable per version), a "not armed" / "no
-        // manifest" / ceiling outcome is retried when a later download is armed. The walk stays on a copy of the stream; the download
-        // is never held.
-        const armed = walkLatest ? armedBy(walkLatest.gates_fired) : null;
-        const staticDue = Boolean(walkLatest && armed && !staticSettled(walkLatest));
-        let keepOpts = {}; let staticWhy = null; let armedSlot = false; let staticManifest;
+        // Static checks: since 0.1.6 EVERY download's keep list is walked, from the registry manifest remembered with the hook map;
+        // the rows name what armed it (a named WARN row, the identity-break NOTE, the entry-path-change NOTE, the seed's coverage
+        // WARN) or "every download". A settled static outcome is never walked for again (tarballs are immutable per version); a "no
+        // manifest" or ceiling outcome, or 0.1.5's "not armed", is retried at the next download. The walk stays on a copy of the
+        // stream; the download is held only with the static_withhold switch.
+        const armed = walkLatest ? walkReason(walkLatest.gates_fired) : null;
+        const staticDue = Boolean(walkLatest && !staticSettled(walkLatest));
+        let keepOpts = {}; let staticWhy = null; let armedSlot = false; let staticManifest; let walkWaitMs = null;
         if (walkLatest && (!mcDeterminate(walkLatest) || staticDue) && armed) {
           staticManifest = manifestEntryFor(canonicalName, state.tarballVersion);
           if (staticManifest === undefined) staticWhy = 'no-manifest';
-          else if (armedWalks >= MAX_ARMED_WALKS) staticWhy = 'ceiling';
-          else { armedWalks += 1; armedSlot = true; staticWhy = 'armed'; keepOpts = { keep: keepListFor(staticManifest).paths }; }
+          else {
+            const waitMs = Math.min(config.staticWalkWaitMs ?? DEFAULT_STATIC_WALK_WAIT_MS, Math.floor((config.bodyTimeoutMs ?? 30_000) / 2));
+            const slot = await takeWalkSlot(waitMs);
+            walkWaitMs = Number(slot.waitedMs.toFixed(3));
+            if (!slot.ok) staticWhy = 'budget';
+            else { armedSlot = true; staticWhy = 'armed'; keepOpts = { keep: keepListFor(staticManifest).paths }; }
+          }
         }
         const mcWalk = Boolean(walkLatest && (!mcDeterminate(walkLatest) || staticDue));
         // 0.1.5 entry facts: EVERY served version, armed or not, has its main and bin facts stored
@@ -1239,12 +1307,12 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             held = await holdUpstream(res, upstream, upstream.statusCode, headerFn, tap, STATIC_WITHHOLD_CAP_BYTES);
           } else await streamUpstream(res, upstream, upstream.statusCode, headerFn, tap);
         } catch (err) {
-          if (armedSlot) { armedWalks -= 1; armedSlot = false; }            // the slot is freed on every exit, or the ceiling would stick
+          if (armedSlot) { freeWalkSlot(); armedSlot = false; }            // the slot is freed on every exit, or the ceiling would stick
           if (factsSlot) { factsWalks -= 1; factsSlot = false; }
           throw err;
         }
         const walk = walker ? await walker.end() : null;
-        if (armedSlot) { armedWalks -= 1; armedSlot = false; }
+        if (armedSlot) { freeWalkSlot(); armedSlot = false; }
         if (factsSlot) { factsWalks -= 1; factsSlot = false; }
         // a complete walk is the tarball's facts; a refused archive is stored as refused only once the whole download was served
         // (an aborted one, or a walk that fell behind, says nothing about the archive and is tried again)
@@ -1257,7 +1325,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             const factsMs = Number((performance.now() - t0).toFixed(3));
             factsShape = walk.ok && shapeTally ? shapeTally.result() : null;
             factsWrote = witnessDb.recordEntryFacts({ package_name: canonicalName, version: state.tarballVersion,
-              static_checks_version: STATIC_CHECKS_VERSION, facts_ms: factsMs, shape: factsShape, ...ef }) === 'wrote';
+              static_checks_version: STATIC_CHECKS_VERSION, facts_ms: factsMs, shape: factsShape, walk_wait_ms: walkWaitMs, ...ef }) === 'wrote';
           } catch (err) {
             log?.warn?.(`[facts] ${canonicalName}@${state.tarballVersion}: not stored (${err.message})`);
           }
@@ -1270,14 +1338,27 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             }
           };
           let lateRows = null;                                  // MC's row and the static rows (1.2 roles), computed once
-          const rowsOfWalk = () => lateRows ?? (lateRows = [mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion)),
+          // since 0.1.6: then install-introduced re-read against the tarball package.json npm runs, and the seed-v3 result when a
+          // late guard puts a re-tiered strict row back to WARN (gates/retier-late.js)
+          const withTarball = (rows) => {
+            const out = [...rows];
+            const pj = walk.ok ? parsedPackageJson(walk) : null;
+            const reg = manifestHooksFor(canonicalName, state.tarballVersion);
+            const prevII = walkLatest.gates_fired?.find?.((g) => g && g.gate === 'install-introduced');
+            const ii = pj && reg !== undefined ? tarballRow(prevII, hookDict(pj), reg) : null;
+            if (ii) out.push(ii);
+            const merged = [...(walkLatest.gates_fired || []).filter((g) => g && !out.some((r) => r.gate === g.gate)), ...out];
+            const rr = reraise(merged);
+            if (rr) out.push(rr);
+            return out;
+          };
+          const rowsOfWalk = () => lateRows ?? (lateRows = withTarball([mcRow(walk, manifestHooksFor(canonicalName, state.tarballVersion)),
             ...(staticWhy === 'armed' ? staticRows({ manifest: staticManifest, packageJson: parsedPackageJson(walk), walk, armed,
               predecessor: predecessorFacts(canonicalName, state.tarballVersion),
               // static-checks-1.8: S8 and S9 read the member facts the armed walk gathered
               ...(memberTally ? (({ members, over }) => ({ members, membersOver: over }))(memberTally.result()) : {}) })
               : staticWhy === 'no-manifest' ? noManifestRows(armed)
-                : staticWhy === 'ceiling' ? unarmedRows(`concurrency ceiling: ${MAX_ARMED_WALKS} armed walks in flight`)
-                  : unarmedRows('no named row, no identity-break, no entry-path-change, no coverage gap')).map(withRole)]);
+                : budgetRows(walkWaitMs ?? 0)).map(withRole)]));
           // 0.1.5: a held download is served or withheld only now, after the walk; withheld only for a named static WARN
           // the user has not accepted (while every check is contributing this never happens, and the held bytes are served)
           let staticHold = null;
@@ -1311,7 +1392,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
               const [row, ...sRows] = rowsOfWalk();
               // the late rows that are a NEW named WARN: MC's, and (since 0.1.5, S0 and S5) a named static check's
               const changed = (r) => { const prev = walkLatest.gates_fired?.find?.((g) => g && g.gate === r.gate); return !(prev && prev.result === r.result && prev.detail === r.detail); };
-              const lateNamed = [row, ...sRows].filter((r) => r.result === 'WARN' && (r.gate === MC_GATE || NAMED_RUNNER_GATES.includes(r.gate)) && changed(r));
+              const lateNamed = [row, ...sRows].filter((r) => r.result === 'WARN' && (r.gate === MC_GATE || r.gate === 'seed-v3' || NAMED_RUNNER_GATES.includes(r.gate)) && changed(r));
               const outcome = recordLate({ db: witnessDb, pkg: canonicalName, version: state.tarballVersion, latest: walkLatest, rows: [row, ...sRows] });
               if (outcome === 'wrote' && lateNamed.length) {
                 for (const r of lateNamed) {
@@ -1367,8 +1448,9 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 named: named(state.tarballVersion) ?? [] });
               witnessDb.recordShadowFacts(canonicalName, state.tarballVersion, facts);
               // an armed version's repository claim, once, after its response is finished: the one attestation bundle fetch,
-              // bounded in time, bytes and fetches in flight; a failure is recorded as NOT_FETCHED with its reason
-              if (staticWhy === 'armed' && !witnessDb.repoClaimFor(canonicalName, state.tarballVersion)) {
+              // bounded in time, bytes and fetches in flight; a failure is recorded as NOT_FETCHED with its reason. Since 0.1.6 every
+              // download is walked, but only a version a recorded row arms costs this outbound fetch, as in 0.1.5
+              if (staticWhy === 'armed' && armedBy(walkLatest.gates_fired) && !witnessDb.repoClaimFor(canonicalName, state.tarballVersion)) {
                 await settled(res);
                 if (res.writableFinished) {
                   const t2 = performance.now();
@@ -1387,8 +1469,11 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
                 }
               }
             }
-            const sx = facts ? witnessDb.staticFactsFor(canonicalName, state.tarballVersion) : null;   // static-checks-1.6, armed versions only
-            const rc = facts ? witnessDb.repoClaimFor(canonicalName, state.tarballVersion) : null;      // the repository claim, armed versions only
+            // static-checks-1.6: every walked version has them since 0.1.6 (`why` shows them); the report event carries them only for a
+            // version a recorded row arms (a named static WARN included), as in 0.1.5, so a large install's report is not every package
+            const sx = facts && armedBy(witnessDb.getLatestDecision(canonicalName, state.tarballVersion)?.gates_fired)
+              ? witnessDb.staticFactsFor(canonicalName, state.tarballVersion) : null;
+            const rc = facts ? witnessDb.repoClaimFor(canonicalName, state.tarballVersion) : null;      // the repository claim, armed versions only (a row arms)
             if (facts) noteInstall(req, { kind: 'facts', package: canonicalName, version: state.tarballVersion, facts, ...(sx ? { static_facts: sx } : {}),
               ...(rc ? { repo_claim: rc } : {}) });
           } catch (err) {
@@ -1507,15 +1592,47 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     Promise.resolve().then(() => handler(req, res)).catch((err) => finalGuard(res, err));
   });
   let logTick = null;
+  // Since 0.1.6: the pins feed (users see "advisory feed"), fetched at start and hourly while a seed is in use and a feed URL is configured (a test
+  // passes `pinsFeedGet` and `pinsSeedKey`). One fetch at a time; a feed problem is one log line and the kept cut keeps serving.
+  const pinsGet = (seedV3 && witnessDb) ? (config.pinsFeedGet ?? (config.pinsFeedUrl ? urlSource(config.pinsFeedUrl) : null)) : null;
+  let pinsTimer = null;
+  let pinsBusy = null;
+  let seedCacheTimer = null;
+  const refreshPinsFeed = () => {
+    if (!pinsGet) return Promise.resolve(null);
+    pinsBusy ??= refreshPins({ get: pinsGet, db: witnessDb, ...(config.pinsSeedKey ? { seedKey: config.pinsSeedKey } : {}) })
+      .then((r) => {
+        if (r.outcome === 'accepted') log.info?.(`[advisories] advisory feed cut ${r.cut_at} accepted: ${r.rows} versions`);
+        else if (r.outcome === 'held') log.warn(`[advisories] advisory feed cut ${r.cut_at} held: ${r.why}. Take it with: chaingate update-advisories --accept-cut ${r.digest}`);
+        else if (r.outcome !== 'same') log.warn(`[advisories] advisory feed ${r.outcome}: ${r.why}; the kept cut keeps serving`);
+        return r;
+      }, (err) => { log.warn(`[advisories] the advisory feed result could not be recorded: ${err.message}`); return null; })
+      .finally(() => { pinsBusy = null; });
+    return pinsBusy;
+  };
   server.on('listening', () => {
     if (logTick) return;
     logTick = setInterval(() => { try { log.tick(); } catch { /* reporting only */ } }, 60_000);
     logTick.unref?.();
+    if (pinsGet && !pinsTimer) {
+      refreshPinsFeed();
+      pinsTimer = setInterval(refreshPinsFeed, PINS_REFRESH_MS);
+      pinsTimer.unref?.();
+    }
+    if (seedCache && !seedCacheTimer) {
+      seedCache.refresh();
+      seedCacheTimer = setInterval(() => seedCache.refresh(), SEED_CACHE_REFRESH_MS);
+      seedCacheTimer.unref?.();
+    }
   });
   server.config = config;
   server.witness = witness;
   server.witnessDb = witnessDb;
   server.seedV3 = seedV3;
+  server.refreshPinsFeed = refreshPinsFeed;
+  server.refreshSeedCache = () => (seedCache ? seedCache.refresh() : Promise.resolve(null));
+  server.seedCacheState = () => (seedCache ? seedCache.state() : null);
+  server.seedCacheIdle = () => (seedCache ? seedCache.idle() : Promise.resolve());
   server.depCache = depCache;
   server.depFetcher = depFetcher;
   const origClose = server.close.bind(server);
@@ -1525,6 +1642,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
     // queue aborts, promise resolves.
     const finish = () => {
       if (logTick) { clearInterval(logTick); logTick = null; }
+      if (pinsTimer) { clearInterval(pinsTimer); pinsTimer = null; }
+      if (seedCacheTimer) { clearInterval(seedCacheTimer); seedCacheTimer = null; }
       log.tick();                                            // the last suppression summary, if any
       origClose(() => {
         try { witness?.close(); } catch { /* already closed */ }
@@ -1532,8 +1651,12 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         if (cb) cb();
       });
     };
+    // a pins fetch in flight finishes (or fails) before the store closes
+    const pinsDone = pinsBusy ? pinsBusy.catch(() => {}) : null;
     if (depFetcher) {
-      depFetcher.stop().then(finish, finish);
+      Promise.all([depFetcher.stop(), pinsDone]).then(finish, finish);
+    } else if (pinsDone) {
+      pinsDone.then(finish, finish);
     } else {
       finish();
     }

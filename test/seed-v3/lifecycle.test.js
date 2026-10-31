@@ -157,7 +157,7 @@ async function runInstall({ pinned }) {
   const installed = stageBundle({ dbPath: buildBundle(home, { pinned }) }, home,
     { trust: 'unsigned-development' });
   activateBundle(home, installed.bundle_id);
-  writeConfig(join(home, 'config.json'), { policy: DEFAULT_POLICY });
+  writeConfig(join(home, 'config.json'), { policy: DEFAULT_POLICY, advisory_feed: false, seed_cache: false });   // 0.1.6: no feed or cache fetch from a test
   const db = openWitnessDB(witnessDb); db.applySchema(); db.close();
 
   const cfg = loadConfig(envFree(home));
@@ -228,7 +228,7 @@ test('no CHAINGATE_* variable is REQUIRED for the installs above', () => {
     const installed = stageBundle({ dbPath: buildBundle(home) }, home,
       { trust: 'unsigned-development' });
     activateBundle(home, installed.bundle_id);
-    writeConfig(join(home, 'config.json'), { policy: DEFAULT_POLICY });
+    writeConfig(join(home, 'config.json'), { policy: DEFAULT_POLICY, advisory_feed: false, seed_cache: false });   // 0.1.6: no feed or cache fetch from a test
 
     const env = envFree(home);
     assert.deepEqual(Object.keys(env).filter((k) => k.startsWith('CHAINGATE_')), ['CHAINGATE_HOME'],
@@ -239,5 +239,22 @@ test('no CHAINGATE_* variable is REQUIRED for the installs above', () => {
     assert.equal(cfg.domainVersionCount, 'from-packument');
     assert.equal(readConfigStrict(join(home, 'config.json')).policy.on_no_evidence,
       DEFAULT_POLICY.on_no_evidence);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('since 0.1.6: every persisted setting reaches the proxy with a seed installed, as without one', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cft05-life-'));
+  try {
+    const settings = { static_withhold: true, static_walk_wait_ms: 2_500, advisory_feed_url: 'https://feed.example/pins/' };
+    writeConfig(join(home, 'config.json'), { policy: DEFAULT_POLICY, ...settings });
+    const without = loadConfig(envFree(home));
+    const installed = stageBundle({ dbPath: buildBundle(home) }, home, { trust: 'unsigned-development' });
+    activateBundle(home, installed.bundle_id);
+    const withSeed = loadConfig(envFree(home));
+    assert.equal(withSeed.seedV3BundleId, installed.bundle_id);
+    for (const k of ['staticWithhold', 'staticWalkWaitMs', 'pinsFeedUrl', 'unstoredBlockCapEntries', 'unstoredBlockCapBytes']) {
+      assert.deepEqual(withSeed[k], without[k], k);
+    }
+    assert.equal(withSeed.staticWalkWaitMs, 2_500);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

@@ -7,6 +7,9 @@ import { describeStorage } from '../storage-check.js';
 import { openWitnessDB } from '../../witness/db.js';
 import { resolveActiveBundle, bundleFiles, ActivationBroken, readActivationIntent } from '../seed-bundle.js';
 import { DEFAULT_PORT, DEFAULT_HOST, EXIT } from '../constants.js';
+import { readConfigStrict, validateConfig } from '../../config-store.js';
+import { describePinsFeed } from '../pins-feed.js';
+import { readSeedCache, describeSeedCache, seedCacheNoticesUrl } from '../seed-shards.js';
 
 function parseArgs(args) {
   const opts = { scope: 'user', json: false };
@@ -61,6 +64,16 @@ export default async function status(args) {
     const recent = db.getRecentDecisions(5);
     const seedVersion = db.getSeedMetadata('seed_version');
     const seedExported = db.getSeedMetadata('exported_at');
+    // Since 0.1.6: the advisory feed (the pins feed), from what the store recorded; a configuration that cannot be read shows as not configured
+    // here (`chaingate doctor` reports it).
+    let pinsUrl = null; let cacheCfg = null;
+    try { ({ pinsFeed: pinsUrl, seedCache: cacheCfg } = validateConfig(readConfigStrict(paths.configFile) || {}, paths.configFile)); } catch { /* doctor says */ }
+    const pinsFeed = db.advisoryPinsFeed(); const pinsFetch = db.advisoryPinsFetch();
+    const pins = describePinsFeed({ url: pinsUrl?.enabled ? pinsUrl.url : null, feed: pinsFeed, fetch: pinsFetch });
+    // Since 0.1.6: the seed cache, as its file records it (the proxy verifies it when it opens it)
+    const cacheUrl = cacheCfg?.enabled ? cacheCfg.url : null;
+    const cacheHeld = readSeedCache(paths.seedCache);
+    const seedCache = describeSeedCache({ url: cacheUrl, cache: cacheHeld });
     // The proxy process: three-state liveness, and what it says about itself. Its
     // in-memory BLOCK count is the PROCESS's state; the decision totals above are what the database holds.
     const pidRecord = readPidRecord(paths.pidFile);
@@ -78,6 +91,9 @@ export default async function status(args) {
         recent,
         seed: { version: seedVersion, exported_at: seedExported },
         seed_v3: seedV3,
+        advisory_feed: { state: pins.state, url: pinsUrl?.enabled ? pinsUrl.url : null, cut: pinsFeed, last_fetch: pinsFetch },
+        seed_cache: { state: seedCache.state, url: cacheUrl, ...(cacheHeld ?? {}),
+          notices_url: seedCacheNoticesUrl(cacheUrl, cacheHeld) },
         proxy: { running: !!pid, pid, port: DEFAULT_PORT, host: DEFAULT_HOST,
           pid_state: pidRecord?.state ?? 'none', responding: Boolean(self),
           storage: self?.storage ?? null, unstored_blocks: self?.unstored_blocks ?? null, self },
@@ -103,7 +119,7 @@ export default async function status(args) {
       : seedV3.active
         ? `bundle ${seedV3.bundle_id}  sha256 ${String(seedV3.sha256 ?? 'unknown').slice(0, 16)}...  trust ${seedV3.trust ?? 'unknown'}`
           + (seedV3.manifest_error ? fmt.red(`  (its bundle.json is unreadable: ${seedV3.manifest_error})`)
-            : fmt.dim('  (recorded; `chaingate doctor` verifies it)'))
+            : fmt.dim(`  ${bundleNote({ cacheInUse: Boolean(cacheUrl && cacheHeld?.buckets_held) })}`))
         : fmt.dim('none active (run `chaingate init --seed <bundle>`)');
 
     console.log(renderTable([
@@ -111,6 +127,8 @@ export default async function status(args) {
       ['Detection seed (v3):', v3Line],
       ...(intent.state === 'pending' ? [['', fmt.yellow('an interrupted activation is pending; the next seed command recovers it')]] : []),
       ...(intent.state === 'invalid' ? [['', fmt.red(`the activation intent is not valid (${intent.why}); see \`chaingate doctor\``)]] : []),
+      ['Advisory feed:', pins.notice ? fmt.yellow(pins.text) : pins.state === 'off' ? fmt.dim(pins.text) : pins.text],
+      ['Seed cache:', seedCache.notice ? fmt.yellow(seedCache.text) : seedCache.state === 'off' ? fmt.dim(seedCache.text) : seedCache.text],
       ['Legacy witness seed:', seedLine],
       ['Proxy:', proxyStatus],
       ...(storageText && storageState !== 'healthy' && storageState !== 'no_evidence'
@@ -131,4 +149,9 @@ export default async function status(args) {
   }
 
   return seedV3.broken ? EXIT.ERROR : EXIT.OK;
+}
+
+/** Since 0.1.6: while the seed cache is on and holds buckets, the proxy and `check` read it, not the installed bundle. */
+export function bundleNote({ cacheInUse }) {
+  return cacheInUse ? '(installed; the seed cache is read instead while it is on)' : '(recorded; `chaingate doctor` verifies it)';
 }

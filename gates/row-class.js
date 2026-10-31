@@ -6,6 +6,7 @@
 // A WARN from any module NOT listed here (the seed-v3 gate, Tier 1's named modules, an unlisted module) aggregates as it
 // always did. A new policy identity changes this table deliberately; a guard test pins it.
 import POL from '../seed/v3/policy.js';
+import RT from '../seed/v3/retier.js';
 
 export const ROLE_POLICY = 'cft-policy-1.2';
 
@@ -70,4 +71,24 @@ export function validNotes(list) {
   return list.every((x) => typeof x === 'string' && x.length > 0 && x.length <= 120) ? [...list] : null;
 }
 
-export default { ROLE_POLICY, CONTRIBUTING_GATES, withRole, validRows, validDeps, validNotes, MAX_ROWS };
+/** Since 0.1.6: install-introduced's `hooks_basis` ({ ever, gyp, tarball }), validated, or null. */
+export function validHooksBasis(x) {
+  if (!x || typeof x !== 'object' || typeof x.ever !== 'boolean' || typeof x.gyp !== 'boolean') return null;
+  if (x.tarball !== null && !['same', 'registry-only', 'added', 'changed'].includes(x.tarball)) return null;
+  return { ever: x.ever, gyp: x.gyp, tarball: x.tarball };
+}
+
+/** Since 0.1.6: the seed-v3 result's `pin` member (a pins feed pin), validated, or null. */
+export function validPin(x) {
+  const id = (v) => v === null || (typeof v === 'string' && /^[A-Za-z0-9._:/-]{1,80}$/.test(v));
+  if (!x || typeof x !== 'object' || x.origin !== 'feed' || !['osv', 'ghsa', 'chaingate-analyst', 'other'].includes(x.source)) return null;
+  if (!id(x.advisory_id) || !id(x.record_id) || (x.advisory_id === null && x.record_id === null)) return null;
+  if (x.integrity !== undefined && !['matches', 'differs', 'absent'].includes(x.integrity)) return null;
+  return { origin: 'feed', source: x.source, advisory_id: x.advisory_id, record_id: x.record_id,
+    ...(x.integrity !== undefined ? { integrity: x.integrity } : {}) };
+}
+
+/** Since 0.1.6: the seed-v3 result's compact re-tier block (seed/v3/retier.js), validated, or null. */
+export const validRetier = (x) => RT.validCompact(x);
+
+export default { ROLE_POLICY, CONTRIBUTING_GATES, withRole, validRows, validDeps, validNotes, validRetier, validHooksBasis, validPin, MAX_ROWS };

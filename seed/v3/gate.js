@@ -68,6 +68,7 @@ import POL from './policy.js';
 import { emailDomain } from './normalize.js';
 import { resolvePublisherEmail } from './normalize-extra.js';
 import { RELEASE_FAMILY, HOLDING_DESCRIPTION, tagFamily } from './tag-family.js';
+import RT from './retier.js';
 
 const SEED_V3_GATE = 'seed-v3';
 const FROM_PACKUMENT = 'from-packument';
@@ -126,7 +127,9 @@ const CALVER_YEAR_MIN = 2000;
 const CALVER_YEAR_MAX = 2027;
 
 const PLACEMENT_RULE_VERSION = 'rl2-placement-1.0';
-const SEED_CONTRACT_1_2 = 'cft-seed-v3-contract-1.2';
+// the contracts placed by rl2 (reader.js RL2_CONTRACTS): 1.3 is 1.2 with package-scoped lineage ids
+const SEED_CONTRACT_1_3 = 'cft-seed-v3-contract-1.3';
+const RL2_SEED_CONTRACTS = Object.freeze(['cft-seed-v3-contract-1.2', SEED_CONTRACT_1_3]);
 
 const majorOf = (version) => (MAJOR_RE.exec(version || '')?.[1] ?? '0');
 const isStub = (version) => STUB_RE.test(version || '');
@@ -176,6 +179,12 @@ const PLACEMENTS = Object.freeze({
 function resolvePlacement(seed, packageName, version, publishedS, { holdingDescription = false } = {}) {
   const no = (kind, reason) => ({ kind, lineage_id: null, ord: null, channel_a_usable: false, reason });
 
+  // Since 0.1.6, a seed cache: a package whose bucket the cache does not hold is uncovered (never "not in the seed"), and a held
+  // bucket's rows are checked against the root before they answer (a mismatch throws: an unusable input).
+  const unheld = seed.uncoveredReason?.(packageName) ?? null;
+  if (unheld) return no(PLACEMENTS.UNCOVERED_PACKAGE, unheld);
+  seed.touch?.(packageName);
+
   const pkg = seed.db.prepare('SELECT id FROM packages WHERE package_name = ?').get(packageName);
   if (!pkg) {
     // A takedown stub is outside lineage grouping whether or not the seed represents its package (an all-stub
@@ -202,10 +211,12 @@ function resolvePlacement(seed, packageName, version, publishedS, { holdingDescr
       channel_a_usable: true, reason: null };
   }
 
-  if (seed.meta?.seed_contract_version === SEED_CONTRACT_1_2) {
+  if (RL2_SEED_CONTRACTS.includes(seed.meta?.seed_contract_version)) {
     const rows = seed.db.prepare('SELECT id, lineage_key, tag_family, last_version, last_published_s FROM lineages '
       + 'WHERE package_id = ? ORDER BY ord').all(pkg.id);
-    return placeRl2(rows, version, publishedS, { holdingDescription });
+    // a 1.3 seed groups by tag family 0.3 (platform tokens), a 1.2 seed by 0.2: a release is placed by its seed's rule
+    return placeRl2(rows, version, publishedS, { holdingDescription,
+      platforms: seed.meta?.seed_contract_version === SEED_CONTRACT_1_3 });
   }
 
   // E4 / E5: outside lineage grouping entirely, so it holds no predecessor.
@@ -268,7 +279,7 @@ function resolvePlacement(seed, packageName, version, publishedS, { holdingDescr
  * Where a LIVE release sits in a contract-1.2 seed (rl2-placement-1.0; the seed side's placement.place, case for case).
  * `lineages`: the package's rows (id, lineage_key, tag_family, last_version, last_published_s). Never throws.
  */
-function placeRl2(lineages, version, publishedS, { holdingDescription = false } = {}) {
+function placeRl2(lineages, version, publishedS, { holdingDescription = false, platforms = false } = {}) {
   const no = (kind, reason) => ({ kind, lineage_id: null, ord: null, channel_a_usable: false, reason });
   const append = (id) => ({ kind: PLACEMENTS.APPEND, lineage_id: id, ord: null, channel_a_usable: true, reason: null });
   if (isStub(version)) return no(PLACEMENTS.INELIGIBLE_STUB, stubReason(version));
@@ -286,7 +297,7 @@ function placeRl2(lineages, version, publishedS, { holdingDescription = false } 
       + 'seed does not store');
   }
   const key = lineages.filter((l) => l.lineage_key === major);
-  const fam = tagFamily(version);
+  const fam = tagFamily(version, { platforms });
   const own = key.filter((l) => l.tag_family === fam);
   if (own.length > 1) return no(PLACEMENTS.UNRESOLVED, `${own.length} recorded chains carry (${major}, ${fam}); a 1.2 seed holds at most one`);
   const againstTip = (tip, ownChain) => {
@@ -460,7 +471,7 @@ function validateEvaluationConfig({ config = {}, domainVersionCount } = {}) {
  * @returns {{decision: object, finding: object|null, placement: object|null}} `finding` and
  *   `placement` are null exactly when the decision is a refusal.
  */
-function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input = {}) {
+function evaluateCandidate(seed, { config = {}, domainVersionCount, pinOverlay = null } = {}, input = {}) {
   const pkg = input.packageName;
   const version = input.version;
   const manifest = input.rawManifest;
@@ -468,8 +479,10 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
   // The advisory pin FIRST (cft-policy-1.1). It names this exact version and needs neither a manifest, a
   // placement nor a finding, so it is looked up before anything that can fail and carried into every decision below:
   // a refusal can no longer discard it. A lookup that throws is carried as a recorded failure, never as "no pin".
-  const looked = POL.lookupPin(seed, pkg, version);
-  const pinCtx = { pin: looked.pin, pinLookupError: looked.error };
+  const looked = POL.lookupPin(seed, pkg, version, pinOverlay);   // since 0.1.6: the pins feed overlay after the seed
+  // since 0.1.6: a feed capture pin is compared with this version's registry integrity; the BLOCK stands either way
+  const pinCtx = { pin: POL.captureIntegrity(looked.pin, manifest), pinLookupError: looked.error, pinUncovered: looked.uncovered ?? null,
+    cacheStale: seed.staleness?.() ?? null };   // since 0.1.6: a seed cache's unheld bucket, and its root's age
 
   // A missing manifest is an UNUSABLE INPUT, which is policy's question and not this module's.
   // Answering it with a bare SKIP here bypassed policy entirely and let the aggregate permit.
@@ -501,10 +514,17 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
     });
     finding = seed.check(candidate);
     const staleSeed = staleSeedGap(seed, place, input, publishedS, version);
+    // Since 0.1.6 (cft-policy-1.3): the re-tier block, from the registry document in hand. A failure here is no refusal:
+    // without a block policy decides as 1.2 did, so the strict rows keep their WARN.
+    let retier = null;
+    try {
+      retier = RT.retierOf({ packageName: pkg, version, finding, placement: place, notEvaluated: POL.notEvaluated(finding, place),
+        rawVersions: input.rawVersions, rawTimes: input.rawTimes });
+    } catch { retier = null; }
     // The placement travels WITH the finding. Where Channel-A cannot be compared, policy records
     // the gate's own reason rather than the checker's `uncovered_package`, and keeps what does not
     // depend on placement: the DAC trajectory and an exact-version advisory pin.
-    decision = POL.decide(finding, { ...pinCtx, config, override: null, placement: place, staleSeed });
+    decision = POL.decide(finding, { ...pinCtx, config, override: null, placement: place, staleSeed, retier });
   } catch (e) {
     // A refusal from any layer is an UNUSABLE INPUT, and policy decides what that means — this
     // module does not get to turn it into an ALLOW. The pin found above survives it.
@@ -527,12 +547,12 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount } = {}, input
  *                    exactly one GateResult, because that is the shape the gate runner aggregates.
  * @returns {{name: string, evaluate: (input: object) => {gate, result, detail}}}
  */
-function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = null } = {}) {
+function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = null, pinOverlay = null } = {}) {
   if (!seed) throw new Error('createSeedV3Gate: seed is required');
   const normalised = validateEvaluationConfig({ config, domainVersionCount });
 
   function evaluate(input) {
-    return resultFrom(evaluateCandidate(seed, { config, domainVersionCount }, input).decision,
+    return resultFrom(evaluateCandidate(seed, { config, domainVersionCount, pinOverlay }, input).decision,
       onDecision);
   }
 
@@ -569,6 +589,10 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
       // The decision's rows, structured (closed vocabulary), so a reader classifies named / contributing / coverage
       // rows without parsing the detail text.
       rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
+      // cft-policy-1.3: the re-tier, structured, when a strict row warned before it (a later download reads it)
+      ...(decision.retier ? { retier: RT.compact(decision.retier) } : {}),
+      // since 0.1.6: which kind of pin decided, when it came from the pins feed (the notice words it)
+      ...(decision.pin ? { pin: decision.pin } : {}),
       detail: `${decision.policy_version}: ${why}${also}`
         + (decision.placement ? ` [placement: ${decision.placement}]` : '')
         + (decision.evidence_complete ? '' : ` [evidence incomplete: ${decision.not_evaluated.length}`
@@ -603,7 +627,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
     } else if (identity.overridden === true) {
       note = `advisory not consulted on a failure path: an exact-version override exists for ${pkg}@${version}`;
     } else {
-      looked = POL.lookupPin(seed, pkg, version);
+      looked = POL.lookupPin(seed, pkg, version, pinOverlay);
       if (looked.error) {
         note = `advisory pin lookup FAILED for ${pkg}@${version} (${looked.error.message}); the input rule decides`;
       } else if (!looked.pin) note = `no recorded advisory pins ${pkg}@${version}`;
@@ -616,6 +640,7 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
     // The failure path carries its structured rows too, so a 1.2 failure decision's facts are
     // read from rows, never from the error text.
     return { gate: SEED_V3_GATE, result: decision.disposition, rows: decision.results.map((x) => ({ gate: x.gate, result: x.result })),
+      ...(decision.pin ? { pin: decision.pin } : {}),
       detail: `${decision.policy_version}: the seed-v3 path could not run (${error.message})`
         + (pinned ? ` | ${pinned.gate}: ${pinned.detail}` : '') + (note ? ` | ${note}` : '') };
   }

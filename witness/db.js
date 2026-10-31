@@ -175,6 +175,7 @@ CREATE TRIGGER IF NOT EXISTS adjudications_append_only_d BEFORE DELETE ON adjudi
 -- and tally, the streamed share and staticFactsOf), in milliseconds, written with static_facts. repo_claim = an armed version's
 -- repository claim (proxy/shadow-facts.js repoClaimFact: its attestation bundle's repository against its package metadata's), written
 -- once after its first download; record only likewise. repo_claim_ms = the time it took, the bundle fetch included, in milliseconds.
+-- Since 0.1.6: walk_wait_ms = how long the download that stored the facts waited for a tarball-check walk slot, in milliseconds.
 CREATE TABLE IF NOT EXISTS entry_fact_versions (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     package_name          TEXT NOT NULL,
@@ -190,6 +191,7 @@ CREATE TABLE IF NOT EXISTS entry_fact_versions (
     static_facts_ms       REAL,
     repo_claim            TEXT,
     repo_claim_ms         REAL,
+    walk_wait_ms          REAL,
     UNIQUE (package_name, version)
 );
 CREATE TABLE IF NOT EXISTS entry_facts (
@@ -206,6 +208,37 @@ CREATE TABLE IF NOT EXISTS entry_facts (
 );
 CREATE INDEX IF NOT EXISTS idx_efv_pkg_order ON entry_fact_versions(package_name, id DESC);
 CREATE INDEX IF NOT EXISTS idx_ef_version    ON entry_facts(version_id);
+-- Since 0.1.6: the advisory pins of the last accepted pins feed cut, read after the seed's own pins. A cut replaces them
+-- whole, in one transaction; advisory_id is null for a record with no public advisory (a ChainGate analyst record).
+CREATE TABLE IF NOT EXISTS advisory_pins (
+    package_name  TEXT NOT NULL,
+    version       TEXT NOT NULL,
+    record_id     TEXT NOT NULL,
+    advisory_id   TEXT,
+    source        TEXT NOT NULL,
+    evidence_json TEXT,
+    added_at      TEXT,
+    feed_cut_at   TEXT NOT NULL,
+    feed_digest   TEXT NOT NULL,
+    PRIMARY KEY (package_name, version, record_id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS advisory_pins_feed (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    cut_at      TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    rows        INTEGER NOT NULL,
+    accepted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+-- The last fetch of the pins feed: when, what came of it ('accepted', 'same', 'held', 'refused', 'failed') and why; a held cut's
+-- digest is what update-advisories --accept-cut names. The kept cut above keeps serving whatever this says.
+CREATE TABLE IF NOT EXISTS advisory_pins_fetch (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    attempted_at TEXT NOT NULL,
+    outcome      TEXT NOT NULL CHECK (outcome IN ('accepted','same','held','refused','failed')),
+    why          TEXT,
+    held_digest  TEXT,
+    held_cut_at  TEXT
+);
 
 CREATE INDEX IF NOT EXISTS idx_versions_pkg      ON versions(package_id);
 CREATE INDEX IF NOT EXISTS idx_versions_pub_at   ON versions(package_id, published_at DESC);
@@ -289,6 +322,7 @@ export class WitnessDB {
     if (efv.length && !efv.includes('static_facts_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN static_facts_ms REAL');
     if (efv.length && !efv.includes('repo_claim')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN repo_claim TEXT');
     if (efv.length && !efv.includes('repo_claim_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN repo_claim_ms REAL');
+    if (efv.length && !efv.includes('walk_wait_ms')) this.db.exec('ALTER TABLE entry_fact_versions ADD COLUMN walk_wait_ms REAL');   // 0.1.6
     this._prepare();
     return this;
   }
@@ -558,8 +592,8 @@ export class WitnessDB {
     if (!this._tableStmts('entry_facts', () => ({}))) return null;
     return this._tableStmts('entry_fact_versions', () => ({
       has: this.db.prepare('SELECT 1 FROM entry_fact_versions WHERE package_name = ? AND version = ?'),
-      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms, shape)
-        VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms, @shape)`),
+      insV: this.db.prepare(`INSERT OR IGNORE INTO entry_fact_versions (package_name, version, walk, reason, static_checks_version, facts_ms, shape,
+        walk_wait_ms) VALUES (@package_name, @version, @walk, @reason, @static_checks_version, @facts_ms, @shape, @walk_wait_ms)`),
       shadowSet: this.db.prepare('UPDATE entry_fact_versions SET shadow = @shadow WHERE package_name = @p AND version = @v AND shadow IS NULL'),
       staticSet: this.db.prepare('UPDATE entry_fact_versions SET static_facts = @x, static_facts_ms = @ms WHERE package_name = @p AND version = @v AND static_facts IS NULL'),
       claimSet: this.db.prepare('UPDATE entry_fact_versions SET repo_claim = @x, repo_claim_ms = @ms WHERE package_name = @p AND version = @v AND repo_claim IS NULL'),
@@ -591,7 +625,7 @@ export class WitnessDB {
     return this.db.transaction(() => {
       const ins = st.insV.run({ package_name: r.package_name, version: r.version, walk: r.walk, reason: r.reason ?? null,
         static_checks_version: r.static_checks_version, facts_ms: Number.isFinite(r.facts_ms) ? r.facts_ms : null,
-        shape: r.shape == null ? null : JSON.stringify(r.shape) });
+        shape: r.shape == null ? null : JSON.stringify(r.shape), walk_wait_ms: Number.isFinite(r.walk_wait_ms) ? r.walk_wait_ms : null });
       if (!ins.changes) return 'exists';
       const versionId = Number(ins.lastInsertRowid);
       for (const f of Array.isArray(r.files) ? r.files : []) {
@@ -673,6 +707,90 @@ export class WitnessDB {
   listAcceptances() {
     const st = this._acceptStmts();
     return st ? st.list.all().map((r) => decodeJsonField(r, 'named', [])) : [];
+  }
+
+  _advisoryPinStmts() {
+    return this._tableStmts('advisory_pins', () => ({
+      get: this.db.prepare('SELECT package_name, version, record_id, advisory_id, source, evidence_json, added_at, feed_cut_at '
+        + 'FROM advisory_pins WHERE package_name = ? AND version = ? ORDER BY advisory_id IS NULL, advisory_id, record_id LIMIT 1'),
+      clear: this.db.prepare('DELETE FROM advisory_pins'),
+      pairs: this.db.prepare('SELECT DISTINCT package_name, version FROM advisory_pins'),
+      insert: this.db.prepare('INSERT INTO advisory_pins (package_name, version, record_id, advisory_id, source, evidence_json, added_at, '
+        + 'feed_cut_at, feed_digest) VALUES (@package_name, @version, @record_id, @advisory_id, @source, @evidence_json, @added_at, '
+        + '@feed_cut_at, @feed_digest)'),
+      feed: this.db.prepare('SELECT cut_at, digest, rows, accepted_at FROM advisory_pins_feed WHERE id = 1'),
+      setFeed: this.db.prepare(`INSERT INTO advisory_pins_feed (id, cut_at, digest, rows) VALUES (1, @cut_at, @digest, @rows)
+        ON CONFLICT(id) DO UPDATE SET cut_at = excluded.cut_at, digest = excluded.digest, rows = excluded.rows,
+          accepted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`),
+    }));
+  }
+
+  _advisoryPinFetchStmts() {
+    return this._tableStmts('advisory_pins_fetch', () => ({
+      get: this.db.prepare('SELECT attempted_at, outcome, why, held_digest, held_cut_at FROM advisory_pins_fetch WHERE id = 1'),
+      set: this.db.prepare(`INSERT INTO advisory_pins_fetch (id, attempted_at, outcome, why, held_digest, held_cut_at)
+        VALUES (1, @attempted_at, @outcome, @why, @held_digest, @held_cut_at)
+        ON CONFLICT(id) DO UPDATE SET attempted_at = excluded.attempted_at, outcome = excluded.outcome, why = excluded.why,
+          held_digest = excluded.held_digest, held_cut_at = excluded.held_cut_at`),
+    }));
+  }
+
+  /** Since 0.1.6: the last pins feed fetch ({ attempted_at, outcome, why, held_digest, held_cut_at }), or null before the first. */
+  advisoryPinsFetch() {
+    const st = this._advisoryPinFetchStmts();
+    return st ? (st.get.get() ?? null) : null;
+  }
+
+  /** Since 0.1.6: record the outcome of one pins feed fetch. */
+  recordAdvisoryPinsFetch({ attemptedAt, outcome, why = null, heldDigest = null, heldCutAt = null }) {
+    const st = this._advisoryPinFetchStmts();
+    if (!st) throw new Error('advisory_pins_fetch is not in this witness database (open it read-write once to apply the schema)');
+    st.set.run({ attempted_at: attemptedAt, outcome, why: why === null ? null : String(why).slice(0, 2000), held_digest: heldDigest,
+      held_cut_at: heldCutAt });
+  }
+
+  /** Since 0.1.6: the versions this store recorded a BLOCK for since an ISO time, as a Set of "name@version". */
+  blockedVersionsSince(sinceIso) {
+    return new Set(this.db.prepare("SELECT DISTINCT package_name, version FROM gate_decisions WHERE disposition = 'BLOCK' "
+      + 'AND datetime(decided_at) >= datetime(?)').all(sinceIso).map((r) => `${r.package_name}@${r.version}`));
+  }
+
+  /** Since 0.1.6: the (name, version) pairs of the kept cut, as "name@version". */
+  advisoryPinPairs() {
+    const st = this._advisoryPinStmts();
+    return new Set(st ? st.pairs.all().map((r) => `${r.package_name}@${r.version}`) : []);
+  }
+
+  /** Since 0.1.6: the overlay pin for an exact version (an advisory id first), or null; null when the table does not exist. */
+  advisoryPinFor(packageName, version) {
+    const st = this._advisoryPinStmts();
+    return st ? (st.get.get(packageName, version) ?? null) : null;
+  }
+
+  /** Since 0.1.6: the accepted pins feed cut ({ cut_at, digest, rows, accepted_at }), or null before the first. */
+  advisoryPinsFeed() {
+    const st = this._advisoryPinStmts();
+    return st ? (st.feed.get() ?? null) : null;
+  }
+
+  /**
+   * Since 0.1.6: replace the overlay with one accepted cut, whole, in ONE transaction: a failure part way leaves the previous cut
+   * as it was. rows: [{ package_name, version, record_id, advisory_id, source, evidence_json, added_at }]. With `expectDigest`
+   * (a digest, or null for "no cut yet") the replace happens only while the kept cut is still that one; returns whether it did.
+   */
+  replaceAdvisoryPins({ cutAt, digest, rows, expectDigest }) {
+    const st = this._advisoryPinStmts();
+    if (!st) throw new Error('advisory_pins is not in this witness database (open it read-write once to apply the schema)');
+    return this.db.transaction(() => {
+      if (expectDigest !== undefined && (st.feed.get()?.digest ?? null) !== expectDigest) return false;
+      st.clear.run();
+      for (const r of rows) {
+        st.insert.run({ package_name: r.package_name, version: r.version, record_id: r.record_id, advisory_id: r.advisory_id ?? null,
+          source: r.source, evidence_json: r.evidence_json ?? null, added_at: r.added_at ?? null, feed_cut_at: cutAt, feed_digest: digest });
+      }
+      st.setFeed.run({ cut_at: cutAt, digest, rows: rows.length });
+      return true;
+    })();
   }
 
   listPins() {

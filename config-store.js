@@ -44,6 +44,18 @@ export class ConfigUnreadable extends Error {
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isObjOnly = isObj;
+/** 0.1.6: the published advisory feed, used when the configuration names none (`"advisory_feed": false` turns it off). */
+export const DEFAULT_ADVISORY_FEED_URL = 'https://raw.githubusercontent.com/cgsec-labs/chaingate-pins/main/pins/';
+
+/** 0.1.6: the published seed cache host (buckets of the seed under a signed root); `"seed_cache": false` turns it off. */
+export const DEFAULT_SEED_CACHE_URL = 'https://shards.cgsec.dev/';
+
+export const DEFAULT_STATIC_WALK_WAIT_MS = 10_000;
+
+export function isHttpsUrl(v) {
+  if (typeof v !== 'string' || v.length > 2048) return false;
+  try { const u = new URL(v); return u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash; } catch { return false; }
+}
 
 /**
  * Validate a parsed configuration. Throws `ConfigUnreadable` on anything that would leave the CLI
@@ -99,7 +111,30 @@ export function validateConfig(cfg, file = '(in memory)') {
     bad(`static_withhold must be true or false, got ${JSON.stringify(sw)}`);
   }
 
-  return { policy: resolved, caps, staticWithhold: sw === true };
+  // 0.1.6: how long a download waits for a tarball-check walk slot when all are busy, in milliseconds (default 10 s); past it
+  // the download is served unwalked and read at its next download. 0 never waits.
+  const ww = cfg.static_walk_wait_ms;
+  if (ww !== undefined && ww !== null && !(Number.isInteger(ww) && ww >= 0 && ww <= 60_000)) {
+    bad(`static_walk_wait_ms must be a whole number of milliseconds from 0 to 60000, got ${JSON.stringify(ww)}`);
+  }
+
+  // 0.1.6: the advisory feed (internally the pins feed). `advisory_feed_url` is an https base URL, the published feed when unset;
+  // the proxy fetches it at start and hourly unless `advisory_feed` is false. A wrong type or a URL that is not https refuses.
+  const pf = cfg.advisory_feed;
+  if (pf !== undefined && pf !== null && typeof pf !== 'boolean') bad(`advisory_feed must be true or false, got ${JSON.stringify(pf)}`);
+  const pu = cfg.advisory_feed_url;
+  if (pu !== undefined && pu !== null && !isHttpsUrl(pu)) bad(`advisory_feed_url must be an https URL, got ${JSON.stringify(pu)}`);
+  const pinsFeed = { url: pu ?? DEFAULT_ADVISORY_FEED_URL, enabled: pf !== false };
+
+  // 0.1.6: the seed cache. `seed_cache_url` is an https base URL, the published host when unset; while on, the proxy reads the
+  // seed cache instead of a full seed and fetches the buckets it needs. `seed_cache: false` turns it off.
+  const sc = cfg.seed_cache;
+  if (sc !== undefined && sc !== null && typeof sc !== 'boolean') bad(`seed_cache must be true or false, got ${JSON.stringify(sc)}`);
+  const su = cfg.seed_cache_url;
+  if (su !== undefined && su !== null && !isHttpsUrl(su)) bad(`seed_cache_url must be an https URL, got ${JSON.stringify(su)}`);
+  const seedCache = { url: su ?? DEFAULT_SEED_CACHE_URL, enabled: sc !== false };
+
+  return { policy: resolved, caps, staticWithhold: sw === true, staticWalkWaitMs: ww ?? DEFAULT_STATIC_WALK_WAIT_MS, pinsFeed, seedCache };
 }
 
 /**

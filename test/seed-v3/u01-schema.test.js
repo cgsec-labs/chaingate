@@ -1,11 +1,10 @@
-// U-01 A9 — every check-record shape validates against the schema this runtime writes (0.1.4 I1: chaingate.check/3,
-// seed/v3/chaingate-check-3.schema.json; historical /1 and /2 records are validated in u05-check2.test.js), every
+// U-01 A9: every check-record shape validates against the schema this runtime writes (0.1.4 I1: chaingate.check/3; since
+// 0.1.6 chaingate.check/5, seed/v3/chaingate-check-5.schema.json; historical /1 to /3 records are validated in u05-check2.test.js), every
 // finding against the CFT-03 finding schema (byte copy in test/fixtures/cft03, sha256 3ce4f826…), and
 // the schema REJECTS invented, null-filled and cross-shape members.
 //
-// Two validators. ajv 8.17.1 is the approved one (a pinned, test-only devDependency, acquired once
-// under an operator-authorized network exception and installed offline into the U-01 worktree's own
-// dependency tree). Python jsonschema (draft 2020-12) runs beside it as an independent cross-check.
+// Two validators. ajv is the approved one (a pinned, test-only devDependency: 8.17.1 through 0.1.5, 8.20.0
+// since 0.1.6; the test checks that the exact version in package.json is the one executing). Python jsonschema (draft 2020-12) runs beside it as an independent cross-check.
 // The ajv test skips only if ajv is absent, and says so.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,7 +21,7 @@ import { syntheticCases, rc3Cases, buildSyntheticSeed, RC3_DIR } from './u01-cas
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
-const CHECK_SCHEMA = path.join(ROOT, 'seed', 'v3', 'chaingate-check-3.schema.json');
+const CHECK_SCHEMA = path.join(ROOT, 'seed', 'v3', 'chaingate-check-5.schema.json');
 const FINDING_SCHEMA = path.join(ROOT, 'test', 'fixtures', 'cft03', 'finding.schema.json');
 const TOOL = { name: 'chaingate', version: '0.1.0' };
 
@@ -119,18 +118,20 @@ let Ajv2020 = null;
 try { Ajv2020 = createRequire(import.meta.url)('ajv/dist/2020.js'); } catch { /* not installed */ }
 
 test('A9 (ajv, the approved validator) all shapes valid, findings valid, invalid shapes rejected',
-  { skip: Ajv2020 ? false : 'ajv is not installed in this dependency tree (U-01 pins ajv 8.17.1 as a devDependency; run the offline install)',
+  { skip: Ajv2020 ? false : 'ajv is not installed in this dependency tree (package.json pins ajv as a devDependency; run npm ci)',
     timeout: 600000 }, () => {
     const AjvCtor = Ajv2020.default || Ajv2020;
     const version = JSON.parse(fs.readFileSync(createRequire(import.meta.url).resolve('ajv/package.json'), 'utf8')).version;
-    assert.equal(version, '8.17.1', 'the pinned ajv is the one executing');
+    const pinned = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).devDependencies.ajv;
+    assert.match(pinned, /^\d+\.\d+\.\d+$/, 'ajv is pinned to an exact version');
+    assert.equal(version, pinned, 'the pinned ajv is the one executing');
     const findingSchema = JSON.parse(fs.readFileSync(FINDING_SCHEMA, 'utf8'));
     const checkSchema = JSON.parse(fs.readFileSync(CHECK_SCHEMA, 'utf8'));
     // The NEW check schema passes ajv's FULL strict mode (finding referenced through a stub here).
     {
       const full = new AjvCtor({ strict: true });
       full.addSchema({ $schema: 'https://json-schema.org/draft/2020-12/schema', $id: findingSchema.$id, type: 'object' });
-      assert.doesNotThrow(() => full.compile(checkSchema), 'chaingate-check-3 passes full strict mode');
+      assert.doesNotThrow(() => full.compile(checkSchema), 'chaingate-check-5 passes full strict mode');
     }
     // The FROZEN CFT-03 finding schema trips exactly one strict lint, strictRequired: a `required` inside
     // an if/then branch names a property defined outside that branch. That is valid JSON Schema, and the

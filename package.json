@@ -1,6 +1,6 @@
 {
   "name": "@cgsec/chaingate",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Local npm proxy that checks each new package version against that package's own release history",
   "type": "module",
   "main": "proxy/server.js",
@@ -24,27 +24,27 @@
   ],
   "license": "Apache-2.0",
   "author": "CGSec",
-  "homepage": "https://github.com/r-bedekar/chaingate#readme",
+  "homepage": "https://github.com/cgsec-labs/chaingate#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/r-bedekar/chaingate.git"
+    "url": "git+https://github.com/cgsec-labs/chaingate.git"
   },
   "bugs": {
-    "url": "https://github.com/r-bedekar/chaingate/issues"
+    "url": "https://github.com/cgsec-labs/chaingate/issues"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": "^22.0.0 || ^24.0.0"
+    "node": "^22.19.0 || ^24.0.0"
   },
   "dependencies": {
     "better-sqlite3": "12.11.1",
-    "semver": "7.7.4",
-    "undici": "6.29.1"
+    "semver": "7.8.5",
+    "undici": "8.12.3"
   },
   "devDependencies": {
-    "ajv": "8.17.1"
+    "ajv": "8.20.0"
   },
   "allowScripts": {
     "better-sqlite3@12.11.1": true
