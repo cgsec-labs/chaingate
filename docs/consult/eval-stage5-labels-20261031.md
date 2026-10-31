@@ -90,3 +90,24 @@ The four records above join pandora-doomsday and the section 4.2 incident table 
 `attack_name` are refreshed on re-label; migration `phase_label_rule_2` goes to PROD before the failing-first build. No objection:
 the operator's merge go decides. The restatement in Q2 is over 172 packages as before (the two npm packages; babel-traverse is a
 third label row, not a third labelled package in the base-rates set unless the saved reports say so, which ops checks).
+
+## Addendum 2, 2026-10-31 (ops' Stage 6 candidate; two points answered)
+
+Ops' state, verified: label rule 2 is merged (ops main 158527b, signed, tests 66ca417 before code 79c3eae; 29 tests pass here, the
+3 migration tests need the database). The Stage 6 candidate (`s6-MANIFEST.json`, sha 6f29c123, seed 20261031, cutoff 2026-09-01) and
+its counts are ops' claims from the VPS: P-HIST 120 (tune 69, holdout 51), P-NEW 8, 9 manipulated-history excluded, 2 GHSA P-HIST,
+3 DataDog packages, 68 campaigns all actor-keyed, holdout 14 campaigns; N-SAME 18,476, N-B2 19,935, N-POP 970 (downloads_filter axis,
+2026-05-11). Leans below; the operator approves the manifest by sha.
+
+1. **duckdb, @teselagen/file-utils, range-utils: excluded as not measurable; Q3 is corrected.** Q3 said they stay in P-HIST at the
+   versions DataDog names. The corpus never captured those versions (it holds duckdb 1.3.3-dev0.0 only, file-utils 0.3.14, 0.3.15 and
+   0.3.21-beta.1, range-utils 0.3.14-beta.1), so there is no row with a tarball, a predecessor or publish facts to measure. Condition:
+   they stay in the manifest as excluded rows with the reason "taken over; the malicious version was never captured", never dropped
+   silently, so a later version can admit them if the forward archive ever holds those versions.
+2. **The holdout draw stays as drawn.** The unit is the campaign (Q4), the draw has a recorded seed, and re-drawing or stratifying after
+   seeing the result is tuning the holdout, which the rule forbids. The cost is stated in the manifest, not fixed: 14 holdout campaigns is
+   small, and the one 29-package 2026-W21 campaign carries about 57 percent of holdout packages (51 of 120 P-HIST are holdout). The
+   holdout's headline figure is `recall@campaign`; the per-release figure is quoted beside it with that campaign's share named. No new
+   version for this.
+3. **N-TRIAGE is "not sourced in 1.0"**, stated as a class in the manifest with that note, not omitted. Triage holds no verdict file;
+   building the ledger is triage's work on the operator's go, and the class fills in a later version.
