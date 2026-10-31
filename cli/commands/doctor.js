@@ -16,6 +16,8 @@ import { resolveActiveBundle, verifyBundleDir, activeBundleId, ActivationBroken,
   previousBundleId, readActivationIntent, intentFile, surveyLeftovers, INTENT_FILE } from '../seed-bundle.js';
 import { readConfigStrict, validateConfig, POLICY_VALUES } from '../../config-store.js';
 import { probeNativeSqlite, nativeSqliteHelp } from '../native-sqlite.js';
+import { describePinsFeed } from '../pins-feed.js';
+import { readSeedCache, describeSeedCache } from '../seed-shards.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let CLI_VERSION = 'unknown';
@@ -101,10 +103,12 @@ export default async function doctor(args) {
   // ── the ACTIVE v3 bundle and the policy in force ────────────────────────
   // Resolved ONCE, then read through the pinned directory — the same way the proxy does it.
   let policy = {};
+  let pinsFeedCfg = { url: null, enabled: false };
+  let seedCacheCfg = { url: null, enabled: false };
   let configFault = null;
   try {
     const cfg = readConfigStrict(paths.configFile);
-    policy = validateConfig(cfg || {}, paths.configFile).policy;
+    ({ policy, pinsFeed: pinsFeedCfg, seedCache: seedCacheCfg } = validateConfig(cfg || {}, paths.configFile));
   } catch (err) {
     configFault = err.why || err.message;
   }
@@ -232,6 +236,29 @@ export default async function doctor(args) {
       }
     }
     checks.push({ name: 'witness-db', pass, detail });
+  }
+
+  // Since 0.1.6: the advisory feed (the pins feed). Old (past 48 hours), stale (past 7 days), held, refused or failing is a notice: the last
+  // accepted cut keeps serving, so none of these is a failure.
+  if (existsSync(paths.witnessDb)) {
+    try {
+      const db = openWitnessDB(paths.witnessDb, { readonly: true });
+      let d;
+      try { d = describePinsFeed({ url: pinsFeedCfg.enabled ? pinsFeedCfg.url : null, feed: db.advisoryPinsFeed(), fetch: db.advisoryPinsFetch() }); }
+      finally { db.close(); }
+      checks.push(d.state === 'off' ? { name: 'advisory-feed', pass: true, severity: 'skipped', detail: d.text }
+        : d.notice ? { name: 'advisory-feed', pass: false, severity: 'notice', detail: d.text }
+          : { name: 'advisory-feed', pass: true, detail: d.text });
+    } catch { /* the witness-db check above reports an unreadable store */ }
+  }
+
+  // Since 0.1.6: the seed cache. No root yet, older than 48 hours or 7 days, or a failed fetch is a notice: what the cache holds
+  // keeps serving, so none of these is a failure.
+  {
+    const d = describeSeedCache({ url: seedCacheCfg.enabled ? seedCacheCfg.url : null, cache: readSeedCache(paths.seedCache) });
+    checks.push(d.state === 'off' ? { name: 'seed-cache', pass: true, severity: 'skipped', detail: d.text }
+      : d.notice ? { name: 'seed-cache', pass: false, severity: 'notice', detail: d.text }
+        : { name: 'seed-cache', pass: true, detail: d.text });
   }
 
   // 3. Proxy PID alive. Three answers: a refused liveness check is reported as exactly that.

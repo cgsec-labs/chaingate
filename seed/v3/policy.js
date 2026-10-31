@@ -50,14 +50,20 @@
 //
 // CFT-POLICY-1.2 (0.1.4). The identity moved before any 0.1.4 change to the decision record, with nothing else
 // changed; each later 0.1.4 change is marked cft-policy-1.2 below.
+//
+// CFT-POLICY-1.3 (0.1.6). One change: the RE-TIER of the strict rows. A strict row (NAMED_ROWS) that WARNs becomes a NOTE
+// when the gate's re-tier block (seed/v3/retier.js, computed from the registry document in hand) says `recorded`: every flag
+// that broke already held on the release this one follows, and no guard holds. Only WARN -> NOTE: a NOTE is never an ALLOW
+// row, no other row moves, and a BLOCK is never touched. Without a block (no registry document, a caller that passes none)
+// 1.3 decides exactly as 1.2. The finding is not changed.
 import K from './contract.js';
 
-const POLICY_CONTRACT_VERSION = 'cft-policy-1.2';
+const POLICY_CONTRACT_VERSION = 'cft-policy-1.3';
 const PIN_GATE = 'seed-v3:known-malicious-pin';
-// The seed contracts whose pins are keyed by package name (reader.js SEED_CONTRACT_1_1 and SEED_CONTRACT_1_2; the reader
+// The seed contracts whose pins are keyed by package name (reader.js SEED_CONTRACT_1_1, 1_2 and 1_3; the reader
 // requires the name column and its index for both). Literals here, not an import: policy.js imports nothing from the
 // detection path.
-const PIN_BY_NAME_SEED_CONTRACTS = Object.freeze(['cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2']);
+const PIN_BY_NAME_SEED_CONTRACTS = Object.freeze(['cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2', 'cft-seed-v3-contract-1.3']);
 const IMPLEMENTED_DETECTION_CONTRACT = K.CONTRACT_VERSION;
 
 const ALLOW = 'ALLOW';
@@ -145,12 +151,62 @@ function normaliseConfig(config = {}) {
 
 const r = (gate, result, detail) => ({ gate, result, detail });
 
+/**
+ * cft-policy-1.3: the strict WARN rows, each turned into a NOTE when the re-tier block says `recorded`. Returns the rows and
+ * whether any strict row warned before the re-tier (the decision carries the block only then).
+ */
+function retierRows(results, retier) {
+  const strict = results.some((x) => NAMED_ROWS.includes(x.gate) && x.result === WARN);
+  if (!strict || !retier || retier.placement !== 'recorded') return { results, strict };
+  return { strict, results: results.map((x) => (NAMED_ROWS.includes(x.gate) && x.result === WARN
+    ? r(x.gate, NOTE, `${x.detail}; not new: ${retier.words} (a note, not a warning)`) : x)) };
+}
+
 const reasonOf = (err) => (err instanceof Error ? `${err.name}: ${err.message}` : String(err));
-const pinBlockRow = (pin, pkg, version) => r(PIN_GATE, BLOCK,
-  `recorded advisory ${pin.advisory_id} pins ${pkg}@${version}${pin.source ? ` (source ${pin.source})` : ''}`);
+// Since 0.1.6: a pin from the pins feed overlay (`origin: 'feed'`) is feed text, so its ids are bounded to a closed character set.
+// Its row keeps the words "recorded advisory" (the decision rule recognises a pin by them) and names the feed record.
+const feedText = (x) => (typeof x === 'string' ? x.replace(/[^A-Za-z0-9._:/-]/g, '').slice(0, 80) : '');
+const PIN_SOURCES = Object.freeze(['osv', 'ghsa', 'chaingate-analyst']);
+const INTEGRITY = Object.freeze(['matches', 'differs', 'absent']);
+/** The decision's `pin` member for a feed pin (null for a seed pin, which the record's rows already say everything about). */
+const pinMember = (pin) => (pin && pin.origin === 'feed' ? { origin: 'feed', source: PIN_SOURCES.includes(pin.source) ? pin.source : 'other',
+  advisory_id: feedText(pin.advisory_id) || null, record_id: feedText(pin.record_id) || null,
+  ...(INTEGRITY.includes(pin.integrity) ? { integrity: pin.integrity } : {}) } : null);
+// A capture pin names the version; the tarball it was made from is evidence, never its scope. The comparison is recorded and
+// can only add a warning beside the BLOCK: a registry integrity that differs from the analysed tarball is a reason to look,
+// never to serve.
+const INTEGRITY_WORDS = Object.freeze({
+  matches: 'the registry integrity matches the analysed tarball',
+  differs: "WARNING: the registry's integrity for this version differs from the analysed tarball",
+  absent: 'no integrity in the metadata',
+});
+/**
+ * Since 0.1.6: a feed capture pin compared with the version's `dist.integrity` from the metadata being decided. Returns the pin
+ * with `integrity` 'matches' | 'differs' | 'absent'; any other pin unchanged.
+ */
+function captureIntegrity(pin, manifest) {
+  if (!pin || pin.origin !== 'feed') return pin;
+  let ev = null;
+  try { ev = typeof pin.evidence_json === 'string' ? JSON.parse(pin.evidence_json) : null; } catch { ev = null; }
+  if (ev?.kind !== 'capture' || typeof ev.dist_integrity !== 'string') return pin;
+  const got = manifest?.dist?.integrity;
+  const integrity = typeof got !== 'string' || !got.trim() ? 'absent'
+    : got.trim().split(/\s+/).includes(ev.dist_integrity) ? 'matches' : 'differs';
+  return { ...pin, integrity };
+}
+function pinBlockRow(pin, pkg, version) {
+  if (pin.origin !== 'feed') {
+    return r(PIN_GATE, BLOCK, `recorded advisory ${pin.advisory_id} pins ${pkg}@${version}${pin.source ? ` (source ${pin.source})` : ''}`);
+  }
+  const m = pinMember(pin);
+  const what = m.advisory_id ?? `(ChainGate analyst record ${m.record_id})`;
+  return r(PIN_GATE, BLOCK, `recorded advisory ${what} pins ${pkg}@${version} (source ${m.source}); ChainGate pins feed`
+    + `${m.advisory_id && m.record_id ? `, record ${m.record_id}` : ''}${m.integrity ? `; ${INTEGRITY_WORDS[m.integrity]}` : ''}`);
+}
 const pinFailedRow = (err) => r(PIN_GATE, SKIP,
   `advisory pin lookup FAILED (${reasonOf(err)}): whether an advisory names this version is NOT known`);
 const pinLookupMissing = (err) => ({ where: 'policy', name: 'pin_lookup', reason: reasonOf(err) });
+const pinUncoveredRow = (why) => r(PIN_GATE, SKIP, `not checked: ${why}; whether the seed records an advisory for this version is NOT known`);
 const inputResult = (choice) => (choice === 'BLOCK' ? BLOCK : (choice === 'WARN' ? WARN : SKIP));
 
 /** The gate runner's aggregation, unchanged: any BLOCK -> BLOCK, else any WARN -> WARN, else ALLOW. */
@@ -237,12 +293,17 @@ function staleSeedRow(st) {
  *   ctx.override   an override row (the gate runner's short-circuit), or null
  *   ctx.staleSeed  (cft-policy-1.2) the gate's gap count for an `append` placement, or null:
  *                  {checked: true, k, tip, versions} or {checked: false, tip}. A coverage fact, never an alert.
+ *   ctx.retier     (cft-policy-1.3) the gate's re-tier block (seed/v3/retier.js), or null: a strict WARN becomes a NOTE
+ *                  only when its placement is `recorded`.
  * @returns {object} a decision. `disposition` is null when policy declines to decide; it is never
  *   ALLOW merely because something could not be established.
  */
 function decide(finding, ctx = {}) {
   const { pin = null, refusal = null, override = null } = ctx;
   const pinLookupError = pin ? null : (ctx.pinLookupError ?? null);
+  // since 0.1.6, a seed cache: the seed could not answer for this package (its bucket is not held), and the root's age
+  const pinUncovered = pin || pinLookupError ? null : (ctx.pinUncovered ?? null);
+  const cacheStaleRow = ctx.cacheStale ? r('seed-v3:coverage', SKIP, ctx.cacheStale) : null;
   const config = normaliseConfig(ctx.config || {});
   const base = {
     placement: null,
@@ -258,6 +319,8 @@ function decide(finding, ctx = {}) {
     seed: finding ? finding.seed : null,
     override: null,
     undecided: [],
+    // since 0.1.6: which kind of pin decided (present only for a pins feed pin)
+    ...(!override && pinMember(pin) ? { pin: pinMember(pin) } : {}),
   };
 
   // As in the gate runner, an override short-circuits to ALLOW and nothing else runs. Kept verbatim, including that it
@@ -283,9 +346,12 @@ function decide(finding, ctx = {}) {
     const results = [];
     if (pin) results.push(pinBlockRow(pin, base.package, base.version));
     else if (pinLookupError) results.push(pinFailedRow(pinLookupError));
+    else if (pinUncovered) results.push(pinUncoveredRow(pinUncovered));
     results.push(r('seed-v3:input', inputResult(choice), detail));
+    if (cacheStaleRow) results.push(cacheStaleRow);
     const notEvaluated = [{ where: 'policy', name, reason: detail }];
     if (pinLookupError) notEvaluated.push(pinLookupMissing(pinLookupError));
+    if (pinUncovered) notEvaluated.push({ where: 'policy', name: 'pin', reason: pinUncovered });
     return {
       ...base,
       // A pin is a recorded fact and stands on its own, as it does when nothing was evaluated.
@@ -332,6 +398,9 @@ function decide(finding, ctx = {}) {
     results.push(r('seed-v3:input', inputResult(config.on_unusable_input),
       `advisory pin lookup FAILED (${reasonOf(pinLookupError)}); on_unusable_input decides it`));
     policyMissing.push(pinLookupMissing(pinLookupError));
+  } else if (pinUncovered) {
+    results.push(pinUncoveredRow(pinUncovered));
+    policyMissing.push({ where: 'policy', name: 'pin', reason: pinUncovered });
   } else {
     results.push(r(PIN_GATE, ALLOW, 'no recorded advisory pins this version'));
   }
@@ -354,14 +423,21 @@ function decide(finding, ctx = {}) {
   //     publication times to count from it says "not checked" rather than implying k = 0.
   const stale = staleSeedRow(ctx.staleSeed);
   if (stale) results.push(stale);
+  if (cacheStaleRow) results.push(cacheStaleRow);
+
+  // 3c. RE-TIER (cft-policy-1.3, 0.1.6). Only a strict WARN can move, only to NOTE.
+  const rt = retierRows(results, ctx.retier ?? null);
+  results.splice(0, results.length, ...rt.results);
 
   // 4. INCOMPLETE EVIDENCE. Never folded into the disposition silently: it is a SKIP with the
   //    reasons named, it sets evidence_complete=false, and when NOTHING was evaluated the
   //    disposition itself is an open question rather than an ALLOW by default.
   // What counts as "something was evaluated" must ignore a Channel-A aggregate the placement just
   // invalidated, or an unplaced release would look evidenced when only the discarded half was.
-  const evaluatedAnything = (channelAUsable && finding.channel_a.n_evaluable > 0)
-    || finding.dac_trajectory.n_evaluable > 0;
+  // A seed cache that does not hold the package's bucket checked neither its history nor its recorded advisories: whatever the
+  // registry document alone allowed, the no-evidence choice decides it, as for a package with nothing evaluated.
+  const evaluatedAnything = !pinUncovered && ((channelAUsable && finding.channel_a.n_evaluable > 0)
+    || finding.dac_trajectory.n_evaluable > 0);
   if (missing.length) {
     const reasons = [...new Set(missing.map((m) => m.reason))].sort();
     results.push(r('seed-v3:coverage', SKIP,
@@ -377,7 +453,8 @@ function decide(finding, ctx = {}) {
       // A pin is a recorded fact and stands on its own even with no history to evaluate.
       disposition = pin ? BLOCK : null;
     } else if (choice === WARN) {
-      results.push(r('seed-v3:coverage', WARN, 'nothing in this finding was evaluated'));
+      results.push(r('seed-v3:coverage', WARN, pinUncovered
+        ? `${pinUncovered}: neither its history nor its recorded advisories were checked` : 'nothing in this finding was evaluated'));
       disposition = aggregate(results);
     }
     // ALLOW: the gate runner's fail-open, chosen explicitly by an operator rather than arrived at by omission.
@@ -397,6 +474,7 @@ function decide(finding, ctx = {}) {
     evidence_complete: missing.length === 0 && policyMissing.length === 0,
     not_evaluated: [...missing, ...policyMissing],
     undecided,
+    ...(rt.strict && ctx.retier ? { retier: ctx.retier } : {}),
   };
 }
 
@@ -422,12 +500,25 @@ function pinFor(seed, packageName, version) {
  * caller accepted under its configured trust mode. Never throws: a failure is RETURNED, so it can be recorded.
  * @returns {{pin: object|null, error: Error|null, attempted: boolean}}
  */
-function lookupPin(seed, packageName, version) {
+function lookupPin(seed, packageName, version, overlay = null) {
   if (typeof packageName !== 'string' || !packageName || typeof version !== 'string' || !version) {
     return { pin: null, error: null, attempted: false };
   }
   try {
-    return { pin: pinFor(seed, packageName, version), error: null, attempted: true };
+    // since 0.1.6, a seed cache: a package whose bucket it does not hold has no seed answer, which is not "no pin"; the feed is
+    // still read. A held bucket whose rows no longer match the root fails the lookup.
+    const unheld = seed.uncoveredReason?.(packageName) ?? null;
+    if (unheld) {
+      const feedOnly = typeof overlay === 'function' ? overlay(packageName, version) : null;
+      return feedOnly ? { pin: { ...feedOnly, origin: 'feed' }, error: null, attempted: true }
+        : { pin: null, error: null, attempted: true, uncovered: unheld };
+    }
+    seed.touch?.(packageName);
+    const seedPin = pinFor(seed, packageName, version);
+    if (seedPin) return { pin: { ...seedPin, origin: 'seed' }, error: null, attempted: true };
+    // since 0.1.6: the pins feed overlay, read after the seed; a throw is a FAILED lookup like the seed's own
+    const feedPin = typeof overlay === 'function' ? overlay(packageName, version) : null;
+    return { pin: feedPin ? { ...feedPin, origin: 'feed' } : null, error: null, attempted: true };
   } catch (e) {
     return { pin: null, error: e instanceof Error ? e : new Error(String(e)), attempted: true };
   }
@@ -437,13 +528,13 @@ export {
   NAMED_RUNNER_GATES,
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
-  thresholdResults, decide, pinFor, lookupPin, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
+  thresholdResults, decide, pinFor, lookupPin, captureIntegrity, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
   NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
 };
 export default {
   NAMED_RUNNER_GATES,
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
-  thresholdResults, decide, pinFor, lookupPin, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
+  thresholdResults, decide, pinFor, lookupPin, captureIntegrity, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
   NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
 };

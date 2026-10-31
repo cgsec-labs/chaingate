@@ -33,7 +33,7 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const BENIGN = 'module.exports = 1;\n';
 const NETTY = 'const https = require("https");\nhttps.request({ host: "h" }).end(require("os").hostname());\n';
 const FACT_KEYS = ['binary', 'net_sinks', 'exec_sinks', 'obf_idents', 'decode_markers', 'hex_density', 'numeric_hex', 'cred_sources', 'sinks', 'overrides',
-  'address_families', 'host_identity'];
+  'address_families', 'host_identity', 'dns_exfil'];   // dns_exfil: 1.9, a boolean (cft016-static-checks-1.9)
 
 // g: two plain versions, nothing named or contributing -> NOT armed; main index.js, one bin
 const G = { name: 'g', 'dist-tags': { latest: '1.1.0' }, time: { '1.0.0': at(0), '1.1.0': at(48) },
@@ -154,7 +154,8 @@ test('EF-E1 an UNARMED download stores its entry facts once; the next version fi
     const t = await get(`${base}/g/-/g-1.0.0.tgz`); assert.equal(t.status, 200); assert.ok(t.body.equals(TARBALLS['/g/-/g-1.0.0.tgz']));
     await settle();
     assert.equal(proxy.witnessDb.hasEntryFacts('g', '1.0.0'), true);
-    assert.match(proxy.witnessDb.getLatestDecision('g', '1.0.0').gates_fired.find((r) => r.gate === 'static:S1-loader-in-hook-target')?.detail ?? 'not checked: not armed', /^not checked: not armed/, 'storing facts arms nothing');
+    // 0.1.6 every download is walked (deliberate change of expectation): the rows say what armed the walk, and no row armed this one
+    assert.match(proxy.witnessDb.getLatestDecision('g', '1.0.0').gates_fired.find((r) => r.gate === 'static:S1-loader-in-hook-target')?.detail ?? '', /armed by every download$/, 'storing facts arms nothing');
     await get(`${base}/g/-/g-1.1.0.tgz`); await settle();
     const p = proxy.witnessDb.predecessorEntryFacts('g', '1.1.0');
     assert.equal(p?.version, '1.0.0');

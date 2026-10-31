@@ -75,10 +75,47 @@ or with elevated trust requirements may:
 - Treat `chaingate-seed.db.manifest.json` as **informational only**:
   the signature does not cover it, and the CLI does not fetch it.
 
+### The advisory feed (0.1.6)
+
+The advisory feed is a signed list of known malicious package versions, read after the seed's own
+list (README, "The advisory feed"). The runtime embeds no feed key. The seed key signs a key list
+(`keys.json`, with its signature in `keys.json.sig`) that names each feed key, its key id in the form
+above, and a validity window of at most 90 days. A cut's signature is Ed25519 over the sha256 hex of
+the cut file, as for the seed, by the feed key the cut's header names, valid at the cut's own time.
+Each cut names the one before it, and the runtime takes a newer cut only when every cut between it
+and the one it holds is present and verifies.
+
+A stolen feed key could publish a cut that adds wrong BLOCKs (`chaingate allow` lifts one) or that
+leaves out versions the feed named before. A cut adding more than 2,000 versions, or removing more
+than 100 or a quarter of those held, is held for a manual step that names the versions it would
+lift. The seed's own entries are not affected by the feed. A cut cannot be replayed or rolled back
+past the cut a host holds, and every dated cut stays public, so a change is visible. The fetch is an
+outbound connection, on by default, to raw.githubusercontent.com (or the configured
+`advisory_feed_url` host, https only), at proxy start and hourly. It sends no identifiers, but that
+host sees the address of each client that fetches, as GitHub does for a seed download. It is off
+with `"advisory_feed": false`.
+
+### The seed cache (0.1.6)
+
+The seed cache reads the seed as buckets under a signed index (README, "The seed cache"). The runtime embeds no key for
+it: the key list that names the advisory feed's key also names the seed cache's, signed with the seed key, each key valid
+for at most 90 days. The index is Ed25519-signed over the sha256 hex of its bytes and is accepted only at the reader's own
+clock, never at a time the index states. The copy of the key list served beside the index must equal the advisory feed's,
+byte for byte, when the feed is on. A bucket is used only after its size, its sha256 and the digest of its records match
+what the index names; it is imported whole or not at all. A bucket changed in the cache file after import is refused the
+first time it is read after a start; the others keep serving.
+
+A stolen seed cache key could publish an index that leaves packages out or changes their history, until the key list
+drops the key (at most 90 days). An index older than the one held is refused. The fetch is an outbound connection, on by
+default, to shards.cgsec.dev (or the configured `seed_cache_url` host, https only), at `init`, at proxy start, hourly, and
+for each bucket a decision needs (in the proxy or `chaingate check`). A bucket request tells that host which of 16,384 buckets a machine needs, which narrows a
+package to about 22 names. It is off with `"seed_cache": false`.
+
 ### v3 detection seeds and trust modes
 
-The v3 detection seed is **supplied locally** (`chaingate init --seed <file>`,
-`chaingate update-seed --seed <file>`). It is **not downloaded automatically**.
+The full v3 detection seed file is **supplied locally** (`chaingate init --seed <file>`,
+`chaingate update-seed --seed <file>`). It is **not downloaded automatically**; since 0.1.6 the seed cache (above)
+fetches the same seed in signed buckets instead, unless it is off.
 The first published v3 seed is `seed-v3.1-full`, a signed GitHub
 pre-release (see SEEDS.md). Before use, the runtime checks the
 seed's schema and contract versions, its required bindings and its
@@ -194,7 +231,7 @@ The chaingate CLI resolves the most recent legacy seed release dynamically
 via the GitHub REST API rather than relying on a fixed download URL.
 On `chaingate update-seed`:
 
-1. The CLI calls `https://api.github.com/repos/r-bedekar/chaingate/releases`
+1. The CLI calls `https://api.github.com/repos/cgsec-labs/chaingate/releases`
 2. Filters releases whose tag matches `^seed-v\d+(\.\d+)*$`
 3. Selects the most recently published matching release
 4. Fetches three assets from that release: `chaingate-seed.db`,
@@ -237,7 +274,8 @@ measures below remove one connection-reuse condition. They do not
 make an untrusted registry trustworthy.
 
 - **Pinned HTTP client.** All upstream requests use an Agent from the
-  pinned `undici` (exactly 6.28.1 since 0.1.1). These are packuments
+  pinned `undici` (an exact 8.x version since 0.1.6; an exact 6.x
+  version from 0.1.1 to 0.1.5). These are packuments
   (including the metadata request the proxy makes to evaluate a version
   before serving a tarball it has not evaluated in this run),
   tarballs, background dependency lookups and the raw upstream
@@ -250,6 +288,16 @@ make an untrusted registry trustworthy.
   default. Without that, the pinned version would never handle
   upstream traffic. The process-wide default itself is left
   unchanged.
+- **Upstream close during a slow download.** With undici 6, a
+  registry that closed the connection while the proxy was still
+  waiting to pass a download on to a slow or departed npm client could
+  stop the proxy process with an internal assertion (upstream undici
+  issue 5360). undici 8.4.1 and later end such a response normally;
+  0.1.6 moved to undici 8 for this fix, which is why it needs Node.js
+  22.19.0 or later on Node 22. Redirects (at most 2 for packuments and
+  tarballs, none for attestation bundles) are followed by undici's
+  redirect interceptor, which drops `authorization` and cookies when a
+  redirect leaves the origin, as undici 6 did.
 - **No upstream connection reuse.** Keep-alive is disabled
   (`pipelining: 0`). Every upstream request uses its own connection,
   sends `connection: close`, and the connection is closed after the

@@ -35,8 +35,8 @@ it to the developer at install time.
 
 ChainGate records what each package looked like before. It warns on a short list of named rules: for
 axios@1.14.1, that the release adds a dependency that runs install scripts. The other changes are
-recorded as detail. ChainGate reads a package's code only when a download is already suspect, and then
-only the files npm will run, so it complements code analysis rather than replacing it.
+recorded as detail. ChainGate reads only the files npm will run, on each version's first download, and checks them
+for a short list of named patterns, so it complements code analysis rather than replacing it.
 
 ## The Idea
 
@@ -106,11 +106,21 @@ warning:
 - **Facts BLOCK.** These are a recorded advisory naming the exact version (from the seed), and content that differs from
   the version's recorded baseline (content hash).
 - **Named rules WARN.** Each one is a specific, counted reason:
-  - the seed's strict tier (a release-history break of 3+ of 5 groups, or 2+ package-wide signals);
+  - the seed's strict tier (a release-history break of 3+ of 5 groups, or 2+ package-wide signals). Since 0.1.6 it is
+    shown as a contributing note instead when nothing it found is new: every signal that broke already held on the
+    release this one follows (the latest earlier release with the same prerelease shape, else of the same release line,
+    else the previous release), and none of these holds: that state began less than 7 days before this release, the
+    install scripts npm runs differ from that release's, provenance it had is gone, a dependency was added or comes from
+    outside the registry, or part of the evidence could not be evaluated. Such a release is still read by the tarball
+    checks when it is downloaded; if any of them fires, or the tarball's `package.json` adds or changes an install
+    script, the warning comes back. `chaingate why` names the release it was compared with;
   - **an install script is introduced**: the release declares an install script (`preinstall`, `install` or
     `postinstall`, or a node-gyp build) when no version published at least 24 h earlier declared any (on a package's
     first day: no earlier version at all). A package's first version is not judged. A changed or additional install
-    script on a package that already had one is not this rule;
+    script on a package that already had one is not this rule. Since 0.1.6, once a download has read the tarball, the
+    rule follows the install scripts in the tarball's `package.json`, which is what npm runs: a script only the registry
+    entry declares (one renamed in the packed copy, for example) no longer counts, and one only the tarball declares
+    does. The differing-install-scripts rule below still warns on either;
   - **an added dependency runs install scripts**: the release adds a registry dependency (a name no earlier release
     depended on) whose resolved version runs install scripts. Git, URL and file dependencies are not judged. A range
     resolves to the highest matching version (npm may install the `latest` tag instead when it matches), a name in both
@@ -122,7 +132,9 @@ warning:
     version before it, and its link to the repository broke: `gitHead` is missing where the version before it had one,
     or the repository URL changed. npm prints "its tarball grew fivefold and its link to the repository broke". "The
     version before it" is the previous version in the release's line; for a prerelease it is the previous version of
-    its own tag (a `-canary` is compared with the last canary). The first version of a new tag has none, and the rule
+    its own tag (a `-canary` is compared with the last canary). Since 0.1.6 a build for one platform is compared with the
+    last build of its tag for the same platform (`2.0.0-beta.25-darwin-arm64` with `2.0.0-beta.24-darwin-arm64`, not with
+    the `2.0.0-beta.25` published beside it). The first version of a new tag, or of a tag on a platform, has none, and the rule
     says it is not evaluable. A holding package npm publishes in place of removed malware is never used as the version
     before;
   - six of the tarball checks (below).
@@ -153,22 +165,34 @@ Some named rules are checked when npm downloads the tarball:
   download that reaches ChainGate carries the notice, but npm installs a tarball it already holds from its own cache
   without asking ChainGate, so this machine may never print it.
 
-**Tarball checks (0.1.5).** When a download is already suspect, ChainGate also reads the files npm will run. A
-download is suspect when its version carries a named warning, a publisher break, an entry point change, or the seed's
-coverage warning (nothing in the finding could be evaluated: a package the seed has never seen). The same walk then
-keeps the bodies of the files the registry manifest points npm at -- the install-hook targets, `main`, up to 4 `bin`
+**Tarball checks (0.1.5; every download since 0.1.6).** ChainGate also reads the files npm will run. Since 0.1.6 it
+does so on every version's first download (0.1.5 read them only when the version already carried a named warning, a
+publisher break, an entry point change, or the seed's coverage warning; each row still names which of these it was, or
+"every download"). At most 16 downloads are read at once. A download that finds all 16 busy waits for one, up to 10
+seconds (`"static_walk_wait_ms"` in `config.json`, 0 to 60,000; at most half the upstream body timeout); past that it
+is served unread, recorded as "not checked: walk budget exceeded" and read at its next download. The reading adds no
+latency on typical packages and at most that wait per download on heavy ones: over 500 synthetic packages at npm's
+16 connections, typical tarballs (about 90 KiB) never waited and the install took 6 s; tarballs of 4.6 MB of mostly
+base64 text waited 2.1 s at the median (2.8 s at most), and every one was read. The proxy's memory rose by about 70
+MiB on the typical install and about 215 MiB at most on the heavy one. Each version's wait is recorded with its facts
+(`walk_wait_ms`). The walk keeps the bodies of the files the registry manifest points npm at -- the install-hook targets, `main`, up to 4 `bin`
 targets; at most 6 files of 1 MiB each -- and checks them. It warns when:
 - an install-hook command fetches code (curl, wget, Invoke-WebRequest, certutil -urlcache, bitsadmin) and executes or
   decodes it (a pipe into a shell or interpreter, powershell -enc, base64 -d, eval, iex), or runs a network tool (curl,
   wget, nc; nslookup, dig, host or ping only with command substitution) that sends data out (command substitution, a
-  data flag, a raw-IP or known exfiltration host URL). npm prints "an install script downloads code to run or sends
-  data to an outside host";
+  data flag, a raw-IP or known exfiltration host URL), or makes a DNS lookup through node's `dns` module carrying process or
+  host data (the environment, the arguments, the working directory, `__dirname`, the host name, user, home directory or network
+  interfaces). In a command that runs inline node code (`node -e`, `--eval`, `-p`, `--print`), what a `console` call only
+  prints is not read as a command, unless the printed text itself makes a call. npm prints "an install script downloads code to
+  run or sends data to an outside host";
 - a hook target is over the 1 MiB file cap (its size is read from the archive header; its body is not kept). npm prints
   "an install script runs a file too large to read";
 - a hook target makes a network call (an HTTP request, fetch, a socket, a WebSocket, XMLHttpRequest or axios) and reads
   what identifies this machine (its host name, user or network interfaces, a dump of the whole environment, or the
   variables USER, USERNAME, LOGNAME, HOSTNAME or COMPUTERNAME), with no way to run code in the same file: a beacon. A
-  URL written in the file is not a network call, and reading other environment variables is not identification. npm
+  URL written in the file is not a network call, reading other environment variables is not identification, and a value
+  used only as the input of a hash (`.update(...)`) is not identification. A hook target that makes a DNS lookup through
+  node's `dns` module carrying the same process or host data as above also warns, whether or not it can run code. npm
   prints "an install script sends details about this machine to the network";
 - `main` or a `bin` file gained something the same file of the version this proxy served before did not have: a decode
   or obfuscation marker other than the `Function` constructor, or a network call together with a way to run code other
@@ -207,13 +231,13 @@ warning on their own:
 
 The download that reveals a tarball warning has already been served, so `chaingate report` lists it at once and the
 next download that reaches ChainGate carries the npm notice. A row names the markers that matched, the file and its
-size -- never the file's content. A download that was not suspect records "not armed"; a file that is binary, over the
-cap, absent, or named only by the tarball's own `package.json` is "not checked" and says so; a check that found no
-eligible file to read says "no eligible file in the tarball". A tarball whose download was armed is examined once: the
-outcome rides every later record of that version.
+size -- never the file's content. A file that is binary, over the cap, absent, or named only by the tarball's own
+`package.json` is "not checked" and says so; a check that found no eligible file to read says "no eligible file in the
+tarball". A tarball is examined once: the outcome rides every later record of that version. A version 0.1.5 recorded
+as "not armed" is read at its next download.
 
-**Holding a suspect download until it is checked (optional).** With the `static_withhold` setting on
-(`"static_withhold": true` in ChainGate's `config.json`), the proxy holds a suspect download in memory, up to 8 MiB,
+**Holding a download until it is checked (optional).** With the `static_withhold` setting on
+(`"static_withhold": true` in ChainGate's `config.json`), the proxy holds a download it reads in memory, up to 8 MiB,
 while the tarball checks read it. If one of the six tarball warnings fires, npm receives HTTP 403
 `withheld_by_static_check`, naming the check and `chaingate why <pkg>@<ver>`, and the package is not installed. The
 recorded decision stays WARN: withholding is a choice about serving, not a different verdict. A download over 8 MiB is
@@ -229,7 +253,7 @@ once, after its first download's rows are final:
 - where a size change against the version served before came from: documentation, source maps, declaration files, a
   second module format, or other files.
 
-For a suspect download, the tarball checks also record:
+For each download they read, the tarball checks also record:
 - each long base64 or hex run in a file: its length, how many different characters it uses, and what its decoded first
   bytes are (WebAssembly, PNG, gzip or a web font);
 - for a hook target over the 1 MiB cap, which the walk reads through once without keeping it: the share of the file in
@@ -241,6 +265,8 @@ For a suspect download, the tarball checks also record:
 - a tarball with no network, file, process, environment, execution or encoding use at all;
 - after the download, whether the registry's provenance record names the same source repository as the package metadata
   (the record's signature is not checked), or whether the version served before had provenance and this one has none.
+  This one costs a request to the registry, so it is made only for a version that already carries one of the 0.1.5
+  reasons above.
 
 `chaingate why <pkg>@<ver>` prints them under "Recorded facts" and "Static check facts", `chaingate report --json`
 carries them, and the report text names a version with a notable fact.
@@ -254,13 +280,17 @@ differing install scripts are reported by the proxy, not by `check`.
 
 Since 0.1.5, `chaingate check <pkg>@<ver> --packument <file> --tarball <file>` also reads that local archive offline --
 the install-script comparison and the tarball checks above, the keep list from the packument's manifest -- and reports
-their rows in the record's `tarball` member (`chaingate.check/4`, which is `/3` plus that one optional member). Offline
+their rows in the record's `tarball` member (0.1.5 wrote `chaingate.check/4`, which is `/3` plus that one optional
+member; since 0.1.6 every check writes `chaingate.check/5`, below). Offline
 there is no earlier version to compare, so the entry-file comparison says it is not applicable. Those rows never change
 the decision or the exit code in 0.1.5: a CI job that wants to gate on them reads `tarball.disposition`.
 
-A check against seed v3.2 or later also writes `chaingate.check/4`, with or without `--tarball`: only `/4` carries its
+In 0.1.5 a check against seed v3.2 or later also wrote `chaingate.check/4`, with or without `--tarball`: `/4` carries its
 placement `new-family-cold-start`, the first prerelease of a new tag (for example the first `-rc`), which has no earlier
-version of its own tag to compare against.
+version of its own tag to compare against. Since 0.1.6 every check writes `chaingate.check/5`: `/4` under the 0.1.6
+policy, whose decision carries a `retier` member when a strict-tier row warned before it was compared with the
+release this one follows (that release, how it was chosen, the signals that are not new, the guards that held, and
+`recorded` or `raised`).
 
 **What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), or a
 version your pin withholds, ChainGate sends npm a notice on the tarball response, and npm prints it. Other refusals (an
@@ -317,8 +347,8 @@ reading your installed package names through DNS rebinding.
 
 **ALLOW / WARN / BLOCK enforcement** with a persisted decision log, per-version
 overrides, and CI-friendly exit codes from `chaingate check` (0 / 2 / 3; 4 = tool error). `chaingate check --json`
-emits a versioned `chaingate.check/3` record (0.1.3 wrote `chaingate.check/2` and 0.1.2 and earlier
-`chaingate.check/1`; both are still read); `examples/ci/` has an offline CI consumer for them.
+emits a versioned `chaingate.check/5` record (0.1.5 wrote `/3` or `/4`, 0.1.4 `/3`, 0.1.3 `/2` and 0.1.2 and earlier
+`/1`; all are still read); `examples/ci/` has an offline CI consumer for them.
 
 **A failure never turns a BLOCK into permission.** A BLOCK stays in force until the check that issued it
 definitively clears it (for example, the content hash matches its first-seen value again, or the seed no longer
@@ -388,7 +418,7 @@ beside a named warning and never warn on their own. Both work only from a packag
 You need no account or subscription. You download the detection seed yourself once (below), and
 ChainGate verifies it locally.
 
-Install from npm. ChainGate supports Node.js 22 and 24, the two major versions `package.json`
+Install from npm. ChainGate supports Node.js 22 (22.19.0 or later) and 24, the versions `package.json`
 declares. The command is `chaingate` either way:
 
 ```bash
@@ -456,17 +486,18 @@ Not tested on Windows:
 From source:
 
 ```bash
-git clone https://github.com/r-bedekar/chaingate.git
+git clone https://github.com/cgsec-labs/chaingate.git
 cd chaingate && npm install
 npm test
 ```
 
-**You download the v3 detection seed yourself.** It is published as the signed GitHub release
-[seed-v3.2-full](https://github.com/r-bedekar/chaingate/releases/tag/seed-v3.2-full). Download its
+**You download the full v3 detection seed file yourself.** It is published as the signed GitHub release
+[seed-v3.3-full](https://github.com/cgsec-labs/chaingate/releases/tag/seed-v3.3-full). Download its
 `chaingate-seed-v3.db.gz`, `chaingate-seed-v3.db.sha256` and `chaingate-seed-v3.db.sig` assets into one folder
 (about 1 GB to download, about 2.4 GB once installed) and pass the `.gz` file with `--seed`. **ChainGate does not
-download it for you.** seed-v3.2-full needs ChainGate 0.1.5 or later: earlier versions refuse it and keep the
-seed they have.
+download the full file for you**; with the seed cache on (the default), it fetches the same seed in buckets instead (see
+[The seed cache](#the-seed-cache-016)). seed-v3.3-full needs ChainGate 0.1.6 or later: earlier versions refuse it and
+keep the seed they have.
 
 Since 0.1.5, `--seed` also takes the compressed database, `chaingate-seed-v3.db.gz`, not only an uncompressed
 `chaingate-seed-v3.db`. ChainGate decompresses it into its own staging copy (at most 8 GiB, with free space checked
@@ -478,19 +509,20 @@ The release page lists the seed's exact identifiers and how to verify the downlo
 [SECURITY.md](SECURITY.md) describes the trust model. An unsigned seed still needs `--unsigned-development`, and the tool then reports
 `authenticated: false`.
 
-Running `chaingate init` without `--seed` does **not** set up v3 detection. On a new install (no v3
-seed and no witness database yet) it downloads the older, signed legacy witness seed (about 100 MB)
-and tells you so. It never downloads with `--no-seed`, or on a host that uses a v3 seed. For v3
-detection, always pass `--seed`.
+Since 0.1.6, `chaingate init` without `--seed` sets up v3 detection through the seed cache (see
+[The seed cache](#the-seed-cache-016)) unless `"seed_cache": false`. When the cache is off or its host has none to give
+yet, init does what it did before: on a new install (no v3 seed and no witness database yet) it downloads the older,
+signed legacy witness seed (about 100 MB) and tells you so. It never downloads with `--no-seed`, or on a host that uses a
+v3 seed. For a full v3 seed file, pass `--seed`.
 
 **1. Initialize.** This installs the v3 seed, starts the proxy and points npm at it:
 
 ```console
-$ chaingate init --seed ./seed-v3.2/chaingate-seed-v3.db.gz
+$ chaingate init --seed ./seed-v3.3/chaingate-seed-v3.db.gz
 Verifying v3 seed signature...
 ✓ v3 seed signature verified
 ✓ v3 seed bundle <bundle id> active
-  sha256 1408e015a7026ea2...  snapshot <snapshot>...  trust authenticated (authenticated)
+  sha256 daaa783e8d85df9d...  snapshot <snapshot>...  trust authenticated (authenticated)
   policy on_unusable_input=BLOCK on_no_evidence=WARN
 ✓ .npmrc updated
 ```
@@ -513,8 +545,7 @@ $ echo $?
 0
 ```
 
-Exit codes: 0 ALLOW, 2 WARN, 3 BLOCK, 4 tool error. `--json` gives the `chaingate.check/3` record, or
-`chaingate.check/4` with seed v3.2 or later (above). `check` evaluates the seed: the rules on introduced install
+Exit codes: 0 ALLOW, 2 WARN, 3 BLOCK, 4 tool error. `--json` gives the `chaingate.check/5` record (above). `check` evaluates the seed: the rules on introduced install
 scripts, added dependencies and differing install scripts are reported by the proxy (above).
 
 A version named in a recorded advisory is blocked even when the release cannot be evaluated (for example a
@@ -570,8 +601,8 @@ restores `.npmrc`.
 unsigned seed), and go back to the
 previous one with `chaingate update-seed --rollback`. A running proxy keeps its current seed until
 you restart it with `chaingate stop && chaingate init`. On a host that uses a v3 seed,
-`chaingate update-seed` without `--seed` **refuses**, because v3 seeds cannot be downloaded
-automatically. `update-seed --seed` accepts v3 seeds only; a legacy seed file is refused (see
+`chaingate update-seed` without `--seed` **refuses**, because a full v3 seed file is not downloaded
+automatically (the seed cache keeps itself current; see [The seed cache](#the-seed-cache-016)). `update-seed --seed` accepts v3 seeds only; a legacy seed file is refused (see
 [Seed bundles](#seed-bundles)).
 
 **One seed command at a time.** `init`, `update-seed` and `update-seed --rollback` take a lock on the
@@ -604,8 +635,9 @@ There are two kinds of seed.
 
 - **v3 detection seed**, installed by `init --seed` or `update-seed --seed`. It is built from public
   npm registry metadata and published as signed GitHub
-  releases (`seed-v3.*`), starting with `seed-v3.1-full`; the current one is `seed-v3.2-full`.
-  **You download it yourself; it is not downloaded automatically.** It is opened read-only and checked
+  releases (`seed-v3.*`), starting with `seed-v3.1-full`; the current one is `seed-v3.3-full`.
+  **You download the full file yourself; it is not downloaded automatically** (with the seed cache on, ChainGate
+  fetches the same seed in buckets instead). It is opened read-only and checked
   against its `.sha256` file. It counts as authenticated only when its signature verifies against the
   built-in key (see SECURITY.md).
 - **Legacy witness seed**, published as `seed-v2.x` GitHub releases. On a new install, `chaingate init`
@@ -641,7 +673,80 @@ does not skip them.
 
 [SECURITY.md](SECURITY.md) describes the full trust model.
 
+## The advisory feed (0.1.6)
+
+The seed names known malicious versions as of the day it was built. The advisory feed adds the ones recorded since then: a
+signed list of package versions, cut hourly, read after the seed's own list. A version the feed names is a BLOCK, as a
+seed entry is; `chaingate allow` lifts it for that version. (`chaingate pin` is unrelated: it keeps you on a version you
+chose.) The notice says "a recorded advisory names this version", or "a ChainGate analyst record names this version" when
+the entry comes from ChainGate's own review of a captured tarball rather than a public advisory. For such an entry,
+`chaingate why` also says whether the registry's integrity for the version matches the tarball that was reviewed. The
+version is blocked either way; a difference is a warning beside the BLOCK and one line in the proxy log.
+
+**It makes an outbound connection, on by default.** The proxy fetches the feed from
+`https://raw.githubusercontent.com/cgsec-labs/chaingate-pins/main/pins/` when it starts and then every hour, while a
+v3 seed is in use, and `chaingate init` says that it is on. Each fetch is a few plain GET requests to that host: no
+account, no registry token, and nothing about your packages or this machine. `"advisory_feed": false` in ChainGate's
+`config.json` turns it off (`chaingate init` keeps that setting), `"advisory_feed_url": "<https URL>"` fetches a copy
+from another host, and a host with no seed never fetches. `chaingate update-advisories`
+fetches it now; `chaingate update-advisories --file <dir>` reads a copy from a local directory.
+
+**What it accepts.** A cut is used only when it verifies:
+
+- its signature is by a feed key that a key list signed with the seed key names, valid at the cut's own time;
+- it is later than the cut ChainGate already has, and it names the cut before it. A newer cut is taken only when the
+  chain of cuts between the two is complete, each one checked; a missing or wrong cut refuses it.
+- A cut is held until you take it with `chaingate update-advisories --accept-cut <sha256>` when it is more than 7 days
+  newer than the one held, adds more than 2,000 versions, or removes more than 100 versions or a quarter of those held
+  (whichever is fewer; an empty cut always). A version moved from one advisory to another counts as neither. For a cut
+  that removes versions, the message lists up to 20 of them that this proxy blocked in the last 30 days.
+  `chaingate status` shows the command with its digest.
+
+Whatever happens, the last accepted cut keeps serving. `chaingate status` shows the cut and its age; `chaingate doctor`
+gives a notice when it is older than 48 hours, stale past 7 days, held, or when the last fetch was refused or failed.
+
+## The seed cache (0.1.6)
+
+The seed is also published in pieces: 16,384 buckets of packages (a package's bucket is fixed by its name, so a bucket holds
+the records of about 22 package names) under a signed index. With the seed cache, ChainGate fetches only the buckets it
+needs instead of the whole seed file, and the index is refreshed every hour.
+
+**It is on by default, with an outbound connection to `https://shards.cgsec.dev/`.** `chaingate init`, run without
+`--seed`, fetches the index and the buckets of the packages in the current directory's `package-lock.json` (or
+`npm-shrinkwrap.json`). When a package the proxy decides falls in a bucket the cache does not hold yet, the proxy fetches
+that bucket first and waits for it at most 5 seconds. If it has not arrived by then, that decision says the seed did not
+check the package, which warns (as for a package the seed does not cover; `on_no_evidence` decides), and the bucket keeps
+downloading for the next one. `chaingate check` fetches the bucket of the package it checks the same way, with the same
+5-second bound. A bucket the host no longer has (a newer index replaced it) is asked for once more after the
+index is fetched again; if it is still missing, the decision is the same as for a bucket that has not arrived. The index
+is fetched again at start and every hour; a request with nothing new is answered "not modified". Each request is a plain GET with no account, no registry token and no identifiers.
+`"seed_cache": false` in `config.json` turns it off; ChainGate then reads a full seed you install with
+`chaingate init --seed`. `init --seed`, `update-seed --seed` and `update-seed --rollback` set it for you and say so, so
+the full seed they install or activate is the one ChainGate reads; remove the setting to use the seed cache again. `"seed_cache_url": "<https URL>"` fetches from another host.
+
+**What the host learns.** Each bucket request names one bucket, which narrows a package to about 22 names that share
+it. The host, like any web server, also sees the address of the machine that asks. A full seed file reveals nothing about
+your packages; use it if this matters to you.
+
+**What it accepts.** The index is used only when its signature is by a key that a key list signed with the seed key
+names, valid at the time ChainGate fetches it, and only when it is later than the index the cache holds. A bucket is
+checked before anything in it is read: its size and sha256 against the index, then its records against the digest the
+index names. A bucket that fails is not used, and the rest of the cache keeps serving. A bucket already held is checked
+again the first time it is used after the proxy starts. An index more than 7 days old is stated on every decision, and
+`chaingate doctor` gives a notice past 48 hours. A cache holding at least one bucket takes the place of an installed full
+seed; until then the full seed serves. `chaingate status` shows the index, the seed it was cut from, its age and how many buckets are held.
+
+**Licences.** The buckets are cut from a published seed release (the one `chaingate status` names) and carry its terms:
+the seed is licensed CC BY 4.0, and the data in it keeps its own licence: GitHub Advisory Database records (GHSA
+identifiers) CC BY 4.0, OpenSSF malicious-packages records (MAL identifiers) Apache-2.0 (see [SEEDS.md](SEEDS.md)). The
+host serves that release's third-party notices at `https://shards.cgsec.dev/THIRD_PARTY_NOTICES.txt`; the signed index
+names the file and its sha256, and `chaingate status` and `chaingate doctor` show its address. ChainGate never fetches or
+reads the file to decide anything.
+
 ## What's Next
+
+**A GitHub Action (0.1.7).** A ready-made action that runs `chaingate check` in a CI job, on the same seed cache and
+advisory feed as a workstation.
 
 **Detection rules as code.** Export the gate rules and their evidence so that your own tools can
 read and audit them, instead of receiving a single score.
@@ -656,8 +761,8 @@ Also planned: more calibration, PyPI support, and plugins for Artifactory and Ne
 
 A release warns only on a named rule. A takeover that changes the publisher, the provenance, the dependencies or the
 code, but trips no named rule, gets no warning unless the seed's strict tier marks the release. The files npm will run
-are read only when a download is already suspect, so a takeover through the same CI/CD workflow, as the same
-publisher, that changes only the code looks normal. Code analysis is needed for those cases.
+are read on every download, but only for the named patterns above, so a takeover through the same CI/CD workflow, as
+the same publisher, that changes only the code in some other way looks normal. Code analysis is needed for those cases.
 
 ## Architecture
 

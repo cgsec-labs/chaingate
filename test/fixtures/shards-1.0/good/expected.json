@@ -1,0 +1,48 @@
+{
+ "bucket_bits": 3,
+ "bucket_of": {
+  "@sc/pkg-c": 0,
+  "pkg-a": 3,
+  "pkg-b": 2,
+  "pkg-d": 3,
+  "pkg-e": 4,
+  "pkg-f": 5,
+  "pkg-gone": 3
+ },
+ "buckets_with_packages_and_no_rl1": [
+  0,
+  2,
+  4,
+  5
+ ],
+ "lineage_pair": {
+  "lineage_rule_version": "fu2-final+e1e4e5+pipekey1+stubpred1+platfam1",
+  "rule_versions": {
+   "channel_a": "infra5d-1.2+fu2final+norm1+sizeshrink+pipekey1+platfam1",
+   "dac_trajectory": "dac-trajectory-1.0"
+  },
+  "tag_family_fixture": {
+   "sha256": "82f551e75df644954b7813dc6fcb804369f67e0c565b3e318ccf31d8971ffe37",
+   "version": "lineage-tag-family-cases-0.3"
+  }
+ },
+ "notices_path": "THIRD_PARTY_NOTICES.txt",
+ "notices_sha256": "86afa5a357a24a2527ed7ff56fddb80909c53929f731dc0637c2c012fb265728",
+ "now": "2026-10-29T12:00:00Z",
+ "pins": [
+  [
+   "pkg-b",
+   "1.1.0"
+  ],
+  [
+   "pkg-gone",
+   "6.6.6"
+  ]
+ ],
+ "rl1_buckets": [
+  3
+ ],
+ "seed_logical_digest": "dce04b8b17556ec1521421d7bfad0e3a9bb2549607ebfbb09a5c3113140dbff7",
+ "seed_version": "seed-v0.0-fixture",
+ "signing_key_id": "ed25519:178e9d23cf4b3c38"
+}
