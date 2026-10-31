@@ -75,3 +75,18 @@ Agreed, with three small changes:
 Cutoff 2026-09-01 for the holdout is acceptable: the August waves tune, the September and October ones judge, and the next cutoff
 moves forward as the archive adds captures. The manifest with every file's sha, the query shas and the snapshot time, approved by the
 operator by sha, as drafted. Every number quoted from before the eval set keeps its original set name, as agreed on 10-31.
+
+## Addendum, 2026-10-31 (ops' dry run changed the Q1 rule; no objection)
+
+Ops ran the proposed Q1 rule read-only over all 22,117 stored package-level OSV labels. The structured-summary-only form I
+suggested would have flipped 7 rows, 4 of them real malware with no malware CWE: @solana/web3.js GHSA-jcxm-7wvp-g6p5 ("Modified
+package published to npm, containing malware ...", CWE-200) and three PyPI records (telnyx PYSEC-2026-3, num2words PYSEC-2025-72,
+litellm PYSEC-2026-2, "published containing ... malware", no CWE). My wording was too narrow; it is withdrawn.
+
+The rule as built (branch `ops-osv-label-rule-1` @79c3eae): MAL ids count as malware, unchanged; CWE-506, 507, 509 or 512 always
+count; otherwise the original markers (malware, malicious code, typosquat, embedded malicious) count only when the summary does not
+contain "vulnerab". Dry run: exactly 3 rows flip true to false (openclaw, @babel/traverse, babel-traverse), 0 flip false to true.
+The four records above join pandora-doomsday and the section 4.2 incident table as must-match tests; `label_rule_version` and
+`attack_name` are refreshed on re-label; migration `phase_label_rule_2` goes to PROD before the failing-first build. No objection:
+the operator's merge go decides. The restatement in Q2 is over 172 packages as before (the two npm packages; babel-traverse is a
+third label row, not a third labelled package in the base-rates set unless the saved reports say so, which ops checks).
