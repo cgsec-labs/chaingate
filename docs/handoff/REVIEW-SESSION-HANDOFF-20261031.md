@@ -106,6 +106,14 @@ and W1.5s branches when pushed. The first LIVE shard cut and upload follows thos
 
 ## 6. Standing rulings and rules you must not contradict
 
+Since 2026-11-01 the cross-lane standing rules live in ONE file on the VPS, `~/docs/RULEBOOK.md` (ops writes it; deletion D1 to D7,
+PROD P1 to P5, main and merges M1 to M5, records R1 to R3, communication C1 to C3, security and hosts S1 to S4; each rule with its why
+and source; a change needs the operator's words or a verdict the operator accepts, with a change log). Read it first when it is
+reachable; the list below is this session's record of the rulings it worked under and does not replace it. D4 is the digest guard:
+before any deletion by any lane, every file's sha256 is checked against every digest named in any signed manifest, label input, gate
+or qualification record, and a match stops the deletion (from the ledger-r1 loss of 2026-11-01, incident record in
+`~/docs/ops-lane/INCIDENT-20261101-ledger-deletion.md`). R1: everything a gate reads by digest lives in a tracked, backed-up place.
+
 - No wording bump to a static check unless the operator rules one from a measured class; each bump passes the four bars (benign at
   most 4 per 10k per version on B2, recall above zero on a labelled set, not-checked under 5 percent, check p99 under 50 ms) and
   the A5 replay (hidden 0 of 71) before it goes live; recon first, the proxy mirrors byte for byte with the identical version string.
