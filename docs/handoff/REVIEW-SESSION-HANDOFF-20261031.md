@@ -27,7 +27,7 @@ build; you verify, consult and relay. You never rule: a ruling exists only when 
 |---|---|
 | Runtime repository | `cgsec-labs/chaingate` (moved from `r-bedekar/chaingate` on 10-29; the old URL redirects) |
 | This session's branch (consults, handoffs) | `claude/chaingate-cloud-e2e-run-ughfpv` on the runtime repository; commits unsigned (no key in the cloud container), docs only |
-| Private ops repository | `r-bedekar/chaingate-ops` (the collector, seedgen, recon, ops tooling; the operator handover `docs/operator-runbooks/pin-admission-1.1-handover-20261013.md` sections 7, 11, 12) |
+| Private ops repository | `cgsec-labs/chaingate-ops` (moved from `r-bedekar/chaingate-ops` on 11-01, same repository id; the old URL redirects for git and the API; never create a repository under the old name). A fresh session attaches it as a source under the new name; a session that already holds the old name keeps fetching through the redirect. The collector, seedgen, recon, ops tooling; the operator handover `docs/operator-runbooks/pin-admission-1.1-handover-20261013.md` sections 7, 11, 12 |
 | Advisory feed repository | `cgsec-labs/chaingate-pins`, branch main, `pins/latest.jsonl` + `.sig`, `pins/keys.json` + `.sig`, dated cuts under `pins/cuts/` |
 | Shard host | `https://shards.cgsec.dev` (Cloudflare R2): `root.json.gz`, `root.json.sig`, `keys.json`, buckets at `buckets/NNNNN/<gz_sha256>.gz`, `THIRD_PARTY_NOTICES.txt` |
 | Local checkouts in this container | `/home/user/chaingate` (runtime, on this session's branch), `/home/user/chaingate-ops`, a copy of the v3.2 seed under this session's scratchpad |
