@@ -178,3 +178,9 @@ what the first shard cut needs, which first-week numbers exist yet, and the one 
   live table, decide 0.1.8, v3.4, recon and watcher scope from the misses afterwards. Nothing detection-related is built in the window.
 - Cross-lane rules: `docs/RULEBOOK.md` on the ops main (tracked since 11-01). C1: a lane's "the operator said" is confirmed with the
   operator before acting.
+- **Suspended by the operator 11-01 18:46Z (DERIVATION.md "SUSPENDED: F1, F3"):** the forward holdout for recon's candidate static arm
+  (`eval-arm-judging-20261101.md`) and pin-on-label in the capture lane (`capture-pin-on-label-20261101.md`), before any build. Reason:
+  eval-1.1 showed `install-introduced` already fires on 9 of 12 dependency-confusion rows, so the arm has at most 3 arm-only versions
+  (xapi-lib) and the process outgrew its value. Recon reports three numbers on the frozen arm d1483306 (fires on xapi-lib 88.2.3, 90.2.1,
+  90.3.1 from held bytes; benign count under the re-fetch conditions; F4); it stops if the first is 0 or the second exceeds 4 per 10k
+  against the interval. The pin conditions are filed for the forward-archive decision after 1 December. Do not reopen either before then.
