@@ -40,11 +40,23 @@ test('D4 README and SEEDS.md say --seed takes the compressed database', () => {
   assert.match(words('SEEDS.md'), /chaingate-seed-v3\.db\.gz/);
 });
 
-test('D5 the package is 0.1.6: package.json and both version fields of package-lock.json', () => {
-  assert.equal(JSON.parse(read('package.json')).version, '0.1.6');
+test('D5 the package is 0.1.7: package.json and both version fields of package-lock.json', () => {
+  assert.equal(JSON.parse(read('package.json')).version, '0.1.7');
   const lock = JSON.parse(read('package-lock.json'));
-  assert.equal(lock.version, '0.1.6');
-  assert.equal(lock.packages[''].version, '0.1.6');
+  assert.equal(lock.version, '0.1.7');
+  assert.equal(lock.packages[''].version, '0.1.7');
+});
+
+test('D5b the 0.1.7 README says what changed, including the one deliberate silence, and promises the Action without a version', () => {
+  const r = words('README.md');
+  assert.match(r, /## What changed in 0\.1\.7/);
+  assert.match(r, /changes no decision, policy, check record or seed contract/);
+  assert.match(r, /hourly refresh/);
+  assert.match(r, /NOT CHECKED/);
+  assert.match(r, /a package the seed does not have stays quiet at install/i);
+  assert.match(r, /`chaingate report --verbose`/);
+  assert.match(r, /\*\*A GitHub Action \(a later release\)\.\*\*/);
+  assert.doesNotMatch(r, /A GitHub Action \(0\.1\.\d\)/);
 });
 
 test('D6 the README says which commands honour CHAINGATE_PORT (doctor, report, pin) and which use the default port 6173 (init, stop, status)', () => {

@@ -66,7 +66,7 @@ chaingate update-seed --seed <folder>/chaingate-seed-v3.db.gz     # an existing 
 chaingate init --seed <folder>/chaingate-seed-v3.db.gz            # a new install
 ```
 
-Upgrade the runtime to 0.1.6 before you switch to this seed. To go back to 0.1.5, first return to seed-v3.2-full with
+Upgrade the runtime to 0.1.6 or later before you switch to this seed. To go back to 0.1.5, first return to seed-v3.2-full with
 `chaingate update-seed --rollback`. Do not add `--unsigned-development`: this seed is signed and never needs it.
 
 ## seed-v3.2-full: signed v3 detection seed (previous)

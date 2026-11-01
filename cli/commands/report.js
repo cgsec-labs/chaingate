@@ -1,4 +1,4 @@
-// `chaingate report [--all | --since <dur>] [--json] [--scope user|project]` (since 0.1.4).
+// `chaingate report [--all | --since <dur>] [--verbose] [--json] [--scope user|project]` (since 0.1.4; --verbose since 0.1.6.1).
 //
 // With a running proxy: its latest install that fetched a tarball (`--all`: every install it holds), from
 // `/_chaingate/report`. Without one: the disk record (named warnings served, refusals and tag moves resting on a fact) of
@@ -21,12 +21,13 @@ const REPORT_TIMEOUT_MS = 15_000;
 const UNITS = { m: 60_000, h: 3_600_000, d: 86_400_000 };
 
 function parseArgs(args) {
-  const opts = { scope: 'user', json: false, all: false, since: '24h', errors: [] };
+  const opts = { scope: 'user', json: false, all: false, verbose: false, since: '24h', errors: [] };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--scope' && args[i + 1]) opts.scope = args[++i];
     else if (a === '--json') opts.json = true;
     else if (a === '--all') opts.all = true;
+    else if (a === '--verbose') opts.verbose = true;          // since 0.1.6.1: the recorded facts, grouped by kind
     else if (a === '--since') {
       if (args[i + 1] === undefined) opts.errors.push('--since needs a duration such as 30m, 24h or 7d');
       else opts.since = args[++i];
@@ -63,7 +64,7 @@ export default async function report(args) {
   const r = await fetchLocalJson(host, port, `/_chaingate/report${opts.all ? '?all=1' : ''}`,
     { timeoutMs: REPORT_TIMEOUT_MS, maxBytes: REPORT_MAX_BYTES });
   if (r.ok && r.json.service === 'chaingate-proxy') {
-    return emit(opts, 'proxy', r.json, renderReport(r.json, { source: 'proxy' }));
+    return emit(opts, 'proxy', r.json, renderReport(r.json, { source: 'proxy', verbose: opts.verbose }));
   }
   const why = r.ok ? 'it answered, but not as a ChainGate proxy'
     : (r.status === 404 ? 'it has no install summary endpoint' : r.why);

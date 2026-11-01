@@ -175,8 +175,9 @@ test('G3a-8 (D-T3) V6 and K: a release checked only by the install-hook rule is 
   const text = renderReport({ service: 'chaingate-proxy', version: '0.1.4', started_at: START, policy: 'cft-policy-1.2', view: 'latest', seed: null, stats: {},
     installs: [{ key: 'npm-session:a', grouping: 'npm-session', started_at: START, last_at: START, dropped: 0, dropped_important: 0,
       events: [ev('a', { class: 'clean', coverage: 'not-covered' }), ev('b', { class: 'not-checked', coverage: 'not-covered' })] }] }, { source: 'proxy' }).text;
-  assert.ok(text.includes('1 package(s) were not checked by any named rule: 1 not covered by the seed or not placeable in its history'), text);
-  assert.ok(text.includes('1 package(s) were checked only by the install-hook rule (the seed had no usable history for them).'), text);
+  // since 0.1.6.1: the install's table counts them
+  assert.ok(text.split('\n').includes('  Not checked by any named rule     1   (1 not covered by the seed or not placeable in its history)'), text);
+  assert.ok(text.split('\n').includes('  Checked only by install rule      1'), text);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cft014-g3a8-'));
   try {
     const db = openWitnessDB(path.join(dir, 'witness.db')).applySchema();

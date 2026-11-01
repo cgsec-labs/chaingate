@@ -552,13 +552,16 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
   const normalised = validateEvaluationConfig({ config, domainVersionCount });
 
   function evaluate(input) {
-    return resultFrom(evaluateCandidate(seed, { config, domainVersionCount, pinOverlay }, input).decision,
-      onDecision);
+    const decision = evaluateCandidate(seed, { config, domainVersionCount, pinOverlay }, input).decision;
+    // Since 0.1.6.1: a seed cache's bucket not held when this decision was made (the same synchronous step as its pin lookup), so
+    // the download can say the seed did not check it. The decision itself is unchanged.
+    const unheld = typeof input?.packageName === 'string' && seed.uncoveredReason?.(input.packageName) ? seed.bucketOf(input.packageName).i : null;
+    return resultFrom(decision, onDecision, unheld);
   }
 
   /** One GateResult from a decision. Every exit from `evaluate` goes through here, so no path can
    *  skip policy or forget to report the decision. */
-  function resultFrom(decision, sink) {
+  function resultFrom(decision, sink, unheld = null) {
     // The decision exists before the sink sees it. A sink that throws used to escape `evaluate`, and the runner then
     // answered with `onError` -- replacing a computed decision (a pin BLOCK included) with the input rule. The decision
     // stands; the sink's failure is stated beside it.
@@ -593,6 +596,8 @@ function createSeedV3Gate({ seed, config = {}, domainVersionCount, onDecision = 
       ...(decision.retier ? { retier: RT.compact(decision.retier) } : {}),
       // since 0.1.6: which kind of pin decided, when it came from the pins feed (the notice words it)
       ...(decision.pin ? { pin: decision.pin } : {}),
+      // since 0.1.6.1: the seed cache bucket that was not held, so neither history nor the seed's advisories were checked
+      ...(Number.isInteger(unheld) ? { unheld_bucket: unheld } : {}),
       detail: `${decision.policy_version}: ${why}${also}`
         + (decision.placement ? ` [placement: ${decision.placement}]` : '')
         + (decision.evidence_complete ? '' : ` [evidence incomplete: ${decision.not_evaluated.length}`

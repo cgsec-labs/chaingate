@@ -308,10 +308,12 @@ test('SF-E3 `report`: the facts event in --json, and a record-only block naming 
     assert.equal(o8?.facts?.known_owner?.known_owner, false, JSON.stringify(ev));
     assert.equal(o8.facts.size.all_attributed, false);
     const { renderReport } = await import('../../cli/report-render.js');
-    const text = renderReport(j, { source: 'proxy' }).text;
-    assert.match(text, /Recorded facts \(shadow-facts-1\.0; recorded only: no verdict, tier or notice depends on it/);
-    assert.match(text, /o@1\.8\.0: .*publisher eve: not a known owner/);
-    assert.ok(!/o@1\.7\.0:/.test(text), 'a version with nothing notable is not listed');
+    // since 0.1.6.1: one count line by default, the notable facts grouped by kind with --verbose, no record version printed
+    assert.match(renderReport(j, { source: 'proxy' }).text, /Recorded facts: 1 version\(s\) with a notable fact \(recorded only; no verdict depends on them\)/);
+    const text = renderReport(j, { source: 'proxy', verbose: true }).text;
+    assert.match(text, /Recorded facts \(recorded only; no verdict depends on them\):/);
+    assert.match(text, /Publisher not a known owner \(1\):\n\s+o@1\.8\.0 \(eve; /);
+    assert.ok(!/o@1\.7\.0/.test(text), 'a version with nothing notable is not listed');
     const before = renderReport({ ...j, installs: j.installs.map((i) => ({ ...i, events: i.events.filter((e) => e.kind !== 'facts') })) }, { source: 'proxy' });
     assert.equal(renderReport(j, { source: 'proxy' }).exit, before.exit, 'the facts change no exit code');
   });

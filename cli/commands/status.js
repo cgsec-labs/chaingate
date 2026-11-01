@@ -9,7 +9,7 @@ import { resolveActiveBundle, bundleFiles, ActivationBroken, readActivationInten
 import { DEFAULT_PORT, DEFAULT_HOST, EXIT } from '../constants.js';
 import { readConfigStrict, validateConfig } from '../../config-store.js';
 import { describePinsFeed } from '../pins-feed.js';
-import { readSeedCache, describeSeedCache, seedCacheNoticesUrl } from '../seed-shards.js';
+import { readSeedCache, describeSeedCache, seedCacheNoticesUrl, cacheSeedText } from '../seed-shards.js';
 
 function parseArgs(args) {
   const opts = { scope: 'user', json: false };
@@ -120,7 +120,9 @@ export default async function status(args) {
         ? `bundle ${seedV3.bundle_id}  sha256 ${String(seedV3.sha256 ?? 'unknown').slice(0, 16)}...  trust ${seedV3.trust ?? 'unknown'}`
           + (seedV3.manifest_error ? fmt.red(`  (its bundle.json is unreadable: ${seedV3.manifest_error})`)
             : fmt.dim(`  ${bundleNote({ cacheInUse: Boolean(cacheUrl && cacheHeld?.buckets_held) })}`))
-        : fmt.dim('none active (run `chaingate init --seed <bundle>`)');
+        // since 0.1.6.1: with no full seed installed, a cache holding buckets is what the proxy reads
+        : (cacheUrl && cacheHeld?.buckets_held ? `the seed cache ${cacheSeedText(cacheHeld)}; details under Seed cache`
+          : fmt.dim('none active (run `chaingate init --seed <bundle>`)'));
 
     console.log(renderTable([
       ['Witness store:', `${counts.packages} packages, ${counts.versions} versions, ${counts.files} files`],

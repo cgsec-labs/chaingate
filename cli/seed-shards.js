@@ -226,6 +226,11 @@ export function readSeedCache(cachePath) {
 }
 
 const SEED_TAG = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
+/** Since 0.1.6.1: the seed a cache serves, as status and doctor name it: "(seed <tag>, root of <cut>)", the tag only when plain. */
+export function cacheSeedText(cache) {
+  const tag = typeof cache?.seed_version === 'string' && SEED_TAG.test(cache.seed_version) ? `seed ${cache.seed_version}, ` : '';
+  return `(${tag}root of ${cache?.root_cut_at ?? 'an unrecorded cut'})`;
+}
 // The third-party notices the root names: a plain file name on the host and the sha256 of its bytes. Shown only, never fetched
 // or read by a decision; a root naming anything else shows no notices.
 const NOTICES_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;

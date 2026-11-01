@@ -168,6 +168,8 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
   const retier = validRetier(raw.retier);   // since 0.1.6: the seed-v3 re-tier, kept only when valid
   const hooksBasis = validHooksBasis(raw.hooks_basis);   // since 0.1.6: install-introduced's basis for the tarball re-read
   const pin = validPin(raw.pin);   // since 0.1.6: a pins feed pin on the seed-v3 result
+  // since 0.1.6.1: the seed cache bucket not held when the seed-v3 gate decided (a non-negative integer, kept only when valid)
+  const unheld = Number.isInteger(raw.unheld_bucket) && raw.unheld_bucket >= 0 ? raw.unheld_bucket : null;
   return {
     gate: typeof raw.gate === 'string' && raw.gate ? raw.gate : moduleName,
     result: raw.result,
@@ -179,6 +181,7 @@ function normalizeResult(moduleName, raw, mod = null, identity = null, { askOnEr
     ...(retier ? { retier } : {}),
     ...(hooksBasis ? { hooks_basis: hooksBasis } : {}),
     ...(pin ? { pin } : {}),
+    ...(unheld !== null ? { unheld_bucket: unheld } : {}),
   };
 }
 

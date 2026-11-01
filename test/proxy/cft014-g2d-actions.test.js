@@ -122,8 +122,8 @@ test('G2d-4c/G2d-8 (D-U5) through the proxy: packument withheld, tarball 403 wit
     assert.match(b.headers['npm-notice'], /^chaingate: BLOCKED p@1\.3\.0: a recorded advisory names this version/);
     // D-U9: the report
     const text = renderReport(await report(proxyUrl), { source: 'proxy' }).text;
-    assert.ok(text.includes('q@1.5.0  WITHHELD BY YOUR PIN (download refused): pinned to 1.4.0 — undo: chaingate unpin q'), text);
-    assert.ok(text.includes('your pin on q (1.4.0) withheld 3 version(s); dist-tag latest → 1.4.0; dist-tag next → 1.4.0'), text);
+    assert.ok(text.includes('q@1.5.0  WITHHELD BY YOUR PIN (download refused): pinned to 1.4.0 - undo: chaingate unpin q'), text);
+    assert.ok(text.includes('your pin on q (1.4.0) withheld 3 version(s); dist-tag latest -> 1.4.0; dist-tag next -> 1.4.0'), text);
   });
 });
 
@@ -228,10 +228,10 @@ test('G2d-13 (D-U9) report lines for accepted, pin-refused and pin-withheld even
   assert.equal(a.exit, 0);
   const pinRef = { kind: 'refused', package: 'q', version: '1.5.0', facts: [], status: 403, reason: 'pinned', policy: null, pinned: { k: '1.4.0' } };
   const b = renderReport(wrap([pinRef]), { source: 'proxy' });
-  assert.ok(b.text.includes('q@1.5.0  WITHHELD BY YOUR PIN (download refused): pinned to 1.4.0 — undo: chaingate unpin q'), b.text);
+  assert.ok(b.text.includes('q@1.5.0  WITHHELD BY YOUR PIN (download refused): pinned to 1.4.0 - undo: chaingate unpin q'), b.text);
   assert.equal(b.exit, 3);
   const ctx = { kind: 'pin-withheld', package: 'q', k: '1.4.0', versions: ['1.4.5', '1.5.0'], more: 0, tags: [{ tag: 'latest', from: '1.5.0', to: '1.4.0' }] };
   const c = renderReport(wrap([ctx, { kind: 'served', package: 'q', version: '1.4.0', class: 'clean', coverage: 'checked', named: [], contributing: [], reason: 'r', policy: 'cft-policy-1.2', notice: false, k: null }]), { source: 'proxy' });
-  assert.ok(c.text.includes('your pin on q (1.4.0) withheld 2 version(s); dist-tag latest → 1.4.0'), c.text);
+  assert.ok(c.text.includes('your pin on q (1.4.0) withheld 2 version(s); dist-tag latest -> 1.4.0'), c.text);
   assert.equal(c.exit, 0, 'pin context changes no exit code');
 });

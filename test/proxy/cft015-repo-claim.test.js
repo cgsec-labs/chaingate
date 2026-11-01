@@ -262,8 +262,8 @@ test('E1 an armed first download: MATCH stored once after the response, with its
     const ev = rep.installs.flatMap((i) => i.events).find((e) => e.kind === 'facts' && e.package === 'z' && e.version === '1.1.0');
     assert.equal(ev?.repo_claim?.outcome, 'MATCH', JSON.stringify(ev));
     const { renderReport } = await import('../../cli/report-render.js');
-    const text = renderReport(rep, { source: 'proxy' }).text;
-    assert.match(text, /z@1\.1\.0: .*repository claim matches, unverified/);
+    const text = renderReport(rep, { source: 'proxy', verbose: true }).text;   // since 0.1.6.1 the facts are listed with --verbose
+    assert.match(text, /Repository claim \(versions a row armed\) \(1\):\n\s+z@1\.1\.0: .*repository claim matches, unverified/);
     assert.doesNotMatch(w.out + j.out + text, INTERNAL);
     const bare = { ...rep, installs: rep.installs.map((i) => ({ ...i, events: i.events.map(({ repo_claim, ...e }) => e) })) };   // eslint-disable-line no-unused-vars
     assert.equal(renderReport(rep, { source: 'proxy' }).exit, renderReport(bare, { source: 'proxy' }).exit, 'no exit code depends on it');

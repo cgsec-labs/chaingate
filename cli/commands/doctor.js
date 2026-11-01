@@ -17,7 +17,7 @@ import { resolveActiveBundle, verifyBundleDir, activeBundleId, ActivationBroken,
 import { readConfigStrict, validateConfig, POLICY_VALUES } from '../../config-store.js';
 import { probeNativeSqlite, nativeSqliteHelp } from '../native-sqlite.js';
 import { describePinsFeed } from '../pins-feed.js';
-import { readSeedCache, describeSeedCache } from '../seed-shards.js';
+import { readSeedCache, describeSeedCache, cacheSeedText } from '../seed-shards.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let CLI_VERSION = 'unknown';
@@ -122,6 +122,9 @@ export default async function doctor(args) {
   // that prints no checks and no JSON.
   let active = null;
   let broken = null;
+  // since 0.1.6.1: the proxy reads the seed cache when it is on and holds a bucket and no full seed is active (proxy/config.js)
+  const cacheHeld = configFault ? null : readSeedCache(paths.seedCache);
+  const cacheServes = Boolean(seedCacheCfg.enabled && seedCacheCfg.url && cacheHeld?.buckets_held);
   try { active = resolveActiveBundle(paths.base); } catch (err) {
     if (!(err instanceof ActivationBroken)) throw err;
     broken = err;
@@ -130,6 +133,10 @@ export default async function doctor(args) {
     checks.push({ name: 'seed-v3', pass: false, broken_activation: true,
       detail: `activation link ${broken.link} exists but does not resolve; detection has no usable seed. `
         + 'Fix: `chaingate update-seed --rollback`, or `chaingate init --seed <bundle>`' });
+  } else if (!active && cacheServes) {
+    // since 0.1.6.1: no full seed installed, and the proxy reads the seed cache (verified in the seed-cache check)
+    checks.push({ name: 'seed-v3', pass: true,
+      detail: `no full seed installed; the seed cache is read instead ${cacheSeedText(cacheHeld)}` });
   } else if (!active) {
     checks.push({ name: 'seed-v3', pass: true, severity: 'skipped',
       detail: 'no v3 bundle active (run `chaingate init --seed <bundle>`)' });
@@ -171,11 +178,12 @@ export default async function doctor(args) {
   }
 
   const policyComplete = Object.keys(POLICY_VALUES).every((k) => policy[k]);
+  const seedServes = Boolean(active) || (!broken && cacheServes);
   checks.push({
     name: 'policy',
-    pass: active ? policyComplete : !broken,
-    severity: active && !policyComplete ? 'unverifiable' : (active || broken ? undefined : 'skipped'),
-    detail: broken ? 'not evaluated: the activation is broken (see seed-v3)' : active
+    pass: seedServes ? policyComplete : !broken,
+    severity: seedServes && !policyComplete ? 'unverifiable' : (seedServes || broken ? undefined : 'skipped'),
+    detail: broken ? 'not evaluated: the activation is broken (see seed-v3)' : seedServes
       ? `on_unusable_input=${policy.on_unusable_input || 'UNSET'} `
         + `on_no_evidence=${policy.on_no_evidence || 'UNSET'}`
         + (policyComplete ? '' : '; unresolved policy is not permission, so the proxy refuses to start')

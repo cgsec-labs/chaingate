@@ -86,9 +86,9 @@ test('G3c-14 (note 5.4) the late event: K computed; merged with an earlier named
     assert.equal(late.k, '1.0.1', 'K computed for the late event');
     const text = renderReport(rep, { source: 'proxy' }).text;
     assert.ok(text.includes("both@1.1.0  NAMED WARNING: an install script appears that earlier releases did not have; its tarball's install scripts differ from its registry entry"), text);
-    assert.equal(text.split('\n').filter((l) => l.startsWith('both@1.1.0  NAMED WARNING')).length, 1, 'one merged block');
+    assert.equal(text.split('\n').filter((l) => l.startsWith('  both@1.1.0  NAMED WARNING')).length, 1, 'one merged block');
     assert.ok(text.includes('first@1.0.0  NAMED WARNING'), text);
-    assert.ok(!/package\(s\) were not checked by any named rule/.test(text), 'a named version is never "not checked"');
+    assert.ok(!/  Not checked by any named rule:/.test(text), 'a named version is never "not checked"');
   });
 });
 

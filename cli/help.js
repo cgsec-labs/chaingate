@@ -23,6 +23,6 @@ export const COMMAND_HELP = Object.freeze({
   accept: 'chaingate accept <package>@<version> | --revoke <package>@<version> | --list [--scope user|project]',
   pin: 'chaingate pin <package>@<version> | --list [--scope user|project]',
   unpin: 'chaingate unpin <package> [<major> | 0.<minor>] [--scope user|project]',
-  report: 'chaingate report [--all | --since <dur>] [--json] [--scope user|project]\n'
+  report: 'chaingate report [--all | --since <dur>] [--verbose] [--json] [--scope user|project]\n'
     + '  Exit codes: 0=nothing named, refused or tag-moved, 2=named warnings, 3=a refusal or a moved dist-tag, 4=tool error or incomplete record',
 });

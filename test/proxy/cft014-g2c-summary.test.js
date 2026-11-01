@@ -204,7 +204,8 @@ test('G2c-4 (D-R4) the named warning lines, exactly; no forbidden promise anywhe
     '  to accept this version: chaingate accept q@1.5.0',
     '  if you do nothing: ChainGate checks only the requests that reach it; it does not re-check what is installed and will not tell you about this version later.',
   ];
-  const lines = r.text.split('\n');
+  // since 0.1.6.1 the details sit under the install's table, indented two more spaces
+  const lines = r.text.split('\n').map((l) => l.replace(/^  /, ''));
   const at = lines.indexOf(want[0]);
   assert.ok(at >= 0, r.text);
   assert.deepEqual(lines.slice(at, at + want.length), want);
@@ -222,7 +223,7 @@ test('G2c-4 (D-R4) the named warning lines, exactly; no forbidden promise anywhe
   assert.ok(!bad.split('\n').some((l) => l.startsWith('fake line')), 'a reason cannot start a line of its own');
 
   const twice = renderReport(payload([named('q', '1.5.0'), named('q', '1.5.0')]), { source: 'proxy' }).text;
-  assert.equal(twice.split('\n').filter((l) => l.startsWith('q@1.5.0  NAMED WARNING')).length, 1, 'one block per version');
+  assert.equal(twice.split('\n').filter((l) => l.startsWith('  q@1.5.0  NAMED WARNING')).length, 1, 'one block per version');
   for (const t of [r.text, noK, bad, twice]) for (const re of FORBIDDEN) assert.ok(!re.test(t), `${re} in:\n${t}`);
 });
 
@@ -258,26 +259,27 @@ test('G2c-6c (D-R7) the V6 line: counts split by class, per distinct version', (
     served('l', '1.0.0', { class: 'not-checked', coverage: 'earlier-policy' }),
     served('ok', '1.0.0'),
   ]), { source: 'proxy' });
-  assert.ok(r.text.includes('6 package(s) were not checked by any named rule: 2 not covered by the seed or not placeable in its history, '
-    + '1 history indeterminate, 1 evaluation failed, 1 no seed loaded, 1 decided under an earlier policy. For them only the advisory '
-    + 'lookup (when a seed is loaded) and the content check (where this machine had a baseline) applied, plus detail-only checks where '
-    + 'local history allowed.'), r.text);
+  // since 0.1.6.1: one table row with the split, the versions listed under it, and what still applied to them
+  assert.ok(r.text.split('\n').includes('  Not checked by any named rule     6   (2 not covered by the seed or not placeable in its history, '
+    + '1 history indeterminate, 1 evaluation failed, 1 no seed loaded, 1 decided under an earlier policy)'), r.text);
+  assert.ok(r.text.includes('    i@1.0.0 (history indeterminate)'), r.text);
+  assert.ok(r.text.includes('    For them only the advisory lookup (when a seed is loaded) and the content check (where this machine had a baseline) '
+    + 'applied, plus detail-only checks where local history allowed.'), r.text);
   const base = renderReport(payload([served('u1', '1.0.0', { class: 'not-checked', coverage: 'not-covered' })]), { source: 'proxy' });
-  assert.ok(base.text.includes('1 package(s) were not checked by any named rule: 1 not covered by the seed or not placeable in its history, '
-    + '0 history indeterminate, 0 evaluation failed.'), base.text);
+  assert.ok(base.text.split('\n').includes('  Not checked by any named rule     1   (1 not covered by the seed or not placeable in its history)'), base.text);
   assert.equal(r.exit, 0, 'not checked is coverage, not a warning');
 });
 
 test('G2c-7a (D-R6) fact lines: refused, and a tag moved (with "npm installed" only when that tarball was served)', () => {
   const tag = { kind: 'tag-moved', package: 'p', tag: 'latest', from: '1.3.0', to: '1.2.0', facts: ['seed-v3:pin'], reason: 'x' };
   const withServe = renderReport(payload([tag, served('p', '1.2.0'), refused('p', '1.3.0', ['seed-v3:pin'])]), { source: 'proxy' }).text;
-  assert.ok(withServe.includes('p: dist-tag latest moved from 1.3.0 to 1.2.0: a recorded advisory names this version — npm installed 1.2.0'), withServe);
-  assert.ok(withServe.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version — npm could not install it'));
+  assert.ok(withServe.includes('p: dist-tag latest moved from 1.3.0 to 1.2.0: a recorded advisory names this version - npm installed 1.2.0'), withServe);
+  assert.ok(withServe.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version - npm could not install it'));
   const noServe = renderReport(payload([tag, served('a', '1.0.0')]), { source: 'proxy' }).text;
   assert.ok(noServe.includes('p: dist-tag latest moved from 1.3.0 to 1.2.0: a recorded advisory names this version'));
-  assert.ok(!noServe.includes('— npm installed'), 'the D-R6 suffix (the cache footer also says "npm installed")');
+  assert.ok(!noServe.includes(' - npm installed'), 'the D-R6 suffix (the cache footer also says "npm installed")');
   const dropped = renderReport(payload([{ ...tag, to: null }, served('a', '1.0.0')]), { source: 'proxy' }).text;
   assert.ok(dropped.includes('p: dist-tag latest dropped (was 1.3.0): a recorded advisory names this version'), dropped);
   const nonFact = renderReport(payload([refused('x', '1.0.0', [], { status: 503, reason: 'seed-v3: cft-policy-1.2: seed-v3:input: boom' })]), { source: 'proxy' }).text;
-  assert.ok(nonFact.includes('x@1.0.0  REFUSED (download refused): not a recorded fact — seed-v3: cft-policy-1.2: seed-v3:input: boom — npm could not install it'), nonFact);
+  assert.ok(nonFact.includes('x@1.0.0  REFUSED (download refused): not a recorded fact: seed-v3: cft-policy-1.2: seed-v3:input: boom - npm could not install it'), nonFact);
 });

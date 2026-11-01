@@ -1027,7 +1027,10 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
         started_at: startedAt,
         view: all ? 'all' : 'latest',
         policy: seedV3 ? POLICY_CONTRACT_VERSION : null,
-        seed: seedV3 ? { sha256: seedSha(), history_cutoff: seedV3.meta?.history_cutoff ?? null, trust: config.seedV3Trust } : null,
+        seed: seedV3 ? { sha256: seedSha(), history_cutoff: seedV3.meta?.history_cutoff ?? null, trust: config.seedV3Trust,
+          // since 0.1.6.1: a seed cache has no file digest; its root names what is read
+          ...(seedV3.shards?.root ? { cache: { root_cut_at: seedV3.shards.root.cut_at, root_digest: seedV3.shards.root.digest,
+            seed_version: typeof seedV3.shards.root.seed_version === 'string' ? seedV3.shards.root.seed_version : null } } : {}) } : null,
         installs: snap.installs,
         stats: { ...snap.stats, ...reportCounters },
       }, { 'cache-control': 'no-store' });
@@ -1216,8 +1219,13 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             return;
           }
         }
+        // Since 0.1.6.1: a version decided while its seed cache bucket was not held was not checked by the seed (history or recorded
+        // advisories): its download says so, unless a named warning is said instead.
+        const seedUnheld = Boolean(latest && !state.override
+          && latest.gates_fired?.some?.((g) => g && g.gate === 'seed-v3' && Number.isInteger(g.unheld_bucket)));
         const notice = named.length && !accepted
-          ? buildNotice({ kind: 'WARNING', pkg: canonicalName, version: state.tarballVersion, labels: named }) : null;
+          ? buildNotice({ kind: 'WARNING', pkg: canonicalName, version: state.tarballVersion, labels: named })
+          : (seedUnheld ? buildNotice({ kind: 'NOT CHECKED', pkg: canonicalName, version: state.tarballVersion, labels: ['seed-v3:unheld'] }) : null);
         const upstream = await fetchTarball(route.name, route.filename, {
           config,
           requestHeaders: req.headers,
@@ -1242,7 +1250,7 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
             }
           }
           noteInstall(req, { kind: 'served', package: canonicalName, version: state.tarballVersion ?? null, ...cls, reason, policy,
-            notice: Boolean(notice), k, ...(accepted ? { accepted: true } : {}) },
+            notice: Boolean(notice), k, ...(accepted ? { accepted: true } : {}), ...(seedUnheld && fromRecord ? { seed_unheld: true } : {}) },
           cls.class === 'named' ? { kind: 'named-served', package_name: canonicalName, version: state.tarballVersion,
             classes: { named: cls.named, contributing: cls.contributing, coverage: cls.coverage,
               history_cutoff: seedV3?.meta?.history_cutoff ?? null, ...(accepted ? { accepted: true } : {}) },

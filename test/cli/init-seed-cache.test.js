@@ -88,3 +88,29 @@ test('IC6 what init and status say the proxy reads: the seed cache root when it 
   assert.equal(bundleNote({ cacheInUse: true }), '(installed; the seed cache is read instead while it is on)');
   assert.equal(bundleNote({ cacheInUse: false }), '(recorded; `chaingate doctor` verifies it)');
 });
+
+// Since 0.1.6.1: on a cache-only install (the default since 0.1.6) the proxy decides under the seed cache and the policy init
+// wrote; status and doctor say so instead of "none active" / "no v3 bundle active" / "no policy is in force".
+test('IC7 status and doctor on a cache-only install name the seed cache the proxy reads and the policy in force', async () => {
+  const { default: status } = await import('../../cli/commands/status.js');
+  const { default: doctor } = await import('../../cli/commands/doctor.js');
+  await withHome({}, async ({ home, paths, deps, out }) => {
+    await installSeeds({ ...OPTS }, paths, deps, null);
+    const prev = process.env.CHAINGATE_HOME; process.env.CHAINGATE_HOME = home;
+    try {
+      out.length = 0;
+      await status([]);
+      const text = out.join('\n').replace(/\x1b\[[0-9;]*m/g, '');
+      assert.match(text, /Detection seed \(v3\):\s+the seed cache \(seed seed-v0\.0-fixture, root of 2026-10-29T12:00:00Z\); details under Seed cache/, text);
+      assert.doesNotMatch(text, /none active/);
+      out.length = 0;
+      await doctor(['--json']);
+      const checks = JSON.parse(out.join('\n'));
+      const seed = checks.find((c) => c.name === 'seed-v3'); const pol = checks.find((c) => c.name === 'policy');
+      assert.equal(seed.pass, true); assert.equal(seed.severity, undefined);
+      assert.equal(seed.detail, 'no full seed installed; the seed cache is read instead (seed seed-v0.0-fixture, root of 2026-10-29T12:00:00Z)');
+      assert.equal(pol.pass, true); assert.equal(pol.severity, undefined);
+      assert.equal(pol.detail, `on_unusable_input=${DEFAULT_POLICY.on_unusable_input} on_no_evidence=${DEFAULT_POLICY.on_no_evidence}`);
+    } finally { if (prev === undefined) delete process.env.CHAINGATE_HOME; else process.env.CHAINGATE_HOME = prev; }
+  });
+});

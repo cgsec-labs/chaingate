@@ -82,7 +82,7 @@ test('G2c-11 (note 7.1) a transient non-fact refusal never hides the later fact 
   const b = s.record(who, refused('p', '1.3.0', ['seed-v3:pin']));
   assert.equal(s.claimDisk(b.key, 'fact-refused|p@1.3.0'), true, 'the fact refusal still reaches disk');
   const r = renderReport(wrap(s.snapshot({ all: true }).installs), { source: 'proxy' });
-  assert.ok(r.text.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version — npm could not install it'), r.text);
+  assert.ok(r.text.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version - npm could not install it'), r.text);
   assert.ok(!r.text.includes('p@1.3.0  REFUSED'), 'one line per version; the fact wins');
   assert.equal(r.exit, 3);
 
@@ -90,7 +90,7 @@ test('G2c-11 (note 7.1) a transient non-fact refusal never hides the later fact 
   t.record({ session: 'r1b' }, refused('x', '1.0.0', [], { status: 503, reason: 'x@1.0.0 was not evaluated: boom' }));
   t.record({ session: 'r1b' }, served('x', '1.0.0'));
   const r2 = renderReport(wrap(t.snapshot({ all: true }).installs), { source: 'proxy' });
-  assert.ok(r2.text.includes('x@1.0.0  REFUSED once (not a recorded fact — x@1.0.0 was not evaluated: boom); a later request for it was served'), r2.text);
+  assert.ok(r2.text.includes('x@1.0.0  REFUSED once (not a recorded fact: x@1.0.0 was not evaluated: boom); a later request for it was served'), r2.text);
   assert.ok(!r2.text.includes('npm could not install it'));
   assert.equal(r2.exit, 0, 'npm got it on the retry: not a refusal for the exit code');
 });
@@ -227,12 +227,13 @@ test('G2c-20 (note 7.11) "every package was checked" names the override exceptio
   const s = (events) => renderReport(wrap([{ key: 'npm-session:a', grouping: 'npm-session', started_at: START, last_at: START,
     dropped: 0, dropped_important: 0, events: events.map((e) => ({ at: START, ...e })) }]), { source: 'proxy' }).text;
   const withOverride = s([served('a', '1.0.0'), served('o', '1.0.0', { class: 'override', coverage: null })]);
-  assert.ok(withOverride.includes('Every package served in this install, other than those served under your overrides, was checked by a named rule.'), withOverride);
-  assert.ok(withOverride.includes('1 version(s) were served under your exact-version overrides (chaingate allow): o@1.0.0'));
+  // since 0.1.6.1: the install's table says it; the overridden versions are listed under it
+  assert.ok(withOverride.split('\n').includes('  Not checked by any named rule     0'), withOverride);
+  assert.ok(withOverride.includes('  Served under your exact-version overrides (chaingate allow):\n    o@1.0.0'), withOverride);
   const namedIndeterminate = s([served('a', '1.0.0'), served('q', '1.5.0', { class: 'named', coverage: 'indeterminate',
     named: ['seed-v3:dac-trajectory:surface'] })]);
-  assert.ok(namedIndeterminate.includes('Every package served in this install was checked by a named rule.'), namedIndeterminate);
-  assert.ok(!namedIndeterminate.includes('not checked by any named rule'));
+  assert.ok(namedIndeterminate.split('\n').includes('  Not checked by any named rule     0'), namedIndeterminate);
+  assert.ok(!namedIndeterminate.includes('  Not checked by any named rule:'), 'a named version is never listed as not checked');
 });
 
 test('G2c-22 (note 7.14) bidi and C1 controls are stripped from text; the summary caps strings at every depth', () => {
@@ -256,7 +257,7 @@ test('G2c-23 (note 7.15) a tarball served under an exact-version override is cla
     const e = inst.events.find((x) => x.kind === 'served' && x.package === 'q');
     assert.deepEqual([e.class, e.coverage, e.k], ['override', null, null], JSON.stringify(e));
     const text = renderReport(await report(proxyUrl), { source: 'proxy' }).text;
-    assert.ok(text.includes('1 version(s) were served under your exact-version overrides (chaingate allow): q@1.5.0'), text);
+    assert.ok(text.includes('  Served under your exact-version overrides (chaingate allow):\n    q@1.5.0'), text);
     assert.ok(!text.includes('NAMED WARNING'), 'an overridden version is not reported as a named warning');
   });
 });

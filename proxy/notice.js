@@ -20,6 +20,7 @@ const LABELS = Object.freeze({
   'seed-v3:dac-trajectory:surface': 'release-history break vs the seed (2+ package-wide signals)',
   'seed-v3:pin': 'a recorded advisory names this version',
   'seed-v3:pin-analyst': 'a ChainGate analyst record names this version',                        // since 0.1.6 (pins feed)
+  'seed-v3:unheld': 'its seed data could not be downloaded in time, so the seed history and advisory checks did not run',   // since 0.1.6.1
   'content-hash': 'its content differs from the recorded baseline',
   'install-introduced': 'an install script appears that earlier releases did not have',          // since 0.1.4
   'dependency-hooks': 'it adds a dependency that runs install scripts',                           // since 0.1.4

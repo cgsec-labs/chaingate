@@ -85,10 +85,11 @@ test('G2c-4b/G2c-8b (D-R3, D-R4, E21) `chaingate report` from a running proxy: t
       const a = await cli(['report'], env);
       assert.equal(a.code, 2, a.out + a.err);
       for (const line of [
-        'q@1.5.0  NAMED WARNING: release-history break vs the seed (2+ package-wide signals)',
-        "  last version without the signal: q@1.4.0 (based on this proxy's records)",
-        '  to stay on 1.4.0: chaingate pin q@1.4.0',
-        '  to accept this version: chaingate accept q@1.5.0',
+        // since 0.1.6.1 the details sit under the install's table, indented two more spaces
+        '  q@1.5.0  NAMED WARNING: release-history break vs the seed (2+ package-wide signals)',
+        "    last version without the signal: q@1.4.0 (based on this proxy's records)",
+        '    to stay on 1.4.0: chaingate pin q@1.4.0',
+        '    to accept this version: chaingate accept q@1.5.0',
         CACHE_LINE,
       ]) assert.ok(a.out.split('\n').includes(line), `missing ${JSON.stringify(line)} in:\n${a.out}`);
 
@@ -96,7 +97,7 @@ test('G2c-4b/G2c-8b (D-R3, D-R4, E21) `chaingate report` from a running proxy: t
       assert.equal(await get(`${px.url}${tgz('p', '1.3.0')}`, 'clifact2'), 403);
       const b = await cli(['report'], env);
       assert.equal(b.code, 3, b.out);
-      assert.ok(b.out.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version — npm could not install it'), b.out);
+      assert.ok(b.out.includes('p@1.3.0  BLOCKED (download refused): a recorded advisory names this version - npm could not install it'), b.out);
       assert.ok(!b.out.includes('q@1.5.0  NAMED WARNING'), 'by default only the latest install');
 
       const all = await cli(['report', '--all'], env);
@@ -187,5 +188,5 @@ test('E21 the usage text lists `report`, and `report --help` prints its synopsis
   assert.match(u.out, /^ {2}report\s+/m);
   const h = await cli(['report', '--help'], {});
   assert.equal(h.code, 0);
-  assert.match(h.out, /chaingate report \[--all \| --since <dur>\] \[--json\]/);
+  assert.match(h.out, /chaingate report \[--all \| --since <dur>\] \[--verbose\] \[--json\]/);   // --verbose since 0.1.6.1
 });

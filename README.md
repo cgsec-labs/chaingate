@@ -269,7 +269,7 @@ For each download they read, the tarball checks also record:
   reasons above.
 
 `chaingate why <pkg>@<ver>` prints them under "Recorded facts" and "Static check facts", `chaingate report --json`
-carries them, and the report text names a version with a notable fact.
+carries them, and `chaingate report --verbose` lists the versions with a notable fact.
 
 A "not evaluable" added-dependency or "not checked" install-script comparison is kept in the record
 (`chaingate why <pkg>@<ver>`). npm does not print it. The report counts a release as checked when another named rule
@@ -292,29 +292,37 @@ policy, whose decision carries a `retier` member when a strict-tier row warned b
 release this one follows (that release, how it was chosen, the signals that are not new, the guards that held, and
 `recorded` or `raised`).
 
-**What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), or a
-version your pin withholds, ChainGate sends npm a notice on the tarball response, and npm prints it. Other refusals (an
+**What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), a
+version your pin withholds, or a version the seed could not check because its seed data did not arrive in time (see
+[The seed cache](#the-seed-cache-016)), ChainGate sends npm a notice on the tarball response, and npm prints it. Other refusals (an
 evaluation that failed or is busy, a full record) carry only the HTTP error. `chaingate why <pkg>@<ver>`, the command the
 notice names, shows the proxy's recorded decision for that version (labelled UNBOUND, exit code 4):
 
 ```console
 npm notice chaingate: WARNING q@1.5.0: release-history break vs the seed (2+ package-wide signals). Details: chaingate why q@1.5.0
 npm notice chaingate: BLOCKED p@1.3.0: a recorded advisory names this version. Details: chaingate why p@1.3.0
+npm notice chaingate: NOT CHECKED r@2.0.0: its seed data could not be downloaded in time, so the seed history and advisory checks did not run. Details: chaingate why r@2.0.0
 ```
 
-npm prints a notice only on a response it does not cache (npm 10 and 11). So a named-WARN tarball is
-sent `no-store`. Two consequences follow:
+npm prints a notice only on a response it does not cache (npm 10 and 11). So a tarball that carries a notice (a named
+warning, or a version the seed could not check) is sent `no-store`. Two consequences follow:
 - An offline or `--prefer-offline` install cannot take that tarball from npm's cache.
-- `chaingate accept` makes the version cacheable again (below).
+- `chaingate accept` makes a named-warning version cacheable again (below). A version the seed could not check becomes
+  cacheable again once a later install has its seed data and the seed has checked it.
 
 A dist-tag that ChainGate moves off a blocked version is not printed by npm, because the metadata stays cacheable. The
 report shows it instead.
 
-**The report.** `chaingate report` says what the proxy served and refused in your last install:
+**The report.** `chaingate report` says what the proxy served and refused in your last install. Each install starts
+with a short table: packages served, named warnings, blocked or refused, packages the seed did not check, packages
+checked only by the install-script rule, and packages no named rule checked. Under the table it lists:
 - each named warning: what moved, the baseline, what already happened, the last version without the signal, and what
   to do;
 - each refusal, and each dist-tag moved off a blocked version;
-- how many packages no named rule checked, and why.
+- the packages the seed did not check because their seed data could not be downloaded in time (the next install that
+  needs them fetches it again), and the packages no named rule checked, with the reason.
+
+Recorded facts are counted in one line; `--verbose` lists them, grouped by kind.
 
 `--all` shows every install the running proxy holds; `--json` gives the record. Without a running proxy it reads
 ChainGate's disk record of the last 24 h (`--since 7d` to change), which keeps only named warnings and the refusals and
@@ -716,7 +724,10 @@ needs instead of the whole seed file, and the index is refreshed every hour.
 `npm-shrinkwrap.json`). When a package the proxy decides falls in a bucket the cache does not hold yet, the proxy fetches
 that bucket first and waits for it at most 5 seconds. If it has not arrived by then, that decision says the seed did not
 check the package, which warns (as for a package the seed does not cover; `on_no_evidence` decides), and the bucket keeps
-downloading for the next one. `chaingate check` fetches the bucket of the package it checks the same way, with the same
+downloading for the next one. Neither the package's history nor the seed's recorded advisories were checked for that
+decision (the advisory feed still was), so its download carries a NOT CHECKED notice and `chaingate report` lists it. A
+package the seed does not have stays quiet on the download; the report counts it among the packages the seed had no
+history for. `chaingate check` fetches the bucket of the package it checks the same way, with the same
 5-second bound. A bucket the host no longer has (a newer index replaced it) is asked for once more after the
 index is fetched again; if it is still missing, the decision is the same as for a bucket that has not arrived. The index
 is fetched again at start and every hour; a request with nothing new is answered "not modified". Each request is a plain GET with no account, no registry token and no identifiers.
@@ -734,7 +745,9 @@ checked before anything in it is read: its size and sha256 against the index, th
 index names. A bucket that fails is not used, and the rest of the cache keeps serving. A bucket already held is checked
 again the first time it is used after the proxy starts. An index more than 7 days old is stated on every decision, and
 `chaingate doctor` gives a notice past 48 hours. A cache holding at least one bucket takes the place of an installed full
-seed; until then the full seed serves. `chaingate status` shows the index, the seed it was cut from, its age and how many buckets are held.
+seed; until then the full seed serves. `chaingate status` shows the index, the seed it was cut from, its age and how many buckets are held. When no full seed is
+installed, `chaingate status`, `chaingate doctor` and `chaingate report` name the seed cache as the v3 seed the proxy
+reads, and `chaingate doctor` checks the policy in force.
 
 **Licences.** The buckets are cut from a published seed release (the one `chaingate status` names) and carry its terms:
 the seed is licensed CC BY 4.0, and the data in it keeps its own licence: GitHub Advisory Database records (GHSA
@@ -743,9 +756,30 @@ host serves that release's third-party notices at `https://shards.cgsec.dev/THIR
 names the file and its sha256, and `chaingate status` and `chaingate doctor` show its address. ChainGate never fetches or
 reads the file to decide anything.
 
+## What changed in 0.1.7
+
+0.1.7 is a fix release for 0.1.6. It changes no decision, policy, check record or seed contract: every version is allowed,
+warned about or blocked exactly as in 0.1.6, under the same policy and the same seed.
+
+- **The seed cache keeps itself current.** In 0.1.6 a bucket the host did not have, met during a refresh of the index,
+  could stop that refresh and every later hourly refresh until the proxy restarted, so the cache kept an old index. Now
+  the refresh ends and the hourly refresh keeps running.
+- **A version the seed could not check says so.** When a package's bucket could not be downloaded in time, its download
+  now carries an npm notice, for example `chaingate: NOT CHECKED r@2.0.0: its seed data could not be downloaded in time,
+  so the seed history and advisory checks did not run`, and `chaingate report` counts and lists it. A package the seed
+  does not have stays quiet at install, as before: `chaingate report` counts it among the packages the seed had no
+  history for, and `chaingate why <pkg>@<ver>` shows its decision.
+- **A seed-cache install says what it reads.** On an install that uses the seed cache and no full seed file,
+  `chaingate status`, `chaingate doctor` and `chaingate report` name the seed cache (its seed and index) instead of
+  "none active", "no v3 bundle active", "no policy is in force" or "no seed loaded".
+- **A shorter report.** `chaingate report` starts each install with a table of counts and lists below it only what
+  needs a look: named warnings, refusals, moved dist-tags and the packages that were not checked. Recorded facts are
+  one line; `chaingate report --verbose` lists them, grouped by kind. `chaingate report --json` and the exit codes are
+  unchanged.
+
 ## What's Next
 
-**A GitHub Action (0.1.7).** A ready-made action that runs `chaingate check` in a CI job, on the same seed cache and
+**A GitHub Action (a later release).** A ready-made action that runs `chaingate check` in a CI job, on the same seed cache and
 advisory feed as a workstation.
 
 **Detection rules as code.** Export the gate rules and their evidence so that your own tools can

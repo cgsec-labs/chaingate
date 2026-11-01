@@ -368,8 +368,9 @@ test('E3 `report` names the armed version\'s static facts in the record-only blo
     const ev = j.installs.flatMap((i) => i.events).find((e) => e.kind === 'facts' && e.package === 'z' && e.version === '1.1.0');
     assert.equal(ev?.static_facts?.facts?.version, 'static-checks-1.9', JSON.stringify(ev));
     const { renderReport } = await import('../../cli/report-render.js');
-    const text = renderReport(j, { source: 'proxy' }).text;
-    assert.match(text, /z@1\.1\.0: .*static-checks-1\.9 facts: encoded runs 1 \(wasm 1\)/);
+    const text = renderReport(j, { source: 'proxy', verbose: true }).text;   // since 0.1.6.1: listed with --verbose, no record version
+    assert.match(text, /File checks \(versions a row armed\) \(1\):\n\s+z@1\.1\.0: encoded runs 1 \(wasm 1\)/);
+    assert.doesNotMatch(text, /static-checks-\d/);
     const bare = { ...j, installs: j.installs.map((i) => ({ ...i, events: i.events.filter((e) => e.kind !== 'facts') })) };
     assert.equal(renderReport(j, { source: 'proxy' }).exit, renderReport(bare, { source: 'proxy' }).exit);
   });

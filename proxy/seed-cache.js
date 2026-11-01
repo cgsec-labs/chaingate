@@ -35,13 +35,16 @@ export function createSeedCache({ get, cachePath, seedKey = null, bits = SH.BUCK
   let seed = null;                     // the Seed the gate holds, when it is this cache
   const inflight = new Map();          // bucket -> Promise of its fetch
   let refreshing = null;
+  let rooting = null;                  // the root step of the refresh in progress
   let lastFetch = null;
 
   const fetchOne = (i) => {
     if (inflight.has(i)) return inflight.get(i);
     // a 404 means the root moved on: refresh it (shared with any refresh in progress), then ask once more under the root now held
+    // Since 0.1.6.1: it waits for the root step only, never for a whole refresh: a refresh waits for the buckets it fetches, so
+    // waiting for it here made both wait forever.
     const p = fetchBuckets({ get, cachePath, buckets: [i], seedKey: key, bits, root: seed?.shards?.root ?? null,
-      refresh: async () => { await refresh(); return seed?.shards?.root ?? null; } })
+      refresh: async () => { await rootStep(); return seed?.shards?.root ?? null; } })
       .then((r) => {
         if (r.failed.length) log?.warn?.(`[seed-cache] bucket ${i}: ${r.failed[0].why}`);
         else seed?.reloadHeld();
@@ -70,7 +73,10 @@ export function createSeedCache({ get, cachePath, seedKey = null, bits = SH.BUCK
 
   /** Fetch the root; take over a new one; fetch the buckets it changed. Resolves to refreshRoot's result, or { outcome: 'failed' }. */
   function refresh() {
-    refreshing ??= (async () => {
+    if (refreshing) return refreshing;
+    let rootDone;
+    rooting = new Promise((r) => { rootDone = r; });
+    refreshing = (async () => {
       try {
         const r = await refreshRoot({ get, cachePath, seedKey: key, now: now(), bits, feedKeys: await feedKeys().catch(() => null) });
         lastFetch = { outcome: r.outcome, at: new Date(now()).toISOString(), why: null };
@@ -78,6 +84,7 @@ export function createSeedCache({ get, cachePath, seedKey = null, bits = SH.BUCK
           seed.adopt(openSeed(cachePath, { trust: TRUST_AUTHENTICATED, pubkey: key, shardBits: bits, now }));
           log?.info?.(`[seed-cache] root of ${r.cut_at} (${r.held} buckets kept)`);
         }
+        rootDone();
         const again = seed ? r.dropped : (holdsBuckets() ? [] : [0]);   // with no cache in use: one bucket brings the tables
         await Promise.all(again.map(fetchOne));
         return r;
@@ -85,9 +92,15 @@ export function createSeedCache({ get, cachePath, seedKey = null, bits = SH.BUCK
         lastFetch = { outcome: e instanceof SH.ShardRefused ? 'refused' : 'failed', at: new Date(now()).toISOString(), why: e.message };
         log?.warn?.(`[seed-cache] root: ${e.message}`);
         return { outcome: lastFetch.outcome, why: e.message };
-      } finally { refreshing = null; }
+      } finally { rootDone(); refreshing = null; rooting = null; }
     })();
     return refreshing;
+  }
+
+  /** The root step of the refresh in progress (a new refresh when none is): fetched, verified and taken over, or failed. */
+  function rootStep() {
+    if (!refreshing) refresh();
+    return rooting;
   }
 
   function state() {
