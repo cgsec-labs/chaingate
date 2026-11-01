@@ -58,3 +58,17 @@ the lead-time columns it asks for remain the right design for the day a triage-f
 - **Q3.** All-holdout is right by the rule, and the worry is backwards. Nothing in 1.1 tunes anything (rules r2 are frozen), so tuning
   "never seeing" them costs nothing. The real caveat is the one in T2: the set is detector-selected, so its placement cannot make its
   recall meaningful either way. State both.
+
+## Addendum, 2026-11-01 evening: T3 condition (a) corrected (my wording made P-ghsa P-NEW unmeasurable)
+
+Ops' candidate r2 applied my condition "the GHSA record must name the chosen version" literally: GHSA malware records label by semver
+RANGE (for example "introduced 0.0.0", or "last_affected 1.0.2"), never by version list, so 0 of the 34 rows qualified. The intent
+was to exclude a version the record does not cover, not to require a version list. Corrected condition (a):
+
+- the chosen version lies inside the record's affected range by semver match, recorded on the row with the range; and
+- the chosen version was published before the record's `published` time, so it is a version the record was about and not a later
+  re-registration of the same name (the openssl.js case: "introduced 0.0.0" also covers its 2019 to 2020 re-registrations).
+
+With that, the earliest held non-placeholder version inside the range and before the record's publish is the row. Rows that fail either
+test are excluded with the reason. Condition (b), the lineage rule deciding P-HIST or P-NEW, is unchanged. This is a correction of my
+text, not a new rule; it restores what T3 proposed.
