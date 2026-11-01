@@ -48,3 +48,23 @@ and scanned is identical with and without the change.
 
 Not proposed and rightly so: a shadow arm column in the capture scan. It would duplicate recon's run and is the go-live build the arm has
 not earned. Recon measures, the capture lane preserves, ops scores on approval.
+
+## Addendum: the watcher's code facts and ops' two questions (same evening)
+
+Verified on the ops main: `retention()` (collector/npm_capture.py 1185) expires and deletes only rows `NOT pinned`, and `evict()` (1288)
+selects only `NOT pinned` tarballs. So the change is exactly "set pinned", no delete path changes, no migration. Condition 2 above (row
+and bytes together) is therefore already how the store behaves; the test asserts it rather than builds it.
+
+- **Ceiling: 10 percent of the store cap, as the watcher proposes, in place of my 20.** The watcher's risk is the decisive fact: pinned
+  bytes count toward the footprint cap and can never be evicted, so pins approaching the cap would pause ALL tarball capture. 10 percent
+  (3.5 GB) is about 700 tarballs at the 5 MiB bound, more than a year at tens a month, and leaves the working set its room.
+- **A refused pin is an ALERT, not a log line.** A pin refused at the ceiling means evidence is about to be lost to retention while a
+  label says it matters; that is a decision for a person (raise the ceiling, or accept the loss), never a line nobody reads. Log it as
+  `pin_refused_ceiling` AND alert the operator; the daily status prints pinned count, pinned bytes and refused pins.
+- **v1 pins on exact name and version only.** A version-less package-level label would pin every stored version of the package, benign
+  earlier ones included, spending the ceiling on non-evidence and mislabelling it. List the version-less rows (package, label, stored
+  versions) in the pass's output instead; a later version may pin them once a rule for "which version did the label mean" exists (the
+  same question eval-1.1 T3 answered with a range match before the record's publish).
+- The join reads what label rule 2 marks malicious (is_malicious), so the pin, the eval set and the seed's label input agree on what a
+  positive is. The step runs in the hourly retention pass, before the expiry and eviction steps of the same pass, so a label that lands
+  in the hour before expiry still pins.
