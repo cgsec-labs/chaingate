@@ -72,3 +72,16 @@ was to exclude a version the record does not cover, not to require a version lis
 With that, the earliest held non-placeholder version inside the range and before the record's publish is the row. Rows that fail either
 test are excluded with the reason. Condition (b), the lineage rule deciding P-HIST or P-NEW, is unchanged. This is a correction of my
 text, not a new rule; it restores what T3 proposed.
+
+## Addendum, 2026-11-01 night: my Q4 statement corrected by the result (eval-1.1 scored, manifest s71, approved r3 2e4c88e6)
+
+I wrote that for the dependency-confusion class "every history rule is silent by design" and only a tarball check could fire. Wrong for one
+gate: `install-introduced` reads only the served packument and compares the version's install scripts with the release it follows.
+Each P-DC-1.1 package's one earlier version was a hook-less `0.0.0-stage` placeholder, so the first malicious version introduces a hook
+and the gate fires at first install on 9 of 12. The static checks fired on 0 of 4 own-bytes scans, as feared; advisory lookup protected
+11 of 12 at one hour. The record states the class's figure as ops corrected it. The rest of the Q4 text (own set, never merged into
+P-HIST, counts with the kind and the harm statement) stands.
+
+Also recorded from the scoring: N-TRIAGE as the lead-selected set under T1(c): a named WARN on 71 of 127 triage-benign leads (interval
+47 to 64 percent), BLOCK 0, mostly seed strict rows; it is the false-lead load on triage, not a population false-warning rate. T3: on
+the 34 GHSA placeholder packages at their real labelled versions, ChainGate 0, advisory lookup 0, the GuardDog metadata subset 5.
