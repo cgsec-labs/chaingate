@@ -158,3 +158,23 @@ cd /home/user/chaingate && git fetch origin <branch>; node --test <files>   # no
 
 Verify section 3, then say in five lines: what is published and live as you found it, which of the section 3 branches have merged,
 what the first shard cut needs, which first-week numbers exist yet, and the one question from item 9. Then wait for the operator.
+
+## 10. State as of 2026-11-01 evening (this session's update; verify before relying on it)
+
+- **0.1.7 published** 2026-11-01T15:51Z (registry tarball 5fd781f5, signed tag v0.1.7 at main 08da677; decision-identical to 0.1.6:
+  the refresh cycle fix, the NOT CHECKED notice for an unheld bucket, cache-only status/doctor wording, the report layout). The
+  planned collection release is now **0.1.8**. Qualification record 93402d39 (release gates 22, ledger stand-in: the owner-approved
+  ledger r1 96fc9511 was deleted on 11-01 with no copy; `docs/consult/gates-22-ledger-standin-20261101.md`).
+- **CFT-12 Amendment H signed and executed** 11-01: prereg 385534e5; s2 archived (301,933 decisions, 577 WARN, read-only); **s3 live from
+  17:47Z** on 0.1.7 + seed-v3.3-full, full 0.1.6-style reading through the real proxy, feed on and recorded per decision, 4 in flight,
+  review capacity 20, draws on demand (R-H13), ops owns the numbers from the counted directory (H.7), recon operates the instrument.
+  Neither-soak gap 17:24Z to 17:47Z, recorded. Consults: `cft12-amendment-h-*.md`.
+- **eval-1.0 Stage 7 complete** (manifests 8944f66e, 155010fc): holdout P-osv P-HIST 51 rows at d = 1 h CG-full 45 vs advisory lookup
+  34 vs 72 h cooldown 50; at 24 h all 50; named FP per 10k at L 0: N-B2 10.0, N-SAME 14.1, N-POP 20.6, BLOCK 0; a 7-day stale seed
+  doubles FP, recall unchanged. **eval-1.1** rules consulted (`eval-1.1-rules-20261101.md`): N-TRIAGE 127, the 243 GHSA placeholder
+  rows fixed (34 scored), no P-triage set, a dependency-confusion class added on the operator's ruling.
+- **Operator's plan to CFT on 1 December:** freeze the detector (v6.23, static-checks-1.9), run the soak and a live comparison against
+  the free baselines including Socket's API verdict (ops' side table from s3's counted directory), write the talk from Stage 7 and the
+  live table, decide 0.1.8, v3.4, recon and watcher scope from the misses afterwards. Nothing detection-related is built in the window.
+- Cross-lane rules: `docs/RULEBOOK.md` on the ops main (tracked since 11-01). C1: a lane's "the operator said" is confirmed with the
+  operator before acting.
