@@ -23,7 +23,9 @@
 import A from './adapter.js';
 import PK from './packument.js';
 
-export const RETIER_VERSION = 'retier-1.0';
+// retier-1.1 (0.1.8): a version a recorded advisory names is never the baseline, nor on the walk back (chooseBaseline `exclude`)
+export const RETIER_VERSION = 'retier-1.1';
+const RETIER_VERSIONS_READ = Object.freeze(['retier-1.0', 'retier-1.1']);   // 0.1.6 and 0.1.7 stored retier-1.0 blocks
 export const RETIER_LIMITS = Object.freeze({
   sizeBreakFraction: 0.5,               // contract.SIZE_BREAK_FRACTION, the Channel-A size group
   sizeJumpFactor: 5,                    // contract.DAC_SIZE_JUMP_FACTOR, the DAC size_jump_5x predicate
@@ -109,12 +111,14 @@ function firstAt(arr, pred, at = (x) => x[0]) {
 /**
  * The baseline for `target`, or the reasons there is no clean one. Never throws on a hostile document: a malformed entry is
  * a reason, not an exception. `walkBack()` yields the baseline's tier from the baseline backwards (newest first), sibling
- * builds excluded, as [version, time].
- * @returns {{baseline: string|null, basis: string|null, walkBack: Function, problems: string[]}}
+ * builds excluded, as [version, time]. Since 0.1.8 `opts.exclude(version)` names versions that are never the baseline nor on the
+ * walk back either (a version a recorded advisory names); one it throws on is excluded too. `skipped_advisory` counts those passed over.
+ * @returns {{baseline: string|null, basis: string|null, walkBack: Function, problems: string[], skipped_advisory: number}}
  */
-export function chooseBaseline(versions, times, target) {
+export function chooseBaseline(versions, times, target, { exclude = null } = {}) {
   const problems = [];
-  const none = (why) => ({ baseline: null, basis: null, walkBack: function* empty() {}, problems: [...problems, why] });
+  let skipped = 0;
+  const none = (why) => ({ baseline: null, basis: null, walkBack: function* empty() {}, problems: [...problems, why], skipped_advisory: skipped });
   if (!isObj(versions) || !isObj(times)) return none('no registry version list or publish times at hand');
   if (!validVersion(target)) return none('this version is not a valid version');
   const t = timeOf(times, target);
@@ -129,10 +133,18 @@ export function chooseBaseline(versions, times, target) {
   if (tied) problems.push(`${tied} version(s) share this version's publish time`);
   // a sibling is published within 24 h of the target: only those need the check
   const sib = (i) => t - entries[i][0] <= RETIER_LIMITS.siblingWindowMs && isSibling(versions, times, target, entries[i][1]);
+  const exMemo = new Map();
+  const ex = (i) => {
+    if (typeof exclude !== 'function') return false;
+    const v = entries[i][1];
+    if (!exMemo.has(v)) { let x; try { x = Boolean(exclude(v)); } catch { x = true; } exMemo.set(v, x); }
+    return exMemo.get(v);
+  };
   const key = lineKey(target); const fl = flavor(target);
   let chrono = -1; let sameLine = -1; let sameFlavor = -1;
   for (let i = lo - 1; i >= 0; i -= 1) {
     if (sib(i)) continue;
+    if (ex(i)) { skipped += 1; continue; }
     const x = info.get(entries[i][1]);
     if (chrono < 0) chrono = i;
     if (key !== null && x.key === key) {
@@ -140,7 +152,10 @@ export function chooseBaseline(versions, times, target) {
       if (fl !== null && x.fl === fl) { sameFlavor = i; break; }
     }
   }
-  if (chrono < 0) return none(lo > 0 ? 'only sibling builds of this version precede it' : 'no earlier version');
+  if (chrono < 0) {
+    return none(skipped ? 'only versions named by an advisory, or sibling builds, precede it'
+      : lo > 0 ? 'only sibling builds of this version precede it' : 'no earlier version');
+  }
   const [at, basis, inTier] = sameFlavor >= 0 ? [sameFlavor, 'same flavor', (x) => x.key === key && x.fl === fl]
     : sameLine >= 0 ? [sameLine, 'same release line', (x) => x.key === key] : [chrono, 'previous release', () => true];
   const [tb, baseline] = entries[at];
@@ -149,9 +164,9 @@ export function chooseBaseline(versions, times, target) {
   const removed = firstAt(idx.removed, (x) => x >= t, (x) => x) - firstAt(idx.removed, (x) => x > tb, (x) => x);
   if (removed > 0) problems.push(`${removed} removed version(s) lie between the baseline ${baseline} and this version`);
   function* walkBack() {
-    for (let i = at; i >= 0; i -= 1) if (!sib(i) && inTier(info.get(entries[i][1]))) yield entries[i];
+    for (let i = at; i >= 0; i -= 1) if (!sib(i) && !ex(i) && inTier(info.get(entries[i][1]))) yield entries[i];
   }
-  return { baseline, basis, walkBack, problems, hookedBefore: idx.firstHooked < t };
+  return { baseline, basis, walkBack, problems, hookedBefore: idx.firstHooked < t, skipped_advisory: skipped };
 }
 
 const FACTS = new WeakMap();   // versions{} -> { times, pkg, by: version -> facts }
@@ -284,14 +299,14 @@ function stateSince(flag, F, walkBack, factsAt, t) {
  *   p.rawVersions, p.rawTimes   the packument's versions{} and time{}
  * @returns {object|null} null when no strict flag broke (nothing to re-tier)
  */
-export function retierOf({ packageName, version, finding, placement = null, notEvaluated = [], rawVersions, rawTimes }) {
+export function retierOf({ packageName, version, finding, placement = null, notEvaluated = [], rawVersions, rawTimes, excludeBaseline = null }) {
   const flags = brokenFlags(finding, placement);
   if (!flags.length) return null;
   const base = { version: RETIER_VERSION };
   const raised = (why, extra = {}) => ({ ...base, placement: PLACED.RAISED, baseline: null, basis: null,
     flags: flags.map((f) => ({ ...f, counts: true, words: why })), flags_dropped: [], guards: [], words: why, ...extra });
   if (!isObj(rawVersions) || !isObj(rawTimes) || !own(rawVersions, version)) return raised('no registry version list at hand: every flag counts');
-  const ch = chooseBaseline(rawVersions, rawTimes, version);
+  const ch = chooseBaseline(rawVersions, rawTimes, version, { exclude: excludeBaseline });
   if (ch.baseline === null || ch.problems.length) {
     return raised(`no clean baseline (${ch.problems.join('; ')}): every flag counts`, { problems: ch.problems });
   }
@@ -335,12 +350,118 @@ export function retierOf({ packageName, version, finding, placement = null, notE
     }
   }
   const placed = counting.length || guards.length ? PLACED.RAISED : PLACED.RECORDED;
-  const words = placed === PLACED.RECORDED
+  const skippedWords = ch.skipped_advisory ? `; ${ch.skipped_advisory} version(s) named by an advisory skipped` : '';
+  const words = `${placed === PLACED.RECORDED
     ? `not new against ${bv} (${ch.basis}): ${rows.map((r) => r.flag).join(', ')} already held there`
     : [counting.length ? `new against ${bv} (${ch.basis}): ${counting.map((r) => r.flag).join(', ')}` : null,
-      guards.length ? `kept by ${[...new Set(guards.map((g) => g.id))].join(', ')}` : null].filter(Boolean).join('; ');
+      guards.length ? `kept by ${[...new Set(guards.map((g) => g.id))].join(', ')}` : null].filter(Boolean).join('; ')}${skippedWords}`;
   return { ...base, placement: placed, baseline: bv, basis: ch.basis, flags: rows,
     flags_dropped: rows.filter((r) => !r.counts).map((r) => r.flag), guards, words };
+}
+
+// ------------------------------------------------------------------------------------------------ the live recount (0.1.8)
+// Since 0.1.8 (cft-policy-1.4): Channel-A RECOUNTED against the latest registry release, when the seed is behind. Channel-A
+// compares an appended release with the seed tip, however many releases were published after it, so a break that only shows
+// against the release this one actually follows was not counted. When releases were published after the tip, each Channel-A
+// group is also read against the BASELINE above (chosen the same way), with the checker's own group definitions, and counted
+// against the baseline ONLY (R-A4-5, settled by the measurement M1 on 2026-11-12 under the rule the operator accepted: counting
+// a group that broke against the tip too protected no more campaigns and cost one more false warning, so it was measured and not
+// chosen). policy.js warns (a named row) when that count reaches the Channel-A threshold while the tip count alone did not. A side that cannot be read never counts here: nothing warned before, so a doubt
+// adds no warning. With a tip count at the threshold, the re-tier decides as before and there is no recount.
+export const LIVE_VERSION = 'live-1.0';
+const LIVE_GROUPS = Object.freeze(['publisher', 'provenance', 'install', 'size', 'git']);   // contract.CHANNEL_A_GROUPS
+export const LIVE_THRESHOLD = 3;                                                          // contract.CHANNEL_A_T
+
+/** One Channel-A group of candidate `c` against baseline `b` (adapter candidates), as the checker reads it: true, false, or
+ *  null when a side cannot be read. */
+function liveGroup(group, c, b) {
+  switch (group) {
+    case 'publisher': {
+      const identity = c.identity_digest === null || b.identity_digest === null ? null : c.identity_digest !== b.identity_digest;
+      const maintainers = !b.maint_digest ? null : b.maint_digest !== (c.maint_digest || '');
+      const tool = !b.tool_name || !c.tool_name || b.tool_name !== c.tool_name ? false
+        : (b.tool_key === null || b.tool_key === undefined || c.tool_key === null || c.tool_key === undefined ? null : c.tool_key < b.tool_key);
+      const vals = [identity, maintainers, tool];
+      if (vals.includes(true)) return true;
+      return vals.every((v) => v === false) ? false : null;
+    }
+    case 'provenance': return Boolean(b.provenance_present) && !c.provenance_present;
+    case 'install': return !b.has_scripts && Boolean(c.has_scripts);
+    case 'git': return Boolean(b.head_present) && !c.head_present;
+    case 'size': {
+      const sb = b.size_bytes; const sc = c.size_bytes;
+      if (!Number.isFinite(sb) || sb <= 0 || !Number.isFinite(sc)) return null;
+      return sc >= sb * (1 + RETIER_LIMITS.sizeBreakFraction) || sc <= sb * (1 - RETIER_LIMITS.sizeBreakFraction);
+    }
+    default: return null;
+  }
+}
+
+/** Since 0.1.8 (measurement, operator 2026-11-12): why the recount did not run although the seed is behind, one code per case. */
+export const LIVE_NOT_RUN = Object.freeze(['channel_a_unusable', 'no_groups', 'tip_at_threshold', 'no_registry_doc', 'no_clean_baseline',
+  'baseline_not_after_tip', 'side_unreadable']);
+
+/**
+ * The live recount for one evaluated candidate: { live, not_run }. `live` is null when there is none to make; `not_run` then says
+ * why, one of LIVE_NOT_RUN, when releases were published after the seed tip (else null: the seed is not behind, nothing to say):
+ * Channel-A not usable, no groups in the finding, a tip count already at the threshold, no registry document, no clean baseline,
+ * a baseline not published after the tip, or a registry entry that cannot be read on either side.
+ *
+ * @param {object} p   p.packageName, p.version, p.finding, p.placement, p.staleSeed (the gate's gap count), p.rawVersions, p.rawTimes,
+ *                     p.excludeBaseline (versions never the baseline)
+ * @returns {{live: null | {version, baseline, basis, tip, k, broke, live_new, baseline_broke, n, threshold, fires, skipped_advisory},
+ *            not_run: string | null}}
+ */
+export function liveRecountRun({ packageName, version, finding, placement = null, staleSeed = null, rawVersions, rawTimes, excludeBaseline = null }) {
+  const no = (why) => ({ live: null, not_run: why });
+  if (!isObj(staleSeed) || staleSeed.checked !== true || !Number.isInteger(staleSeed.k) || staleSeed.k < 1) return no(null);
+  if (!placement || placement.channel_a_usable === false) return no('channel_a_unusable');
+  const groups = finding?.channel_a?.groups;
+  if (!isObj(groups)) return no('no_groups');
+  const tipBroke = LIVE_GROUPS.filter((g) => groups[g]?.value === true);
+  if (tipBroke.length >= LIVE_THRESHOLD) return no('tip_at_threshold');
+  if (!isObj(rawVersions) || !isObj(rawTimes) || !own(rawVersions, version)) return no('no_registry_doc');
+  const ch = chooseBaseline(rawVersions, rawTimes, version, { exclude: excludeBaseline });
+  if (ch.baseline === null || ch.problems.length) return no('no_clean_baseline');
+  const bv = ch.baseline;
+  const tipT = timeOf(rawTimes, staleSeed.tip); const bT = timeOf(rawTimes, bv);
+  if (bv === staleSeed.tip || !Number.isFinite(bT) || (Number.isFinite(tipT) && bT <= tipT)) return no('baseline_not_after_tip');
+  let memo = FACTS.get(rawVersions);
+  if (!memo || memo.times !== rawTimes || memo.pkg !== packageName) { memo = { times: rawTimes, pkg: packageName, by: new Map() }; FACTS.set(rawVersions, memo); }
+  const factsAt = (v) => { if (!memo.by.has(v)) memo.by.set(v, factsOf(packageName, v, rawVersions, rawTimes)); return memo.by.get(v); };
+  const F = factsAt(version); const B = factsAt(bv);
+  if (!F || !B) return no('side_unreadable');
+  const baselineBroke = LIVE_GROUPS.filter((g) => liveGroup(g, F.c, B.c) === true);
+  const liveNew = baselineBroke.filter((g) => !tipBroke.includes(g));
+  const broke = baselineBroke;   // R-A4-5: the groups counted are those that broke against the baseline
+  return { not_run: null, live: { version: LIVE_VERSION, baseline: bv, basis: ch.basis, tip: staleSeed.tip, k: staleSeed.k, broke,
+    live_new: liveNew, baseline_broke: baselineBroke, n: broke.length, threshold: LIVE_THRESHOLD,
+    fires: liveNew.length > 0 && broke.length >= LIVE_THRESHOLD, skipped_advisory: ch.skipped_advisory } };
+}
+/** The recount alone (liveRecountRun's `live`), or null. */
+export const liveRecountOf = (p) => liveRecountRun(p).live;
+
+/** R-A4-1 (local arch, accepted by the operator 2026-11-12): the recount as a decision and a check record carry it. */
+export function compactLive(x) {
+  if (!isObj(x)) return null;
+  const groups = (a) => (Array.isArray(a) ? LIVE_GROUPS.filter((g) => a.includes(g)) : []);
+  return { version: LIVE_VERSION, baseline: validVersion(x.baseline) ? x.baseline : null, basis: BASES.has(x.basis) ? x.basis : null,
+    tip: typeof x.tip === 'string' ? capText(x.tip, 256) : null, k: Number.isInteger(x.k) ? x.k : 0, broke: groups(x.broke),
+    live_new: groups(x.live_new), baseline_broke: groups(x.baseline_broke), n: groups(x.broke).length, threshold: LIVE_THRESHOLD, fires: x.fires === true,
+    skipped_advisory: Number.isInteger(x.skipped_advisory) && x.skipped_advisory >= 0 ? x.skipped_advisory : 0 };
+}
+const LIVE_KEYS = ['version', 'baseline', 'basis', 'tip', 'k', 'broke', 'live_new', 'baseline_broke', 'n', 'threshold', 'fires', 'skipped_advisory'];
+/** A validated copy of a stored or returned `live` member, or null when absent or malformed (never throws). */
+export function validLive(x) {
+  if (!isObj(x) || x.version !== LIVE_VERSION || Object.keys(x).length !== LIVE_KEYS.length || !LIVE_KEYS.every((k) => own(x, k))) return null;
+  const grp = (a) => Array.isArray(a) && a.length <= LIVE_GROUPS.length && a.every((g) => LIVE_GROUPS.includes(g)) && new Set(a).size === a.length;
+  if (!validVersion(x.baseline) || !BASES.has(x.basis) || typeof x.tip !== 'string' || !x.tip || x.tip.length > 256) return null;
+  if (!Number.isInteger(x.k) || x.k < 1 || !grp(x.broke) || !grp(x.live_new) || !x.live_new.every((g) => x.broke.includes(g))) return null;
+  if (!grp(x.baseline_broke) || !x.live_new.every((g) => x.baseline_broke.includes(g))) return null;
+  if (x.n !== x.broke.length || x.threshold !== LIVE_THRESHOLD || typeof x.fires !== 'boolean') return null;
+  if (!Number.isInteger(x.skipped_advisory) || x.skipped_advisory < 0) return null;
+  return { version: x.version, baseline: x.baseline, basis: x.basis, tip: x.tip, k: x.k, broke: [...x.broke], live_new: [...x.live_new],
+    baseline_broke: [...x.baseline_broke], n: x.n, threshold: x.threshold, fires: x.fires, skipped_advisory: x.skipped_advisory };
 }
 
 const FLAG_NAMES = new Set(['publisher', 'provenance', 'install', 'size', 'git', 'install_introduced', 'size_jump_5x', 'prov_dropped',
@@ -365,7 +486,7 @@ export function compact(b) {
 
 /** A validated copy of a stored or returned compact block, or null when absent or malformed (never throws). */
 export function validCompact(x) {
-  if (!isObj(x) || x.version !== RETIER_VERSION || !Object.values(PLACED).includes(x.placement)) return null;
+  if (!isObj(x) || !RETIER_VERSIONS_READ.includes(x.version) || !Object.values(PLACED).includes(x.placement)) return null;
   if (x.baseline !== null && !validVersion(x.baseline)) return null;
   if (x.basis !== null && !BASES.has(x.basis)) return null;
   if (!Array.isArray(x.flags_dropped) || x.flags_dropped.length > 9 || !x.flags_dropped.every((f) => FLAG_NAMES.has(f))) return null;
@@ -376,4 +497,4 @@ export function validCompact(x) {
 }
 
 export default { RETIER_VERSION, RETIER_LIMITS, PLACED, GUARDS, flavor, releaseCore, lineKey, chooseBaseline, nonRegistrySpec,
-  brokenFlags, retierOf, compact, validCompact, indexFor };
+  brokenFlags, retierOf, compact, validCompact, indexFor, LIVE_VERSION, LIVE_THRESHOLD, liveRecountOf, liveRecountRun, LIVE_NOT_RUN, compactLive, validLive };

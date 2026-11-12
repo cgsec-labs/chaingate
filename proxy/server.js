@@ -43,7 +43,7 @@ import { tarballRow } from '../gates/install-introduced.js';
 import { reraise } from '../gates/retier-late.js';
 import { DEFAULT_STATIC_WALK_WAIT_MS } from '../config-store.js';
 import { armedBy, walkReason, keepListFor, staticRows, budgetRows, noManifestRows, staticSettled, MAX_ARMED_WALKS, STATIC_WITHHOLD_CAP_BYTES,
-  withholdingChecks, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, FACTS_LIMITS, makeBase64Share, createMemberTally,
+  withholdingChecks, latestRows, HOOK_LOADER_PAIR, entryKeepFor, entryFactsOf, MAX_FACTS_WALKS, STATIC_CHECKS_VERSION, FACTS_LIMITS, makeBase64Share, createMemberTally,
   staticFactsOf } from './static-checks.js';
 import { withRole } from '../gates/row-class.js';
 import { rememberPackumentFacts, packumentFactsFor, createShapeTally, shadowFactsOf, publicStaticFacts, repoClaimFact, REPO_CLAIM_LIMITS } from './shadow-facts.js';
@@ -317,9 +317,12 @@ async function holdUpstream(res, upstream, statusCode, extraHeaders, tap, cap) {
 /** 0.1.5: the 403 of a download the user's static_withhold switch withholds (a serving choice; the decision stays WARN). */
 function staticWithheldResponse(pkg, version, checks) {
   const id = `${pkg}@${version}`;
-  const detail = `${id} is withheld by your static_withhold setting: ${checks.join(', ')}; details: chaingate why ${id}; `
+  // 0.1.8: the new install script withheld with its loader is said as the pair
+  const shown = checks.map((c) => (c === HOOK_LOADER_PAIR[0] ? `${c} with ${HOOK_LOADER_PAIR[1]}` : c));
+  const detail = `${id} is withheld by your static_withhold setting: ${shown.join(', ')}; details: chaingate why ${id}; `
     + `to install it anyway: chaingate accept ${id}`;
-  const notice = buildNotice({ kind: 'WITHHELD', pkg, version, labels: checks, tail: '(your static_withhold setting)' });
+  const labels = checks.map((c) => (c === HOOK_LOADER_PAIR[0] ? 'hook-loader-pair' : c));
+  const notice = buildNotice({ kind: 'WITHHELD', pkg, version, labels, tail: '(your static_withhold setting)' });
   return { body: { error: 'withheld_by_static_check', package: pkg, version, checks, detail }, detail, notice };
 }
 
@@ -1372,7 +1375,8 @@ export function createProxyServer(configOverrides = {}, hooks = {}) {
           let staticHold = null;
           if (held?.held) {
             let checks = [];
-            try { checks = withholdingChecks(rowsOfWalk().slice(1)); } catch (err) {
+            // 0.1.8: the recorded rows, then this download's rows (later wins), so a new install script and its loader pair up
+            try { checks = withholdingChecks(latestRows([...(walkLatest.gates_fired || []), ...rowsOfWalk().slice(1)])); } catch (err) {
               log?.warn?.(`[static] ${canonicalName}@${state.tarballVersion}: rows not computed (${err.message}); served`);
             }
             if (checks.length) {

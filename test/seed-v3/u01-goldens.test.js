@@ -34,7 +34,10 @@ const isRefusal = (d) => d.results.length === 1 && d.results[0].gate === 'seed-v
 
 // T-2 D1/D2, written from the decision tables (not from runtime output). Applied to a COPY of the golden.
 const POLICY_1_0 = 'cft-policy-1.0';
-const POLICY_CURRENT = 'cft-policy-1.3';   // U-05 D1/D2 to 1.1, then I1 E1/E2 to 1.2, then 0.1.6 to 1.3
+const POLICY_CURRENT = 'cft-policy-1.4';   // U-05 D1/D2 to 1.1, then I1 E1/E2 to 1.2, then 0.1.6 to 1.3, then 0.1.8 to 1.4
+// 0.1.8 (cft-policy-1.4) adds no enumerated difference here: the live recount needs releases after the seed tip, and no golden
+// case's packument has a release the synthetic seed does not record after its tip that moves 3 groups (the comparison below
+// would fail on a live row).
 // 0.1.6 (cft-policy-1.3) adds ONE enumerated difference, R1: a decision whose strict row warned carries the re-tier block
 // (`retier` on the decision, its compact form on the gate result and the check record). It is derived from the golden's own
 // rows: present exactly when a frozen strict row is WARN. Every golden's re-tier is `raised`, so no row, detail or disposition

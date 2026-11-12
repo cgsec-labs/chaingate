@@ -3,7 +3,8 @@
 // `chaingate.check/2` (0.1.3) and `chaingate.check/1` results (0.1.2 and earlier). /4 is also what 0.1.5 writes against a seed of
 // contract 1.2, whose placement adds new-family-cold-start. `/5` (0.1.6, policy cft-policy-1.3) is /4 written for every check; its
 // decision may carry an optional `retier` member (a strict warning shown as a note when it is not new) and an optional `pin`
-// member (a pin from the pins feed decided). Node standard library only.
+// member (a pin from the pins feed decided). `/6` (0.1.8, policy cft-policy-1.4) is /5 under the policy that adds the named row
+// seed-v3:channel-a:live (Channel-A recounted against the latest registry release when the seed is behind). Node standard library only.
 //
 //   node chaingate-ci.mjs --expected <manifest> --results <dir> --trusted-seed <sha256> [...]
 //                         [--trusted-seeds-file <file>] [--ignore-overrides] [--summary <file>]
@@ -69,8 +70,13 @@ const COMBINATIONS = {
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2',
       'cft-seed-v3-contract-1.3'] },
+  // chaingate.check/6 (0.1.8): /5 under cft-policy-1.4; no member added
+  'chaingate.check/6': { explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.4',
+    detection_contract_version: 'cft-detection-contract-1.0',
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2',
+      'cft-seed-v3-contract-1.3'] },
 };
-const SINCE_4 = ['chaingate.check/4', 'chaingate.check/5'];
+const SINCE_4 = ['chaingate.check/4', 'chaingate.check/5', 'chaingate.check/6'];
 const SCHEMA_IDS = Object.keys(COMBINATIONS);
 const DISPOSITIONS = ['ALLOW', 'WARN', 'BLOCK'];
 const RESULT_VALUES = ['ALLOW', 'WARN', 'BLOCK', 'SKIP'];
@@ -208,12 +214,26 @@ const SPEC = {
     candidates: expect((v) => Number.isInteger(v) && v >= 0, 'an integer >= 0') },
 };
 // /5: the decision's optional re-tier member.
-SPEC.retier = { version: expect(T.constant('retier-1.0'), '"retier-1.0"'),
+SPEC.retier = { version: expect(T.constant('retier-1.0'), '"retier-1.0"'),   // /6 (0.1.8): retier-1.1, set below per record
   placement: expect(T.oneOf(['recorded', 'raised']), 'recorded|raised'),
   baseline: expect((v) => v === null || (typeof v === 'string' && v.length > 0 && v.length <= 256), 'a version or null'),
   basis: expect((v) => v === null || ['same flavor', 'same release line', 'previous release'].includes(v), 'a basis or null'),
   flags_dropped: expect((v) => T.strArray(v) && v.length <= 9, 'an array of at most 9 flag names'),
   guards: expect(T.strArray, 'an array of guard names'), words: T.str };
+// /6: the same member; its baseline never is a version a recorded advisory names (retier-1.1)
+SPEC.retier_6 = { ...SPEC.retier, version: expect(T.constant('retier-1.1'), '"retier-1.1"') };
+// /6: the decision's optional live recount member (present only when the recount ran)
+const LIVE_GROUP_NAMES = ['publisher', 'provenance', 'install', 'size', 'git'];
+const LIVE_NOT_RUN = ['channel_a_unusable', 'no_groups', 'tip_at_threshold', 'no_registry_doc', 'no_clean_baseline', 'baseline_not_after_tip',
+  'side_unreadable'];
+const groupList = expect((v) => Array.isArray(v) && v.length <= 5 && v.every((g) => LIVE_GROUP_NAMES.includes(g)), 'an array of group names');
+SPEC.live = { version: expect(T.constant('live-1.0'), '"live-1.0"'),
+  baseline: expect((v) => typeof v === 'string' && v.length > 0 && v.length <= 256, 'a version'),
+  basis: expect(T.oneOf(['same flavor', 'same release line', 'previous release']), 'a basis'),
+  tip: expect((v) => typeof v === 'string' && v.length > 0 && v.length <= 256, 'a version'),
+  k: expect((v) => Number.isInteger(v) && v >= 1, 'an integer >= 1'), broke: groupList, live_new: groupList, baseline_broke: groupList,
+  n: expect((v) => Number.isInteger(v) && v >= 0 && v <= 5, 'an integer 0..5'), threshold: expect(T.constant(3), '3'),
+  fires: T.bool, skipped_advisory: expect((v) => Number.isInteger(v) && v >= 0, 'an integer >= 0') };
 // /5: the decision's optional pin member, when a pin from the pins feed decided.
 const feedId = (v) => v === null || (typeof v === 'string' && /^[A-Za-z0-9._:/-]{1,80}$/.test(v));
 SPEC.pin = { origin: expect(T.constant('feed'), '"feed"'), source: expect(T.oneOf(['osv', 'ghsa', 'chaingate-analyst', 'other']), 'osv|ghsa|chaingate-analyst|other'),
@@ -253,9 +273,12 @@ export function validateRecord(rec) {
 
   checkObject('seed', rec.seed, SPEC.seed, p);
   const d = rec.decision;
-  const decisionSpec = rec.schema === 'chaingate.check/5' ? { ...SPEC.decision, retier: T.obj, pin: T.obj } : SPEC.decision;
-  if (checkObject('decision', d, decisionSpec, p, { optional: ['retier', 'pin'] })) {
-    if (has(d, 'retier')) checkObject('decision.retier', d.retier, SPEC.retier, p);
+  const decisionSpec = rec.schema === 'chaingate.check/6' ? { ...SPEC.decision, retier: T.obj, pin: T.obj, live: T.obj, live_not_run: T.str }
+    : rec.schema === 'chaingate.check/5' ? { ...SPEC.decision, retier: T.obj, pin: T.obj } : SPEC.decision;
+  if (checkObject('decision', d, decisionSpec, p, { optional: ['retier', 'pin', 'live', 'live_not_run'] })) {
+    if (has(d, 'retier')) checkObject('decision.retier', d.retier, rec.schema === 'chaingate.check/6' ? SPEC.retier_6 : SPEC.retier, p);
+    if (has(d, 'live')) checkObject('decision.live', d.live, SPEC.live, p);
+    if (has(d, 'live_not_run') && !LIVE_NOT_RUN.includes(d.live_not_run)) p.push(`decision.live_not_run ${JSON.stringify(d.live_not_run)} is not a known reason`);
     if (has(d, 'pin')) checkObject('decision.pin', d.pin, SPEC.pin, p, { optional: ['integrity'] });
     const rowSpec = rec.schema === 'chaingate.check/3' || SINCE_4.includes(rec.schema) ? SPEC.result_row_3 : SPEC.result_row;
     if (Array.isArray(d.results)) d.results.forEach((r, i) => checkObject(`decision.results[${i}]`, r, rowSpec, p));

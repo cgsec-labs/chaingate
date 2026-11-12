@@ -3,6 +3,9 @@
 // read it, so a NAMED static WARN can withhold the download that reveals it; past the cap the download is served and recorded as
 // today. While no named static check fires, the switch changes no response and no record (only the time to first byte). The
 // server-level withhold of a named static WARN (S0 and S5, named 2026-10-15) is tested in cft015-s9. Tarballs are synthetic; nothing is run.
+// Since 0.1.8 (deliberate change of expectation): with the switch on, a NEW install script that runs a loader (install-introduced
+// WARN and S1 fired on the same release, the 2026-11-09 compromise's shape) is withheld as well, under the install-introduced name;
+// `chaingate accept` releases it. The fixture q is that shape; h is a new install script that is no loader (nothing withholds).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -41,12 +44,14 @@ const doc = (name, extra = {}) => ({ name, 'dist-tags': { latest: '1.1.0' }, tim
 const Q = doc('q', { scripts: { postinstall: 'node install.js' } });
 const BIG = doc('big', { scripts: { postinstall: 'node install.js' } });
 const P = doc('p');
-const DOCS = { '/q': Q, '/big': BIG, '/p': P };
+const HK = doc('h', { scripts: { postinstall: 'node install.js' } });
+const DOCS = { '/q': Q, '/big': BIG, '/p': P, '/h': HK };
 const TARBALLS = {
   '/q/-/q-1.1.0.tgz': tgz({ 'package.json': JSON.stringify(Q.versions['1.1.0']), 'install.js': LOADER, 'index.js': BENIGN }),
   '/big/-/big-1.1.0.tgz': tgz({ 'package.json': JSON.stringify(BIG.versions['1.1.0']), 'install.js': LOADER, 'index.js': BENIGN,
     'blob.bin': crypto.randomBytes(9 * MiB) }),
   '/p/-/p-1.1.0.tgz': tgz({ 'package.json': JSON.stringify(P.versions['1.1.0']), 'index.js': BENIGN }),
+  '/h/-/h-1.1.0.tgz': tgz({ 'package.json': JSON.stringify(HK.versions['1.1.0']), 'install.js': 'console.log("built");\n', 'index.js': BENIGN }),
 };
 
 // The upstream can hold a tarball after its first `split` bytes until `release()` (to see whether the proxy forwards early),
@@ -136,31 +141,81 @@ test('W3 withholdingChecks: only a static row that is a NAMED WARN after its 1.2
   assert.equal(S.STATIC_WITHHOLD_CAP_BYTES, 8 * MiB);
   const s1 = 'static:S1-loader-in-hook-target'; const s0 = 'static:S0-shell-fetch-in-hook';
   const rows = [{ gate: s1, result: 'WARN', detail: 'x' }, { gate: s0, result: 'ALLOW', detail: 'x' }, { gate: 'install-introduced', result: 'WARN', detail: 'x' }];
-  // today: every static gate is contributing, so its WARN becomes NOTE and nothing withholds (the default named list)
-  assert.deepEqual(S.withholdingChecks(rows.map(withRole)), []);
+  // S1 is contributing, so its WARN becomes NOTE; alone it never withholds (the default named list)
+  assert.deepEqual(S.withholdingChecks(rows.filter((r) => r.gate !== 'install-introduced').map(withRole)), []);
+  // since 0.1.8: beside a new install script (install-introduced WARN) it withholds, under the install-introduced name
+  assert.deepEqual(S.withholdingChecks(rows.map(withRole)), ['install-introduced']);
   // once a ruling names S1 (injected named list): its WARN withholds; a named non-static row does not (it is served with its notice)
-  assert.deepEqual(S.withholdingChecks(rows, [s1, 'install-introduced']), [s1]);
+  assert.deepEqual(S.withholdingChecks(rows.filter((r) => r.gate !== 'install-introduced'), [s1, 'install-introduced']), [s1]);
+  assert.deepEqual(S.withholdingChecks(rows, [s1, 'install-introduced']), ['install-introduced', s1], '0.1.8: and the pair beside it');
   assert.deepEqual(S.withholdingChecks([{ gate: s1, result: 'NOTE', detail: 'x' }], [s1]), [], 'a NOTE is never a named warning');
   assert.deepEqual(S.withholdingChecks([{ gate: s1, result: 'SKIP', detail: 'x' }], [s1]), [], 'not checked never withholds');
   assert.deepEqual(S.withholdingChecks(null, [s1]), []);
 });
 
+test('W3b (0.1.8) the pair: install-introduced WARN and S1 fired (NOTE or WARN); either alone, or either not checked, never withholds', async () => {
+  const S = await SC();
+  const s1 = 'static:S1-loader-in-hook-target'; const ii = 'install-introduced';
+  const row = (gate, result) => ({ gate, result, detail: 'x' });
+  assert.deepEqual(S.HOOK_LOADER_PAIR, [ii, s1]);
+  for (const r1 of ['NOTE', 'WARN']) assert.deepEqual(S.withholdingChecks([row(ii, 'WARN'), row(s1, r1)]), [ii], r1);
+  for (const [a, b] of [['WARN', 'SKIP'], ['WARN', 'ALLOW'], ['SKIP', 'NOTE'], ['ALLOW', 'NOTE'], ['NOTE', 'NOTE']]) {
+    assert.deepEqual(S.withholdingChecks([row(ii, a), row(s1, b)]), [], `${a} ${b}`);
+  }
+  assert.deepEqual(S.withholdingChecks([row(ii, 'WARN')]), []); assert.deepEqual(S.withholdingChecks([row(s1, 'NOTE')]), []);
+  // the later row of a gate counts: a download's install-introduced read from the tarball (no new hook) clears a recorded WARN
+  assert.deepEqual(S.withholdingChecks([row(ii, 'WARN'), row(s1, 'NOTE'), row(ii, 'ALLOW')]), []);
+  assert.deepEqual(S.latestRows([row(ii, 'WARN'), row(s1, 'NOTE'), row(ii, 'ALLOW')]), [row(ii, 'ALLOW'), row(s1, 'NOTE')]);
+  // a named static WARN and the pair together: both names
+  assert.deepEqual(S.withholdingChecks([row(ii, 'WARN'), row(s1, 'NOTE'), row('static:S0-shell-fetch-in-hook', 'WARN')]),
+    [ii, 'static:S0-shell-fetch-in-hook']);
+});
+
 // ------------------------------------------------------------------ the server: no behaviour change while everything is contributing
-test('W4 switch on, armed, all checks contributing: the same status, bytes and static rows as with the switch off', async () => {
-  const off = await withProxy({}, async ({ base, proxy }) => {
-    await get(`${base}/q`); const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
-    return { status: r.status, body: r.body, rows: await staticRowsEventually(proxy, 'q', '1.1.0') };
-  });
-  const on = await withProxy({ config: ON }, async ({ base, proxy }) => {
-    await get(`${base}/q`); const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
-    return { status: r.status, body: r.body, rows: await staticRowsEventually(proxy, 'q', '1.1.0') };
-  });
+const both = async (pkg, config) => withProxy({ config }, async ({ base, proxy }) => {
+  await get(`${base}/${pkg}`); const r = await get(`${base}/${pkg}/-/${pkg}-1.1.0.tgz`); await settle();
+  return { status: r.status, body: r.body, headers: r.headers, rows: await staticRowsEventually(proxy, pkg, '1.1.0') };
+});
+test('W4 switch on, armed, a new install script that is no loader: the same status, bytes and static rows as with the switch off', async () => {
+  const off = await both('h', {}); const on = await both('h', ON);
   assert.equal(off.status, 200); assert.equal(on.status, 200);
-  assert.ok(on.body.equals(TARBALLS['/q/-/q-1.1.0.tgz']), 'the held bytes are served unchanged');
+  assert.ok(on.body.equals(TARBALLS['/h/-/h-1.1.0.tgz']), 'the held bytes are served unchanged');
   assert.ok(off.body.equals(on.body));
   assert.equal(on.rows.length, 10);   // S0-S9 (S6, S7: rulings R2, R3 2026-10-21; S8, S9: 1.8)
   assert.deepEqual(on.rows, off.rows, 'the same rows are recorded');
+  assert.ok(on.rows.every((g) => g.result !== 'WARN' && g.result !== 'NOTE'), 'no static check fired');
+});
+
+test('W4b (0.1.8) a new install script that runs a loader: served with its warning when the switch is off, withheld when it is on', async () => {
+  const off = await both('q', {}); const on = await both('q', ON);
+  assert.equal(off.status, 200, 'off by default: served as in 0.1.7');
+  assert.ok(off.body.equals(TARBALLS['/q/-/q-1.1.0.tgz']));
+  assert.match(off.headers['npm-notice'], /WARNING q@1\.1\.0: an install script appears that earlier releases did not have/);
+  assert.equal(on.status, 403);
+  const body = JSON.parse(on.body.toString('utf8'));
+  assert.equal(body.error, 'withheld_by_static_check'); assert.deepEqual(body.checks, ['install-introduced']);
+  assert.equal(body.detail, 'q@1.1.0 is withheld by your static_withhold setting: install-introduced with static:S1-loader-in-hook-target; '
+    + 'details: chaingate why q@1.1.0; to install it anyway: chaingate accept q@1.1.0');
+  assert.equal(on.headers['npm-notice'], 'chaingate: WITHHELD q@1.1.0: a new install script runs a small loader that fetches and executes '
+    + '(your static_withhold setting). Details: chaingate why q@1.1.0');
+  assert.deepEqual(on.rows, off.rows, 'the same rows are recorded either way');
   assert.equal(on.rows.find((g) => g.gate === 'static:S1-loader-in-hook-target').result, 'NOTE', 'S1 fired and is contributing');
+});
+
+test('W4c (0.1.8) the next download of a withheld pair is withheld from the record; an acceptance of install-introduced serves it', async () => {
+  await withProxy({ config: ON }, async ({ base, proxy }) => {
+    await get(`${base}/q`);
+    assert.equal((await get(`${base}/q/-/q-1.1.0.tgz`)).status, 403); await settle();
+    await staticRowsEventually(proxy, 'q', '1.1.0');
+    const again = await get(`${base}/q/-/q-1.1.0.tgz`);
+    assert.equal(again.status, 403, 'withheld from the recorded rows, before any byte');
+    const named = proxy.witnessDb.getLatestDecision('q', '1.1.0').gates_fired.filter((g) => g.result === 'WARN').map((g) => g.gate);
+    proxy.witnessDb.upsertAcceptance({ package_name: 'q', version: '1.1.0', named: ['install-introduced'], accepted_at: new Date().toISOString(),
+      reason: 'test', policy_version: 'cft-policy-1.4' });
+    assert.ok(named.includes('install-introduced'));
+    const ok = await get(`${base}/q/-/q-1.1.0.tgz`);
+    assert.equal(ok.status, 200); assert.ok(ok.body.equals(TARBALLS['/q/-/q-1.1.0.tgz']));
+  });
 });
 
 test('W5 switch on: an armed download is held until the walk ends (no byte before the upstream finishes); switch off streams at once', async () => {
@@ -213,18 +268,18 @@ for (const chunked of [false, true]) {
 
 test('W8 switch on: client aborts while the download is held free the armed slots (the ceiling does not stick); nothing is recorded for them', async () => {
   const S = await SC();
-  const hold = { path: '/q/-/q-1.1.0.tgz', split: 200 };
+  const hold = { path: '/h/-/h-1.1.0.tgz', split: 200 };   // 0.1.8: h (q is now withheld)
   await withProxy({ upstream: { hold }, config: ON }, async ({ base, proxy, release }) => {
-    await get(`${base}/q`);
+    await get(`${base}/h`);
     const held = [];
-    for (let i = 0; i < S.MAX_ARMED_WALKS; i += 1) held.push(await bytesWithin(`${base}/q/-/q-1.1.0.tgz`, 150));
+    for (let i = 0; i < S.MAX_ARMED_WALKS; i += 1) held.push(await bytesWithin(`${base}/h/-/h-1.1.0.tgz`, 150));
     for (const h of held) { assert.equal(h.n, 0); h.req.destroy(); }
     await settle();
-    assert.equal(staticRowsOf(proxy, 'q', '1.1.0').length, 0, 'an aborted download is not recorded');
+    assert.equal(staticRowsOf(proxy, 'h', '1.1.0').length, 0, 'an aborted download is not recorded');
     release(); await settle();
-    const r = await get(`${base}/q/-/q-1.1.0.tgz`); await settle();
+    const r = await get(`${base}/h/-/h-1.1.0.tgz`); await settle();
     assert.equal(r.status, 200);
-    const rows = await staticRowsEventually(proxy, 'q', '1.1.0');
+    const rows = await staticRowsEventually(proxy, 'h', '1.1.0');
     assert.equal(rows.length, 10);   // S0-S9 (S6, S7: rulings R2, R3 2026-10-21; S8, S9: 1.8)
     assert.ok(rows.every((g) => !/ceiling/.test(g.detail)), 'the later download was armed, not refused a slot');
   });

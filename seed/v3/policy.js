@@ -56,9 +56,22 @@
 // that broke already held on the release this one follows, and no guard holds. Only WARN -> NOTE: a NOTE is never an ALLOW
 // row, no other row moves, and a BLOCK is never touched. Without a block (no registry document, a caller that passes none)
 // 1.3 decides exactly as 1.2. The finding is not changed.
+//
+// CFT-POLICY-1.4 (0.1.8). One change: the LIVE RECOUNT of Channel-A when the seed is behind. When releases were published
+// after the seed tip, the gate also reads each Channel-A group against the latest registry release this one follows (the
+// re-tier's baseline; seed/v3/retier.js liveRecountOf). A group counts when it broke against that release (R-A4-5 below),
+// and a new NAMED row, seed-v3:channel-a:live, WARNs when that count reaches the Channel-A threshold while the tip count alone
+// did not (operator 2026-11-12: the same 3-of-5 rule). It warns at most, never blocks; the re-tier never moves it; without a
+// stale seed or a registry document 1.4 decides exactly as 1.3. The finding is not changed. The decision carries the recount as an
+// optional `live` member whenever it ran (local arch's ruling R-A4-1, accepted by the operator 2026-11-12).
+// Known limit (R-A4-2): there is no recount when the release this one follows was published at or before the seed tip, as for a
+// backport that follows an older release of its own line; there the tip comparison and the re-tier stand.
+// R-A4-5, settled by the measurement M1 (ops, 2026-11-12, RESULT-M1.md, under the rule the operator accepted beforehand): a group
+// counts when it broke against the latest release only. Measured and NOT chosen: counting a group that broke against the seed tip
+// OR the latest release (the union) protected the same 9 tune campaigns and cost one more named false warning (33 against 32).
 import K from './contract.js';
 
-const POLICY_CONTRACT_VERSION = 'cft-policy-1.3';
+const POLICY_CONTRACT_VERSION = 'cft-policy-1.4';
 const PIN_GATE = 'seed-v3:known-malicious-pin';
 // The seed contracts whose pins are keyed by package name (reader.js SEED_CONTRACT_1_1, 1_2 and 1_3; the reader
 // requires the name column and its index for both). Literals here, not an import: policy.js imports nothing from the
@@ -76,7 +89,10 @@ const NOTE = 'NOTE';
 const DISPOSITIONS = Object.freeze([ALLOW, WARN, BLOCK]);
 // The 1.2 role of the threshold rows: the seed strict tier is named; the loose `any` rule contributes.
 // A new identity changes these deliberately; the tests guard them.
-const NAMED_ROWS = Object.freeze(['seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface']);
+// cft-policy-1.4 (0.1.8): + the live recount's row. The re-tier moves only RETIER_ROWS (the seed's strict rows).
+const LIVE_ROW = 'seed-v3:channel-a:live';
+const RETIER_ROWS = Object.freeze(['seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface']);
+const NAMED_ROWS = Object.freeze([...RETIER_ROWS, LIVE_ROW]);
 const CONTRIBUTING_ROWS = Object.freeze(['seed-v3:dac-trajectory:any']);
 // 0.1.4: the gate runner's NAMED gates -- a top-level runner row of one of these with result WARN is a named
 // warning, exactly like a NAMED_ROWS entry.
@@ -92,7 +108,7 @@ const NAMED_RUNNER_GATES = Object.freeze(['install-introduced', 'dependency-hook
   'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);
 // Every row name this policy emits (the closed vocabulary of the seed-v3 GateResult's `rows` member).
 const POLICY_ROW_GATES = Object.freeze(['override', 'seed-v3:known-malicious-pin', 'seed-v3:input', 'seed-v3:channel-a',
-  'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage']);
+  'seed-v3:channel-a:critical', 'seed-v3:dac-trajectory:surface', 'seed-v3:dac-trajectory:any', 'seed-v3:coverage', LIVE_ROW]);
 const ROW_RESULTS = Object.freeze([ALLOW, WARN, BLOCK, SKIP, NOTE]);
 
 /** The two genuinely unlocked choices, with the values an operator may pick and what each means. */
@@ -156,9 +172,9 @@ const r = (gate, result, detail) => ({ gate, result, detail });
  * whether any strict row warned before the re-tier (the decision carries the block only then).
  */
 function retierRows(results, retier) {
-  const strict = results.some((x) => NAMED_ROWS.includes(x.gate) && x.result === WARN);
+  const strict = results.some((x) => RETIER_ROWS.includes(x.gate) && x.result === WARN);
   if (!strict || !retier || retier.placement !== 'recorded') return { results, strict };
-  return { strict, results: results.map((x) => (NAMED_ROWS.includes(x.gate) && x.result === WARN
+  return { strict, results: results.map((x) => (RETIER_ROWS.includes(x.gate) && x.result === WARN
     ? r(x.gate, NOTE, `${x.detail}; not new: ${retier.words} (a note, not a warning)`) : x)) };
 }
 
@@ -266,6 +282,15 @@ function thresholdResults(prefix, agg) {
   return out;
 }
 
+/** cft-policy-1.4: the live recount's row when it fires, or null (seed/v3/retier.js liveRecountOf). */
+function liveRow(lv) {
+  if (!lv || typeof lv !== 'object' || lv.fires !== true) return null;
+  return r(LIVE_ROW, WARN, `${lv.n}/5 witness groups broke against ${lv.baseline}, the latest registry release this one follows `
+    + `(${lv.basis}), threshold ${lv.threshold}: ${lv.broke.join(', ')} (new against ${lv.baseline}: ${lv.live_new.join(', ')}); `
+    + `the seed tip ${lv.tip} is ${lv.k} release(s) behind${lv.skipped_advisory ? `; ${lv.skipped_advisory} version(s) named by an advisory skipped` : ''} `
+    + '(warns, never blocks)');
+}
+
 const STALE_LISTED = 10;
 /** The stale-seed coverage row for a gate-supplied gap count, or null (no append placement, or k = 0). */
 function staleSeedRow(st) {
@@ -293,6 +318,7 @@ function staleSeedRow(st) {
  *   ctx.override   an override row (the gate runner's short-circuit), or null
  *   ctx.staleSeed  (cft-policy-1.2) the gate's gap count for an `append` placement, or null:
  *                  {checked: true, k, tip, versions} or {checked: false, tip}. A coverage fact, never an alert.
+ *   ctx.liveRecount (cft-policy-1.4) the gate's live recount (seed/v3/retier.js liveRecountOf), or null: a named WARN row when it fires
  *   ctx.retier     (cft-policy-1.3) the gate's re-tier block (seed/v3/retier.js), or null: a strict WARN becomes a NOTE
  *                  only when its placement is `recorded`.
  * @returns {object} a decision. `disposition` is null when policy declines to decide; it is never
@@ -423,6 +449,9 @@ function decide(finding, ctx = {}) {
   //     publication times to count from it says "not checked" rather than implying k = 0.
   const stale = staleSeedRow(ctx.staleSeed);
   if (stale) results.push(stale);
+  // 3b'. LIVE RECOUNT (cft-policy-1.4, 0.1.8), only where Channel-A was compared: right after the stale-seed row.
+  const lr = channelAUsable ? liveRow(ctx.liveRecount ?? null) : null;
+  if (lr) results.push(lr);
   if (cacheStaleRow) results.push(cacheStaleRow);
 
   // 3c. RE-TIER (cft-policy-1.3, 0.1.6). Only a strict WARN can move, only to NOTE.
@@ -475,6 +504,10 @@ function decide(finding, ctx = {}) {
     not_evaluated: [...missing, ...policyMissing],
     undecided,
     ...(rt.strict && ctx.retier ? { retier: ctx.retier } : {}),
+    // cft-policy-1.4 (R-A4-1): the live recount whenever it ran, fired or not
+    ...(channelAUsable && ctx.liveRecount && typeof ctx.liveRecount === 'object' ? { live: ctx.liveRecount } : {}),
+    // 0.1.8 (measurement, operator 2026-11-12): why it did not run although the seed is behind
+    ...(!(channelAUsable && ctx.liveRecount) && typeof ctx.liveNotRun === 'string' ? { live_not_run: ctx.liveNotRun } : {}),
   };
 }
 
@@ -529,12 +562,12 @@ export {
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
   thresholdResults, decide, pinFor, lookupPin, captureIntegrity, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
-  NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
+  NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS, RETIER_ROWS, LIVE_ROW,
 };
 export default {
   NAMED_RUNNER_GATES,
   POLICY_CONTRACT_VERSION, IMPLEMENTED_DETECTION_CONTRACT, DISPOSITIONS, OPEN_CHOICES,
   OPEN_CHOICE_KEYS, PolicyConfigInvalid, normaliseConfig, aggregate, notEvaluated,
   thresholdResults, decide, pinFor, lookupPin, captureIntegrity, PIN_GATE, ALLOW, WARN, BLOCK, SKIP,
-  NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS,
+  NOTE, NAMED_ROWS, CONTRIBUTING_ROWS, POLICY_ROW_GATES, ROW_RESULTS, RETIER_ROWS, LIVE_ROW,
 };

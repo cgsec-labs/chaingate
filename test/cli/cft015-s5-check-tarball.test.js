@@ -24,7 +24,7 @@ import { buildSeed, openFixtureSeed, docFor, after, WARNCFG, manifestFor } from 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const V3 = path.join(HERE, '..', '..', 'seed', 'v3');
 const S3 = path.join(V3, 'chaingate-check-3.schema.json'); const S4 = path.join(V3, 'chaingate-check-4.schema.json');
-const S5 = path.join(V3, 'chaingate-check-5.schema.json');   // what 0.1.6 writes
+const S5 = path.join(V3, 'chaingate-check-6.schema.json');   // what 0.1.8 writes
 const FINDING = path.join(HERE, '..', 'fixtures', 'cft03', 'finding.schema.json');
 const read = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const TOOL = { name: 'chaingate', version: 'test' };
@@ -100,15 +100,15 @@ test('R1 without --tarball the record is today\'s /5 (0.1.5: /3), member for mem
   try {
     const w = world(dir, { tarballFiles: { 'package.json': JSON.stringify({ name: 'p', version: '1.3.0', main: 'index.js' }), 'index.js': 'module.exports = 1;\n' } });
     const plain = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, env: env(dir, s.dbPath), cwd: dir });
-    assert.equal(plain.record.schema, 'chaingate.check/5'); assert.equal(plain.record.result, 'evaluated'); assert.ok(!('tarball' in plain.record));   // since 0.1.6
+    assert.equal(plain.record.schema, 'chaingate.check/6'); assert.equal(plain.record.result, 'evaluated'); assert.ok(!('tarball' in plain.record));   // since 0.1.6
     const withT = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
     const r = withT.record;
-    assert.equal(r.schema, 'chaingate.check/5'); assert.equal(withT.exit, plain.exit, 'the exit code follows effective.action, which the tarball never changes');
+    assert.equal(r.schema, 'chaingate.check/6'); assert.equal(withT.exit, plain.exit, 'the exit code follows effective.action, which the tarball never changes');
     const { tarball, schema, ...rest } = r; const { schema: s3, ...plainRest } = plain.record;
     assert.deepEqual(rest, plainRest, 'every other member is byte-identical to the /3 record');
     assert.equal(tarball.source.kind, 'tarball-file'); assert.equal(tarball.source.path, w.tb);
     assert.equal(tarball.source.sha256, createHash('sha256').update(fs.readFileSync(w.tb)).digest('hex')); assert.equal(tarball.source.bytes, fs.statSync(w.tb).size);
-    assert.equal(tarball.static_checks_version, 'static-checks-1.9');   // declared: recon's static-checks-1.5 mirrored (R5, R9), then 1.6 facts only (R11), 1.7 bound-module sinks, 1.8 S8 and S9
+    assert.equal(tarball.static_checks_version, 'static-checks-1.10');   // declared: recon's static-checks-1.5 mirrored (R5, R9), then 1.6 facts only (R11), 1.7 bound-module sinks, 1.8 S8 and S9
     assert.deepEqual(tarball.walk, { ok: true });
     assert.deepEqual(tarball.keep_list, { source: 'registry manifest', candidates: 5 });
     assert.deepEqual(tarball.rows.map((x) => x.gate), ['install-manifest-mismatch', 'static:S0-shell-fetch-in-hook', 'static:S1-loader-in-hook-target', 'static:S2-obfuscated-entry', 'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook', 'static:S5-oversized-hook-target',
@@ -151,7 +151,7 @@ test('R3 a tarball that is not a gzip archive: the walk is stated, every row "no
   try {
     const w = world(dir, { tarballFiles: { 'package.json': '{}' } }); fs.writeFileSync(w.tb, 'not a gzip archive');
     const { record: r, exit } = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: w.tb, env: env(dir, s.dbPath), cwd: dir });
-    assert.equal(r.schema, 'chaingate.check/5'); assert.equal(r.tarball.walk.ok, false); assert.match(r.tarball.walk.reason, /gunzip/);
+    assert.equal(r.schema, 'chaingate.check/6'); assert.equal(r.tarball.walk.ok, false); assert.match(r.tarball.walk.reason, /gunzip/);
     for (const x of r.tarball.rows) { assert.equal(x.result, 'SKIP'); assert.match(x.detail, /^not checked: gunzip/); }
     assert.equal(r.tarball.disposition, 'SKIP'); assert.deepEqual(validateRecord(r), []); assert.equal(exit, 3, 'the recorded advisory pin on p@1.3.0 decides (BLOCK), exactly as without a tarball');   // corrected after the failing-first record: the fixture pins p@1.3.0
     const missing = await runCheck({ name: 'p', version: '1.3.0', packument: w.pk, tarball: path.join(dir, 'nope.tgz'), env: env(dir, s.dbPath), cwd: dir });
@@ -166,7 +166,7 @@ test('R4 a version the packument does not carry: the check is refused as today, 
     const doc = docFor('p'); const pk = path.join(dir, 'p.json'); fs.writeFileSync(pk, JSON.stringify(doc));
     const tb = path.join(dir, 'p-9.9.9.tgz'); fs.writeFileSync(tb, tgz({ 'package.json': JSON.stringify({ name: 'p', version: '9.9.9', main: 'lib/main.js' }), 'lib/main.js': 'module.exports = 1;\n' }));
     const { record: r } = await runCheck({ name: 'p', version: '9.9.9', packument: pk, tarball: tb, env: env(dir, s.dbPath), cwd: dir });
-    assert.equal(r.result, 'refused'); assert.equal(r.schema, 'chaingate.check/5');
+    assert.equal(r.result, 'refused'); assert.equal(r.schema, 'chaingate.check/6');
     assert.deepEqual(r.tarball.keep_list, { source: 'tarball package.json', candidates: 5 });
     assert.equal(r.tarball.rows[0].result, 'SKIP'); assert.equal(r.tarball.rows[0].detail, 'not checked: no registry manifest at hand');
     assert.equal(r.tarball.rows.find((x) => x.gate.startsWith('static:S2')).result, 'ALLOW');
@@ -179,6 +179,6 @@ test('R5 buildCheckRecord alone writes /5 since 0.1.6 (0.1.5: /3), with no tarba
   try {
     const doc = docFor('p', [['1.3.0', after(), null]]);
     const rec = buildCheckRecord({ seed, policy: WARNCFG, domainVersionCount: 'from-packument', input: inputFromPackument(doc, 'p', '1.3.0'), request: { package: 'p', version: '1.3.0' }, tool: TOOL });
-    assert.equal(rec.schema, 'chaingate.check/5'); assert.ok(!('tarball' in rec));   // since 0.1.6 (0.1.5: /3)
+    assert.equal(rec.schema, 'chaingate.check/6'); assert.ok(!('tarball' in rec));   // since 0.1.8 (0.1.6: /5, 0.1.5: /3)
   } finally { seed.close(); s.cleanup(); }
 });

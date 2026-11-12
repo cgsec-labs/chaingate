@@ -218,21 +218,21 @@ let Ajv2020 = null; try { Ajv2020 = createRequire(import.meta.url)('ajv/dist/202
 const V3DIR = path.join(HERE, '..', '..', 'seed', 'v3');
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
-test('C5 a check against a 1.3 seed writes chaingate.check/5 naming contract 1.3; the CI consumer and the schema accept it', () => {
+test('C5 a check against a 1.3 seed writes chaingate.check/6 (0.1.6: /5) naming contract 1.3; the CI consumer and the schema accept it', () => {
   const seed = R.openSeed(buildSeed(TWO), DEV);
   try {
     const doc = { name: 'p', versions: { '2.1.0': manifestFor('2.1.0') }, time: { '2.1.0': '2026-01-01T00:03:20.000Z' } };
     const r = buildCheckRecord({ seed, policy: { on_unusable_input: 'WARN', on_no_evidence: 'WARN' },
       domainVersionCount: 'from-packument', input: inputFromPackument(doc, 'p', '2.1.0'),
       request: { package: 'p', version: '2.1.0' }, tool: { name: 'chaingate', version: 'test' } });
-    assert.equal(r.schema, 'chaingate.check/5'); assert.equal(r.seed.contract_version, C13);
+    assert.equal(r.schema, 'chaingate.check/6'); assert.equal(r.seed.contract_version, C13);
     assert.deepEqual(recordCompatibility(r), []);
     assert.deepEqual(validateRecord(r), []);
     assert.ok(recordCompatibility({ ...r, schema: 'chaingate.check/4' }).some((x) => /seed\.contract_version/.test(x)), '/4 never carries 1.3');
     if (Ajv2020) {
       const Ctor = Ajv2020.default || Ajv2020; const ajv = new Ctor({ strict: true, strictRequired: false, allErrors: true });
       ajv.addSchema(readJson(path.join(HERE, '..', 'fixtures', 'cft03', 'finding.schema.json')));
-      const v5 = ajv.compile(readJson(path.join(V3DIR, 'chaingate-check-5.schema.json')));
+      const v5 = ajv.compile(readJson(path.join(V3DIR, 'chaingate-check-6.schema.json')));
       assert.ok(v5(r), JSON.stringify(v5.errors));
     }
   } finally { seed.close(); }

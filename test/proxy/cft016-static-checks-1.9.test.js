@@ -20,19 +20,19 @@ const hookMan = { name: 'h', version: '1.0.0', scripts: { postinstall: 'node ins
 // recon's function texts, compared with comments and spacing dropped (the runtime's comments are its own)
 const code = (s) => String(s).replace(/^export /, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
 
-test('N1 the hand-off is recon\'s file byte for byte, plain ASCII; the version, the patterns and the function texts are its', async () => {
+// Since 0.1.8 the runtime is static-checks-1.10 (cft018-static-checks-1.10): N1 pins what 1.10 keeps of this hand-off; dnsExfil is 1.10's.
+test('N1 the hand-off is recon\'s file byte for byte, plain ASCII; the patterns and the function texts 1.10 keeps are its', async () => {
   const S = await SC();
   assert.equal(createHash('sha256').update(RAW).digest('hex'), '60738d852693ff6d7efcf0bdaf119e8813e56d368ef5e050d8dee5559979d595');
   assert.ok(RAW.every((b) => b < 0x80));
-  assert.equal(S.STATIC_CHECKS_VERSION, K.static_checks_version);
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.9');
+  assert.equal(K.static_checks_version, 'static-checks-1.9'); assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.10');
   assert.equal(S.INLINE_NODE.source, K.s0.inline_node); assert.equal(S.INLINE_NODE.flags, '');
   assert.equal(S.NODE_DNS_CALL.source, K.dns.node_dns_call); assert.equal(S.NODE_DNS_CALL.flags, '');
   assert.equal(S.DNS_DATA.source, K.dns.dns_data); assert.equal(S.DNS_DATA.flags, '');
   assert.deepEqual(S.HOST_IDENTITY.map(([n, re]) => [n, re.source]), K.s6.host_identity);
   assert.equal(code(S.blankConsoleOutput), code(K.s0.blank_console_output));
   assert.equal(code(S.hookFetchExec), code(K.s0.hook_fetch_exec));
-  assert.equal(code(`const dnsExfil = ${S.dnsExfil}`), code(K.dns.dns_exfil).replace(/;$/, ''));
+  assert.notEqual(code(`const dnsExfil = ${S.dnsExfil}`), code(K.dns.dns_exfil).replace(/;$/, ''), '1.10 narrows dnsExfil');
   assert.equal(code(S.insideUpdateArg), code(K.s6.inside_update_arg));
   assert.equal(code(`const hostIdentityNames = ${S.hostIdentityNames}`), code(K.s6.host_identity_names).replace(/;$/, ''));
 });
@@ -98,5 +98,5 @@ test('N5 S6: a host-identity source used only inside a hash .update( argument is
 
 test('N6 S7 still compares entry facts stored by 1.8 and 1.8.1', async () => {
   const S = await SC();
-  assert.deepEqual([...S.S7_COMPARABLE_VERSIONS], ['static-checks-1.8', 'static-checks-1.8.1', 'static-checks-1.9']);
+  assert.deepEqual([...S.S7_COMPARABLE_VERSIONS], ['static-checks-1.8', 'static-checks-1.8.1', 'static-checks-1.9', 'static-checks-1.10']);   // + 1.10 (0.1.8)
 });

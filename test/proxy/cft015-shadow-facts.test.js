@@ -41,7 +41,7 @@ test('SF-1 identity: shadow-facts-1.0, a record-only note; nothing joins the nam
   assert.equal(S.SHADOW_FACTS_VERSION, 'shadow-facts-1.0');
   assert.match(S.SHADOW_NOTE, /no verdict, tier or notice/);
   const POL = (await import('../../seed/v3/policy.js')).default; const R = await import('../../gates/row-class.js');
-  assert.equal(POL.POLICY_CONTRACT_VERSION, 'cft-policy-1.3');   // 1.3 since 0.1.6 (the strict-row re-tier), not the shadow facts
+  assert.equal(POL.POLICY_CONTRACT_VERSION, 'cft-policy-1.4');   // 1.4 since 0.1.8 (the live recount), not the shadow facts
   assert.ok(!POL.NAMED_RUNNER_GATES.some((g) => /shadow|fact/i.test(g)));
   assert.ok(![...R.CONTRIBUTING_GATES].some((g) => /shadow|fact/i.test(g)));
 });

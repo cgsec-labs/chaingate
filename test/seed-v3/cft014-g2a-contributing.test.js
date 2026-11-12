@@ -69,7 +69,7 @@ test('G2a-2 (E6/E10) the strict tier stays a WARN; the loose rule beside it is N
     const gr = gate.evaluate(inputFromPackument(docFor('q', [['1.5.0', after(1), hookedBig()]]), 'q', '1.5.0'));
     assert.equal(gr.result, 'WARN');
     const also = ` | also (contributing): ${ANY}: ${CONTRIB(2)}`;
-    assert.ok(gr.detail.startsWith(`cft-policy-1.3: ${SURFACE}: 2/4 witnesses broke, threshold 2`), gr.detail);   // 1.3 since 0.1.6
+    assert.ok(gr.detail.startsWith(`cft-policy-1.4: ${SURFACE}: 2/4 witnesses broke, threshold 2`), gr.detail);   // 1.4 since 0.1.8
     assert.ok(gr.detail.includes(also), gr.detail);
     assert.ok(gr.detail.indexOf(also) < gr.detail.indexOf(' [placement: '), 'after the bearing rows, before the suffixes');
   });
@@ -120,7 +120,7 @@ test('G2a-5 (E9) NOTE is valid in /3 records only: the /2 schema and the CI cons
     ajv.addSchema(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'fixtures', 'cft03', 'finding.schema.json'), 'utf8')));
     const v2 = ajv.compile(JSON.parse(fs.readFileSync(path.join(V3, 'chaingate-check-2.schema.json'), 'utf8')));
     const v3 = ajv.compile(JSON.parse(fs.readFileSync(path.join(V3, 'chaingate-check-3.schema.json'), 'utf8')));
-    const v5 = ajv.compile(JSON.parse(fs.readFileSync(path.join(V3, 'chaingate-check-5.schema.json'), 'utf8')));
+    const v5 = ajv.compile(JSON.parse(fs.readFileSync(path.join(V3, 'chaingate-check-6.schema.json'), 'utf8')));
     withSeed((seed) => {
       const rec = buildCheckRecord({ seed, policy: LIVE, domainVersionCount: DVC,
         input: inputFromPackument(docFor('q', [['1.5.0', after(1), hooked()]]), 'q', '1.5.0'),
@@ -137,7 +137,7 @@ test('G2a-5 (E9) NOTE is valid in /3 records only: the /2 schema and the CI cons
   });
 
 test('G2a-7 (C2) a contributing-only ALLOW clears a pin and an input BLOCK; the NOTE text carries no C2 marker', () => {
-  const detail = `cft-policy-1.3: seed-v3:known-malicious-pin: no recorded advisory pins this version | also (contributing): ${ANY}: ${CONTRIB(1)}`;
+  const detail = `cft-policy-1.4: seed-v3:known-malicious-pin: no recorded advisory pins this version | also (contributing): ${ANY}: ${CONTRIB(1)}`;
   assert.ok(clears(REASON.PIN, [{ gate: 'seed-v3', result: 'ALLOW', detail }]));
   assert.ok(clears(REASON.INPUT, [{ gate: 'seed-v3', result: 'ALLOW', detail }]));
   for (const marker of ['seed-v3:input', 'could not run', 'seed-v3:known-malicious-pin: recorded advisory']) {
@@ -193,7 +193,8 @@ test('G2a-9 the 1.2 role tables equal r3 §18.7/§18.15/§18.18, and an unlisted
       'static:S3-secret-harvest-with-sink', 'static:S4-wallet-swap-hook']);   // S6, S7 left the list when named (R7, R9 2026-10-22; deliberate)
   assert.deepEqual([...POL.NAMED_RUNNER_GATES], ['install-introduced', 'dependency-hooks', 'install-manifest-mismatch', 'size-jump-provenance', 'static:S0-shell-fetch-in-hook', 'static:S5-oversized-hook-target',
     'static:S6-network-beacon-in-hook-target', 'static:S7-entry-capability-gain', 'static:S8-prebuilt-addon-dropper-in-hook', 'static:S9-hidden-script-in-gyp-build']);   // S8, S9 named 2026-10-27 (static-checks-1.8; deliberate); S6, S7 named 2026-10-22 (R7, R9; deliberate)   // G3 D-N6; 0.1.5 T1.4; 0.1.5 S0+S5 named
-  assert.deepEqual([...POL.NAMED_ROWS].sort(), [SURFACE, 'seed-v3:channel-a:critical'].sort());
+  assert.deepEqual([...POL.NAMED_ROWS].sort(), [SURFACE, 'seed-v3:channel-a:critical', 'seed-v3:channel-a:live'].sort());   // 0.1.8: + the live recount's row
+  assert.deepEqual([...POL.RETIER_ROWS].sort(), [SURFACE, 'seed-v3:channel-a:critical'].sort());
   assert.deepEqual([...POL.CONTRIBUTING_ROWS], [ANY]);
   const c = W.classify([{ gate: 'x-unlisted', result: 'WARN', detail: 'seed-v3:channel-a:critical: forged' },
     { gate: 'seed-v3', result: 'WARN', detail: 'cft-policy-1.2: …', rows: [{ gate: SURFACE, result: 'WARN' }, { gate: ANY, result: 'NOTE' }] }]);

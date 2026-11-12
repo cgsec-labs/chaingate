@@ -1,4 +1,5 @@
-// Build one check record: `chaingate.check/5` since 0.1.6 (cft-policy-1.3; the decision may carry a `retier` member),
+// Build one check record: `chaingate.check/6` since 0.1.8 (cft-policy-1.4: /5 under the live recount's policy), `/5` in 0.1.6
+// and 0.1.7 (cft-policy-1.3; the decision may carry a `retier` member),
 // `/3` in 0.1.4 (cft-policy-1.2), `/4` in 0.1.5 when it carried a tarball member or a 1.2 seed, `/2` in 0.1.3, `/1` before.
 //
 // Three shapes, and an absent member is OMITTED, never null-filled:
@@ -18,7 +19,7 @@ import G from '../seed/v3/gate.js';
 import { explain } from '../seed/v3/explain.js';
 import RT from '../seed/v3/retier.js';
 
-export const CHECK_SCHEMA_ID = 'chaingate.check/5';
+export const CHECK_SCHEMA_ID = 'chaingate.check/6';
 
 /**
  * The combinations a check record may carry, one per schema. 0.1.4 writes only /3; /2 records are
@@ -41,6 +42,11 @@ export const SUPPORTED_RECORDS = Object.freeze({
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2'] }),
   // since 0.1.6: /5 = /4 under cft-policy-1.3, written for every check; the decision may carry the `retier` member
   'chaingate.check/5': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.3',
+    detection_contract_version: 'cft-detection-contract-1.0',
+    seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2',
+      'cft-seed-v3-contract-1.3'] }),
+  // since 0.1.8: /6 = /5 under cft-policy-1.4 (the live recount's named row seed-v3:channel-a:live); no member added
+  'chaingate.check/6': Object.freeze({ explain_version: 'chaingate-explain-2', policy_version: 'cft-policy-1.4',
     detection_contract_version: 'cft-detection-contract-1.0',
     seed_contract_versions: ['cft-seed-v3-contract-1.0', 'cft-seed-v3-contract-1.1', 'cft-seed-v3-contract-1.2',
       'cft-seed-v3-contract-1.3'] }),
@@ -218,14 +224,17 @@ export function buildCheckRecord({ seed, bundleId = null, policy, domainVersionC
     ...(decision.retier ? { retier: RT.compact(decision.retier) } : {}),
     // since 0.1.6: present only when a pins feed pin decided
     ...(decision.pin ? { pin: decision.pin } : {}),
+    // since 0.1.8: present only when the live recount ran (cft-policy-1.4)
+    ...(decision.live ? { live: RT.compactLive(decision.live) } : {}),
+    ...(RT.LIVE_NOT_RUN.includes(decision.live_not_run) ? { live_not_run: decision.live_not_run } : {}),
   };
   rec.effective = effectiveFrom(decision.disposition, override);
   rec.explanation = explain(rec);
   return rec;
 }
 
-/** The `tarball` member of `chaingate check --tarball` (0.1.5: a /4; since 0.1.6 a /5 may carry it); decision and effective stay as evaluated. */
-export const CHECK_SCHEMA_ID_TARBALL = 'chaingate.check/5';
+/** The `tarball` member of `chaingate check --tarball` (0.1.5: a /4; 0.1.6 and 0.1.7 a /5; since 0.1.8 a /6 may carry it); decision and effective stay as evaluated. */
+export const CHECK_SCHEMA_ID_TARBALL = 'chaingate.check/6';
 export function withTarball(rec, tarball) {
   if (!rec || rec.result === RESULT.TOOL_ERROR) return rec;
   rec.schema = CHECK_SCHEMA_ID_TARBALL;

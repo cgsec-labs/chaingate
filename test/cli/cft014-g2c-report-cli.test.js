@@ -110,7 +110,7 @@ test('G2c-4b/G2c-8b (D-R3, D-R4, E21) `chaingate report` from a running proxy: t
       assert.equal(parsed.source, 'proxy');
       assert.equal(parsed.exit, 3);
       assert.equal(parsed.installs.length, 1);
-      assert.equal(parsed.policy, 'cft-policy-1.3');   // since 0.1.6
+      assert.equal(parsed.policy, 'cft-policy-1.4');   // since 0.1.8
     } finally {
       console.error = realErr;
       await px.stop(); s.cleanup();

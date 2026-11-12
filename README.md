@@ -114,6 +114,15 @@ warning:
     outside the registry, or part of the evidence could not be evaluated. Such a release is still read by the tarball
     checks when it is downloaded; if any of them fires, or the tarball's `package.json` adds or changes an install
     script, the warning comes back. `chaingate why` names the release it was compared with;
+  - **a release-history break against the latest release, when the seed is behind** (0.1.8): the seed compares a release
+    with the last release it records. When npm published releases after that one, each of the five release-history
+    groups (publisher, provenance, install scripts, size, gitHead) is also compared with the latest earlier release of
+    the same line in the registry document. The warning fires when 3 of 5 groups broke against that release and the
+    seed's own comparison did not reach 3: for example a release that drops the provenance and
+    gitHead the newer releases had, from another publisher. A side that cannot be read never counts. npm prints
+    "release-history break vs the latest release (3+ of 5 groups; the seed is behind)". Since 0.1.8 neither this rule nor
+    the note above ever compares a release with a version a recorded advisory names: an attacker's first release is
+    skipped, so the next one is compared with the release before it;
   - **an install script is introduced**: the release declares an install script (`preinstall`, `install` or
     `postinstall`, or a node-gyp build) when no version published at least 24 h earlier declared any (on a package's
     first day: no earlier version at all). A package's first version is not judged. A changed or additional install
@@ -127,7 +136,10 @@ warning:
     `dependencies` and `optionalDependencies` is judged on its `dependencies` entry, and re-pointing an existing name is
     not "added";
   - **the tarball's install scripts differ**: the tarball's `package.json` declares install scripts that differ from
-    its registry entry;
+    its registry entry. Since 0.1.8 the tarball is read as npm installs it: npm runs `node-gyp rebuild` as the install
+    script of a package whose folder holds a `binding.gyp` file and that declares no `install` or `preinstall` script
+    (unless `gypfile` is `false`), and the registry entry of such a package shows that script, so it is no longer a
+    difference;
   - **a size jump with a broken repository link** (0.1.5): the release's unpacked size is at least 5 times that of the
     version before it, and its link to the repository broke: `gitHead` is missing where the version before it had one,
     or the repository URL changed. npm prints "its tarball grew fivefold and its link to the repository broke". "The
@@ -192,7 +204,10 @@ targets; at most 6 files of 1 MiB each -- and checks them. It warns when:
   variables USER, USERNAME, LOGNAME, HOSTNAME or COMPUTERNAME), with no way to run code in the same file: a beacon. A
   URL written in the file is not a network call, reading other environment variables is not identification, and a value
   used only as the input of a hash (`.update(...)`) is not identification. A hook target that makes a DNS lookup through
-  node's `dns` module carrying the same process or host data as above also warns, whether or not it can run code. npm
+  node's `dns` module carrying the same process or host data as above also warns, whether or not it can run code. Since
+  0.1.8 a lookup of a fixed, reserved name written as a plain string (`localhost`, or a name ending in `.invalid`,
+  `.example`, `.test` or `.localhost`) is not counted, here and in the install-command check above, because such a name
+  cannot carry data; a name built from data, or any lookup in a file that sets its own DNS server, still counts. npm
   prints "an install script sends details about this machine to the network";
 - `main` or a `bin` file gained something the same file of the version this proxy served before did not have: a decode
   or obfuscation marker other than the `Function` constructor, or a network call together with a way to run code other
@@ -243,6 +258,12 @@ while the tarball checks read it. If one of the six tarball warnings fires, npm 
 recorded decision stays WARN: withholding is a choice about serving, not a different verdict. A download over 8 MiB is
 served and recorded as it is without the switch. The switch is off by default.
 
+Since 0.1.8 the switch also withholds a new install script that runs a loader: the release introduces an install
+script (the rule above) and the file that script runs is a small loader that fetches and executes code (a tarball
+check that otherwise only contributes). npm prints "a new install script runs a small loader that fetches and
+executes", the 403 names both checks, and `chaingate accept <pkg>@<ver>` releases it. A release whose install script
+earlier releases already had is not withheld this way.
+
 **Recorded facts (0.1.5).** Beside the rows, the proxy records facts that change no verdict, no warning and no notice.
 They are there to be read and counted first; using any of them to decide is a later change. For each version it serves,
 once, after its first download's rows are final:
@@ -281,7 +302,7 @@ differing install scripts are reported by the proxy, not by `check`.
 Since 0.1.5, `chaingate check <pkg>@<ver> --packument <file> --tarball <file>` also reads that local archive offline --
 the install-script comparison and the tarball checks above, the keep list from the packument's manifest -- and reports
 their rows in the record's `tarball` member (0.1.5 wrote `chaingate.check/4`, which is `/3` plus that one optional
-member; since 0.1.6 every check writes `chaingate.check/5`, below). Offline
+member; since 0.1.6 every check writes `chaingate.check/5`, and since 0.1.8 `chaingate.check/6`, below). Offline
 there is no earlier version to compare, so the entry-file comparison says it is not applicable. Those rows never change
 the decision or the exit code in 0.1.5: a CI job that wants to gate on them reads `tarball.disposition`.
 
@@ -290,7 +311,8 @@ placement `new-family-cold-start`, the first prerelease of a new tag (for exampl
 version of its own tag to compare against. Since 0.1.6 every check writes `chaingate.check/5`: `/4` under the 0.1.6
 policy, whose decision carries a `retier` member when a strict-tier row warned before it was compared with the
 release this one follows (that release, how it was chosen, the signals that are not new, the guards that held, and
-`recorded` or `raised`).
+`recorded` or `raised`). Since 0.1.8 every check writes `chaingate.check/6`: `/5` under the 0.1.8 policy, which adds the
+release-history warning against the latest release when the seed is behind; no member is added.
 
 **What you see.** For a named warning, a refusal that rests on a fact (a recorded advisory or a content change), a
 version your pin withholds, or a version the seed could not check because its seed data did not arrive in time (see
@@ -355,7 +377,7 @@ reading your installed package names through DNS rebinding.
 
 **ALLOW / WARN / BLOCK enforcement** with a persisted decision log, per-version
 overrides, and CI-friendly exit codes from `chaingate check` (0 / 2 / 3; 4 = tool error). `chaingate check --json`
-emits a versioned `chaingate.check/5` record (0.1.5 wrote `/3` or `/4`, 0.1.4 `/3`, 0.1.3 `/2` and 0.1.2 and earlier
+emits a versioned `chaingate.check/6` record (0.1.6 and 0.1.7 wrote `/5`, 0.1.5 `/3` or `/4`, 0.1.4 `/3`, 0.1.3 `/2` and 0.1.2 and earlier
 `/1`; all are still read); `examples/ci/` has an offline CI consumer for them.
 
 **A failure never turns a BLOCK into permission.** A BLOCK stays in force until the check that issued it
@@ -553,7 +575,7 @@ $ echo $?
 0
 ```
 
-Exit codes: 0 ALLOW, 2 WARN, 3 BLOCK, 4 tool error. `--json` gives the `chaingate.check/5` record (above). `check` evaluates the seed: the rules on introduced install
+Exit codes: 0 ALLOW, 2 WARN, 3 BLOCK, 4 tool error. `--json` gives the `chaingate.check/6` record (above). `check` evaluates the seed: the rules on introduced install
 scripts, added dependencies and differing install scripts are reported by the proxy (above).
 
 A version named in a recorded advisory is blocked even when the release cannot be evaluated (for example a
@@ -755,6 +777,26 @@ identifiers) CC BY 4.0, OpenSSF malicious-packages records (MAL identifiers) Apa
 host serves that release's third-party notices at `https://shards.cgsec.dev/THIRD_PARTY_NOTICES.txt`; the signed index
 names the file and its sha256, and `chaingate status` and `chaingate doctor` show its address. ChainGate never fetches or
 reads the file to decide anything.
+
+## What changed in 0.1.8
+
+- **A seed that is behind no longer hides a break against the latest release.** The seed compares a release with the
+  last release it records, however many releases npm published since. Now each release-history group is also compared
+  with the latest earlier release in the registry document, and a new named warning fires when 3 of 5 groups broke
+  against that release while the seed's own comparison did not reach 3 (see "What decides a warning"). Check records are
+  `chaingate.check/6`; `/5` records are still read.
+- **No false warning for a native addon's build step.** A package that ships a `binding.gyp` file and declares no
+  install script gets `node-gyp rebuild` from npm at install, and its registry entry shows it. The install-scripts
+  comparison now reads the tarball the same way, so such a release no longer warns that its install scripts differ.
+- **A version named by an advisory is never the comparison.** The seed's notes on warnings that are not new, and the
+  warning above, compare a release with the latest earlier release of its line. A version a recorded advisory names is
+  now skipped there, so an attacker's first release cannot make the next one look unchanged.
+- **`static_withhold` also withholds a new install script that runs a loader** (the switch stays off by default; see
+  "Holding a download until it is checked").
+- **A DNS lookup of a reserved name is not a beacon.** A fixed lookup of `localhost` or a name under `.invalid`,
+  `.example`, `.test` or `.localhost` no longer counts as sending data out; a name built from data still does.
+- **Fewer timeouts on a slow registry.** A package document request that gets no answer within the header timeout is
+  sent once more before the proxy answers 504.
 
 ## What changed in 0.1.7
 

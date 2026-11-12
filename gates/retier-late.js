@@ -9,9 +9,9 @@
 //
 // One pure function over a decision's gate results, used where the walk's rows are recorded (proxy/server.js) and where a
 // re-evaluation carries them forward (witness/store.js), so both read the same answer.
-import { NAMED_ROWS, WARN, NOTE } from '../seed/v3/policy.js';
+import { RETIER_ROWS, WARN, NOTE } from '../seed/v3/policy.js';
 
-const STRICT = new Set(NAMED_ROWS);
+const STRICT = new Set(RETIER_ROWS);   // 0.1.8: the live recount's named row is never a re-tiered note
 const POLICY_PREFIX = /^(cft-policy-\d+\.\d+): /;
 
 /** The late guards that hold over these results: { ids, words }. */

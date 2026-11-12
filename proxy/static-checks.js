@@ -78,7 +78,7 @@ import { DEFAULTS as WALK } from './tar-walk.js';
 import { classify } from '../witness/row-class.js';
 import { NAMED_RUNNER_GATES, NAMED_ROWS } from '../seed/v3/policy.js';
 
-export const STATIC_CHECKS_VERSION = 'static-checks-1.9';
+export const STATIC_CHECKS_VERSION = 'static-checks-1.10';
 /** The reason a file row states when its roles had a candidate on the keep list and no file was read (ruled 2026-10-14). */
 export const NOTHING_READ = 'no eligible file in the tarball';
 export const LIMITS = Object.freeze({ maxKeep: WALK.maxKeep, maxKeepBytes: WALK.maxKeepBytes, maxBin: 4, maxHookTargets: 3, s1MaxBytes: 8192,
@@ -116,7 +116,30 @@ export const STATIC_WITHHOLD_CAP_BYTES = 8 * 1024 * 1024;
 export function withholdingChecks(rows, named = NAMED_RUNNER_GATES) {
   if (!Array.isArray(rows)) return [];
   const set = new Set(named);
-  return [...new Set(rows.filter((r) => r && r.result === 'WARN' && STATIC_GATES.includes(r.gate) && set.has(r.gate)).map((r) => r.gate))].sort();
+  const out = new Set(rows.filter((r) => r && r.result === 'WARN' && STATIC_GATES.includes(r.gate) && set.has(r.gate)).map((r) => r.gate));
+  if (hookLoaderPair(rows)) out.add(HOOK_LOADER_PAIR[0]);   // 0.1.8
+  return [...out].sort();
+}
+/**
+ * Since 0.1.8: a NEW install script that runs a loader. When the install-introduced row WARNs (a hook earlier releases did not have)
+ * and S1 fires on the same release (its hook target fetches and executes; contributing, so a NOTE), the switch withholds the
+ * download as for a named static WARN, under the install-introduced name (`chaingate accept` releases it). From the 2026-11-09
+ * compromise of a trusted-published release: both fired, nothing else did, and 0.1.7 served it with the switch on. The switch stays
+ * off by default (operator 2026-11-12). A hook that earlier releases already had is not this pair. When a list carries a gate
+ * twice (the recorded rows, then the rows of the download), the later row counts.
+ */
+export const HOOK_LOADER_PAIR = Object.freeze(['install-introduced', 'static:S1-loader-in-hook-target']);
+/** Since 0.1.8: one row per gate, the later one where a gate appears twice, in first-seen order (a recorded list then a download's). */
+export function latestRows(rows) {
+  const by = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) if (r && typeof r.gate === 'string') by.set(r.gate, r);
+  return [...by.values()];
+}
+export function hookLoaderPair(rows) {
+  if (!Array.isArray(rows)) return false;
+  const last = new Map();
+  for (const r of rows) if (r && typeof r.gate === 'string') last.set(r.gate, r.result);
+  return last.get(HOOK_LOADER_PAIR[0]) === 'WARN' && ['WARN', 'NOTE'].includes(last.get(HOOK_LOADER_PAIR[1]));
 }
 const INSTALL_HOOKS = ['preinstall', 'install', 'postinstall'];
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -307,7 +330,42 @@ export function blankConsoleOutput(s) {
  *  file for S6) is DNS exfiltration. A dns module bound to another name (const d = require('dns')) is not read. */
 export const NODE_DNS_CALL = /\b(?:dns(?:\.promises)?|require\(\s*['"](?:node:)?dns(?:\/promises)?['"]\s*\)(?:\.promises)?)\s*\.\s*(?:lookup|lookupService|resolve(?:4|6|Any|Cname|Mx|Ns|Txt|Srv|Ptr|Soa|Naptr|Caa)?|reverse)\s*\(/;
 export const DNS_DATA = /\bprocess\.(?:cwd\s*\(|env\b|argv\b)|\b(?:os|require\(\s*['"](?:node:)?os['"]\s*\))\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\(|\b__dirname\b/;
-export const dnsExfil = (s) => typeof s === 'string' && NODE_DNS_CALL.test(s) && DNS_DATA.test(s);
+/** v6.25 static-checks-1.10 (operator 2026-11-12, recon session "Yes proceed"; fix ledger RF-9, triage batch 2 item 9; runtime U3):
+ *  @jarvis_1234/env-harvest 1.0.4 fired the DNS arm on its only network call, dns.lookup('collector.scml-lab.invalid', ...), a fixed
+ *  name that cannot carry the data the file reads. A dns call is NOT counted when its first argument is a plain string literal (quotes
+ *  or a backtick; followed by , or ) so nothing is joined to it) whose host is a reserved name (an escape or a ${ fails DNS_LABELS)
+ *  (RFC 2606 / RFC 6761: localhost, or a name ending in .invalid, .example, .test, .localhost; case and one trailing dot folded).
+ *  Data joined to a reserved suffix still counts (the measured shapes are d + ".x.example.invalid"). In a unit that sets its own DNS
+ *  server (setServers or a Resolver) nothing is excluded: a query for any name reaches the server the code chose. */
+export const RESERVED_DNS_SUFFIXES = Object.freeze(['.invalid', '.example', '.test', '.localhost']);
+export const RESERVED_DNS_NAMES = Object.freeze(['localhost']);
+export const DNS_CUSTOM_SERVER = /\b(?:setServers|Resolver)\s*\(/;
+export const DNS_LABELS = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/;
+export function reservedDnsName(h) {
+  if (typeof h !== 'string') return false;
+  const n = h.toLowerCase().replace(/\.$/, '');
+  if (!DNS_LABELS.test(n)) return false;
+  return RESERVED_DNS_NAMES.includes(n) || RESERVED_DNS_SUFFIXES.some((x) => n.endsWith(x) && n.length > x.length);
+}
+/** v6.25: each node dns call in s (NODE_DNS_CALL, in order) with its host when the first argument is a plain string literal, else null. */
+export function dnsCalls(s) {
+  const out = []; if (typeof s !== 'string') return out;
+  for (const m of s.matchAll(new RegExp(NODE_DNS_CALL.source, 'g'))) {
+    let i = m.index + m[0].length; while (i < s.length && /\s/.test(s[i])) i += 1;
+    const q = s[i]; let host = null;
+    if (q === "'" || q === '"' || q === '`') {
+      const end = s.indexOf(q, i + 1); const body = end < 0 ? null : s.slice(i + 1, end);
+      if (body !== null) {   // an escape, a newline or a ${ in the body never passes DNS_LABELS, so such a call is counted
+        let j = end + 1; while (j < s.length && /\s/.test(s[j])) j += 1;
+        if (s[j] === ',' || s[j] === ')') host = body;
+      }
+    }
+    out.push({ index: m.index, host });
+  }
+  return out;
+}
+export const dnsExfil = (s) => typeof s === 'string' && NODE_DNS_CALL.test(s) && DNS_DATA.test(s)
+  && (DNS_CUSTOM_SERVER.test(s) || dnsCalls(s).some((c) => !reservedDnsName(c.host)));   // v6.25: was NODE_DNS_CALL && DNS_DATA (1.9)
 /** { fetch, exec, net_tools, sends, exfil, dns_exfil, fires } for one hook command; a non-string never throws and never fires. */
 export function hookFetchExec(cmd) {
   const s = blankConsoleOutput(typeof cmd === 'string' ? cmd : '');   // 1.9: console output in inline node code is not a command
@@ -556,7 +614,8 @@ export function capabilityDelta({ predecessor, current } = {}) {
 export const S7_BASIS = 'the version this proxy served before';
 /** Since 0.1.6: stored entry facts S7 compares. 1.8.1 changes a fact field nothing decides on, and 1.9 changes S0 and S6 only (S7's
  *  capabilities read neither host_identity nor dns_exfil), so facts stored by 1.8 and 1.8.1 stay comparable. */
-export const S7_COMPARABLE_VERSIONS = Object.freeze(['static-checks-1.8', 'static-checks-1.8.1', STATIC_CHECKS_VERSION]);
+// 0.1.8: + 1.9 by name (0.1.6 and 0.1.7 stored it); 1.10 changes S0 and S6 only, no fact
+export const S7_COMPARABLE_VERSIONS = Object.freeze(['static-checks-1.8', 'static-checks-1.8.1', 'static-checks-1.9', STATIC_CHECKS_VERSION]);
 /** The predecessor argument of capabilityDelta from a witness.db predecessorEntryFacts record (null: cold start; 'unreadable': a storage error). */
 function s7Predecessor(rec) {
   if (rec === 'unreadable') return { version: null, basis: S7_BASIS, status: 'NOT_CHECKED', reason: 'the stored entry facts of earlier versions could not be read' };

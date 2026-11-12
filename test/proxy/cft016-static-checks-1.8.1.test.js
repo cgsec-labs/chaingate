@@ -17,7 +17,7 @@ test('E1 the hand-off is recon\'s file byte for byte, plain ASCII; the version, 
   assert.equal(createHash('sha256').update(RAW).digest('hex'), 'c20c5aeaacafdee70f50858596ede72541eef56c04891cf9aa2cea4473eb0105');
   assert.ok(RAW.every((b) => b < 0x80));
   assert.equal(K.static_checks_version, 'static-checks-1.8.1');
-  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.9');   // declared: 1.9 changes S0 and S6 only (cft016-static-checks-1.9); the 1.8.1 facts are unchanged
+  assert.equal(S.STATIC_CHECKS_VERSION, 'static-checks-1.10');   // declared: 1.9 and 1.10 change S0 and S6 only (cft016-static-checks-1.9, cft018-static-checks-1.10); the 1.8.1 facts are unchanged
   assert.deepEqual({ ...S.FACTS_LIMITS }, K.facts_limits);
   assert.equal(S.FACTS_NOTE, K.facts_note);
 });

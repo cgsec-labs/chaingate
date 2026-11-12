@@ -18,6 +18,7 @@ const NAME_RE = /^(?:@[a-zA-Z0-9-*~][a-zA-Z0-9-*._~]*\/)?[a-zA-Z0-9-~][a-zA-Z0-9
 const LABELS = Object.freeze({
   'seed-v3:channel-a:critical': 'release-history break vs the seed (3+ of 5 groups)',
   'seed-v3:dac-trajectory:surface': 'release-history break vs the seed (2+ package-wide signals)',
+  'seed-v3:channel-a:live': 'release-history break vs the latest release (3+ of 5 groups; the seed is behind)',   // since 0.1.8
   'seed-v3:pin': 'a recorded advisory names this version',
   'seed-v3:pin-analyst': 'a ChainGate analyst record names this version',                        // since 0.1.6 (pins feed)
   'seed-v3:unheld': 'its seed data could not be downloaded in time, so the seed history and advisory checks did not run',   // since 0.1.6.1
@@ -28,6 +29,8 @@ const LABELS = Object.freeze({
   'size-jump-provenance': 'its tarball grew fivefold and its link to the repository broke',       // since 0.1.5
   // 0.1.5 static checks: the static-checks-1.3 CHECKS notice text, byte for byte (one wording)
   'static:S0-shell-fetch-in-hook': 'an install script downloads code to run or sends data to an outside host',
+  // since 0.1.8: the static_withhold notice of a new install script that runs a loader (install-introduced with S1; S1 has no label)
+  'hook-loader-pair': 'a new install script runs a small loader that fetches and executes',
   'static:S5-oversized-hook-target': 'an install script runs a file too large to read',
   // the static-checks-1.5 CHECKS notice text, byte for byte
   'static:S6-network-beacon-in-hook-target': 'an install script sends details about this machine to the network',

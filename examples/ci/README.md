@@ -1,4 +1,4 @@
-# chaingate-ci: an offline CI consumer of `chaingate.check/5` (and `/4`, `/3`, `/2`, `/1`)
+# chaingate-ci: an offline CI consumer of `chaingate.check/6` (and `/5`, `/4`, `/3`, `/2`, `/1`)
 
 `chaingate-ci.mjs` gates a CI job on the JSON that `chaingate check --json` writes. It uses the Node
 standard library only and makes no network access.
@@ -42,7 +42,9 @@ It performs a specified structural validation, listed at the top of the script. 
 full JSON Schema validation. That runs in the chaingate test suite against
 `seed/v3/chaingate-check-2.schema.json` (and `chaingate-check-1.schema.json` for older results).
 
-**Versions.** chaingate 0.1.6 writes `chaingate.check/5` for every check: `/4` under policy `cft-policy-1.3`, whose decision
+**Versions.** chaingate 0.1.8 writes `chaingate.check/6` for every check: `/5` under policy `cft-policy-1.4`, which adds the
+named row `seed-v3:channel-a:live` (the seed's release-history groups recounted against the latest registry release when the
+seed is behind); no member is added. chaingate 0.1.6 and 0.1.7 wrote `chaingate.check/5` for every check: `/4` under policy `cft-policy-1.3`, whose decision
 carries an optional `retier` member when a strict-tier row warned before it was compared with the release this one
 follows (that release, how it was chosen, the signals that are not new, the guards that held, and `recorded` or
 `raised`). chaingate 0.1.5 wrote `chaingate.check/4` when `chaingate check --tarball` was used: `/3` plus one optional

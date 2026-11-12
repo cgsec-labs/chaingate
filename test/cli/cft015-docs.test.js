@@ -40,11 +40,23 @@ test('D4 README and SEEDS.md say --seed takes the compressed database', () => {
   assert.match(words('SEEDS.md'), /chaingate-seed-v3\.db\.gz/);
 });
 
-test('D5 the package is 0.1.7: package.json and both version fields of package-lock.json', () => {
-  assert.equal(JSON.parse(read('package.json')).version, '0.1.7');
+test('D5 the package is 0.1.8: package.json and both version fields of package-lock.json', () => {
+  assert.equal(JSON.parse(read('package.json')).version, '0.1.8');
   const lock = JSON.parse(read('package-lock.json'));
-  assert.equal(lock.version, '0.1.7');
-  assert.equal(lock.packages[''].version, '0.1.7');
+  assert.equal(lock.version, '0.1.8');
+  assert.equal(lock.packages[''].version, '0.1.8');
+});
+
+test('D5c the 0.1.8 README says what changed: the live recount (3 of 5), the node-gyp build step, the withheld loader, the retry, /6', () => {
+  const r = words('README.md');
+  assert.match(r, /## What changed in 0\.1\.8/);
+  assert.ok(r.indexOf('## What changed in 0.1.8') < r.indexOf('## What changed in 0.1.7'), 'the newest release first');
+  assert.match(r, /release-history break vs the latest release \(3\+ of 5 groups; the seed is behind\)/);
+  assert.match(r, /`node-gyp rebuild`/);
+  assert.match(r, /a new install script runs a small loader that fetches and executes/);
+  assert.match(r, /sent once more before the proxy answers 504/);
+  assert.match(r, /`chaingate\.check\/6`/);
+  assert.doesNotMatch(r, /cft-policy-1\.\d/, 'no internal policy id in the README');
 });
 
 test('D5b the 0.1.7 README says what changed, including the one deliberate silence, and promises the Action without a version', () => {

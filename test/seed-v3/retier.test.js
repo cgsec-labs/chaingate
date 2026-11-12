@@ -182,8 +182,8 @@ const realFinding = (strict) => {
 const REC = { version: RT.RETIER_VERSION, placement: 'recorded', baseline: '1.1.0', basis: 'same flavor', flags: [], flags_dropped: ['publisher'], guards: [],
   words: 'not new against 1.1.0 (same flavor): publisher already held there' };
 
-test('RT7 policy 1.3: a recorded re-tier turns each strict WARN into a NOTE, never an ALLOW row; raised or absent changes nothing', () => {
-  assert.equal(POL.POLICY_CONTRACT_VERSION, 'cft-policy-1.3');
+test('RT7 policy 1.3 (and 1.4): a recorded re-tier turns each strict WARN into a NOTE, never an ALLOW row; raised or absent changes nothing', () => {
+  assert.equal(POL.POLICY_CONTRACT_VERSION, 'cft-policy-1.4');   // 1.4 since 0.1.8 keeps the re-tier unchanged
   const f = realFinding(true);
   const none = decide(f, null); const raised = decide(f, { ...REC, placement: 'raised' }); const rec = decide(f, REC);
   const row = (d, g) => d.results.find((x) => x.gate === g);
@@ -257,18 +257,18 @@ test('RT9 /5 equals /4 plus exactly the documented delta: the schema const and t
   assert.equal(SUPPORTED_RECORDS['chaingate.check/5'].policy_version, 'cft-policy-1.3');
 });
 
-test('RT10 a re-tiered check writes /5 with the compact block; the schema, the CI consumer and the compatibility check accept it', () => {
+test('RT10 a re-tiered check writes /6 (0.1.6: /5) with the compact block; the schema, the CI consumer and the compatibility check accept it', () => {
   withSeed((seed) => {
     const rec = buildCheckRecord({ seed, policy: WARNCFG, domainVersionCount: 'from-packument', input: inputFromPackument(takeover(99), 'q', '1.4.0'),
       request: { package: 'q', version: '1.4.0' }, tool: { name: 'chaingate', version: 'test' } });
-    assert.equal(rec.schema, 'chaingate.check/5'); assert.equal(rec.decision.policy_version, 'cft-policy-1.3');
+    assert.equal(rec.schema, 'chaingate.check/6'); assert.equal(rec.decision.policy_version, 'cft-policy-1.4');
     assert.deepEqual(Object.keys(rec.decision.retier).sort(), ['baseline', 'basis', 'flags_dropped', 'guards', 'placement', 'version', 'words']);
     assert.equal(rec.decision.retier.placement, 'recorded'); assert.equal(rec.effective.action, 'ALLOW');
     assert.deepEqual(validateRecord(rec), []);
     if (Ajv2020) {
       const Ctor = Ajv2020.default || Ajv2020; const ajv = new Ctor({ strict: true, strictRequired: false, allErrors: true });
       ajv.addSchema(read(path.join(HERE, '..', 'fixtures', 'cft03', 'finding.schema.json')));
-      const v5 = ajv.compile(read(path.join(V3, 'chaingate-check-5.schema.json')));
+      const v5 = ajv.compile(read(path.join(V3, 'chaingate-check-6.schema.json')));
       assert.ok(v5(rec), JSON.stringify(v5.errors));
       const bad = structuredClone(rec); bad.decision.retier.placement = 'hidden';
       assert.equal(v5(bad), false, 'a placement outside the vocabulary is refused');

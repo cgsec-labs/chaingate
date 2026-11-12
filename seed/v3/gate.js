@@ -514,17 +514,31 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount, pinOverlay =
     });
     finding = seed.check(candidate);
     const staleSeed = staleSeedGap(seed, place, input, publishedS, version);
+    // Since 0.1.8 (retier-1.1): a version a recorded advisory names (seed or pins feed) is never the release this one is compared
+    // with; a lookup that fails excludes the version as well (it is not "no advisory")
+    const excludeBaseline = (v) => {
+      if (v === version) return false;
+      const lp = POL.lookupPin(seed, pkg, v, pinOverlay);
+      return Boolean(lp.pin) || Boolean(lp.error);
+    };
     // Since 0.1.6 (cft-policy-1.3): the re-tier block, from the registry document in hand. A failure here is no refusal:
     // without a block policy decides as 1.2 did, so the strict rows keep their WARN.
     let retier = null;
     try {
       retier = RT.retierOf({ packageName: pkg, version, finding, placement: place, notEvaluated: POL.notEvaluated(finding, place),
-        rawVersions: input.rawVersions, rawTimes: input.rawTimes });
+        rawVersions: input.rawVersions, rawTimes: input.rawTimes, excludeBaseline });
     } catch { retier = null; }
+    // Since 0.1.8 (cft-policy-1.4): Channel-A recounted against the latest registry release when the seed is behind. A failure
+    // here is no refusal: without a recount policy decides as 1.3 did.
+    let liveRecount = null; let liveNotRun = null;
+    try {
+      ({ live: liveRecount, not_run: liveNotRun } = RT.liveRecountRun({ packageName: pkg, version, finding, placement: place, staleSeed,
+        rawVersions: input.rawVersions, rawTimes: input.rawTimes, excludeBaseline }));
+    } catch { liveRecount = null; liveNotRun = null; }
     // The placement travels WITH the finding. Where Channel-A cannot be compared, policy records
     // the gate's own reason rather than the checker's `uncovered_package`, and keeps what does not
     // depend on placement: the DAC trajectory and an exact-version advisory pin.
-    decision = POL.decide(finding, { ...pinCtx, config, override: null, placement: place, staleSeed, retier });
+    decision = POL.decide(finding, { ...pinCtx, config, override: null, placement: place, staleSeed, retier, liveRecount, liveNotRun });
   } catch (e) {
     // A refusal from any layer is an UNUSABLE INPUT, and policy decides what that means — this
     // module does not get to turn it into an ALLOW. The pin found above survives it.

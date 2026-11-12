@@ -95,7 +95,9 @@ async function upstreamRequest(url, { headers = {}, config, bounds = {} }) {
       err instanceof undiciErrors.BodyTimeoutError ||
       err instanceof undiciErrors.ConnectTimeoutError
     ) {
-      throw new UpstreamTimeoutError(`upstream timed out: ${err.message}`);
+      const e = new UpstreamTimeoutError(`upstream timed out: ${err.message}`);
+      e.beforeHeaders = !(err instanceof undiciErrors.BodyTimeoutError);   // no response yet: safe to send a GET again
+      throw e;
     }
     throw new UpstreamError(`upstream unreachable: ${err.message}`, err);
   }
@@ -109,7 +111,14 @@ export async function fetchPackument(rawName, { config, requestHeaders = {} } = 
   // JSON without decompressing. Localhost bandwidth savings from gzip are
   // negligible compared to the code simplification.
   relay['accept-encoding'] = 'identity';
-  return upstreamRequest(url, { headers: relay, config });
+  // since 0.1.8: a packument that got no response headers in time is asked for once more before the 504 (a slow registry answer
+  // was usually served on the next try); a tarball, an error status and an unreachable upstream are not retried
+  try {
+    return await upstreamRequest(url, { headers: relay, config });
+  } catch (err) {
+    if (!(err instanceof UpstreamTimeoutError) || !err.beforeHeaders) throw err;
+    return upstreamRequest(url, { headers: relay, config });
+  }
 }
 
 export async function fetchTarball(rawName, filename, { config, requestHeaders = {} } = {}) {

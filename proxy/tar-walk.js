@@ -112,6 +112,16 @@ function writtenRel(name, windows) {
 }
 const ASCII = /^[\x20-\x7e]*$/;
 const fold = (x) => x.toUpperCase().toLowerCase();         // Unicode case folding, approximately (U+017F -> s)
+/** Since 0.1.8: the exact views an entry name is written as the root binding.gyp in (npm's implicit node-gyp install step). */
+export function gypTargets(name) {
+  const out = [];
+  const lx = writtenRel(name, false);
+  if (lx === 'binding.gyp') out.push('linux');
+  if (lx != null && !lx.includes('/') && ASCII.test(lx) && lx.toLowerCase() === 'binding.gyp') out.push('macos');
+  const wx = writtenRel(name, true);
+  if (wx != null && !/[\\/]/.test(wx) && ASCII.test(wx) && wx.toLowerCase() === 'binding.gyp') out.push('windows');
+  return out;
+}
 /** For a regular-file entry name: the exact views it is installed as package.json in, and the approximate platforms. */
 export function installTargets(name) {
   const exact = []; const approx = new Set();
@@ -141,6 +151,7 @@ export function createTarWalker(opts = {}) {
   let collect = null;                                      // { kind: 'pj' | meta type | null, chunks }
   let ex = null; let gex = {}; let sawNull = false;
   const views = { linux: null, macos: null, windows: null };   // view -> { buf, name }: the last entry npm installs there
+  const gyp = { linux: false, macos: false, windows: false };   // 0.1.8: view -> the root binding.gyp is a regular file (the last entry wins)
   const approx = []; let approxBytes = 0;
   // 0.1.5 keep list: targets (normalised Linux-view paths), kept bodies (last entry wins, as node-tar overwrites), what was not kept
   const keepOpt = o.keep; const keepGiven = keepOpt !== undefined;
@@ -296,6 +307,7 @@ export function createTarWalker(opts = {}) {
     }
     ex = null;                                               // a pending extended header applies to this entry only
     collect = null;
+    for (const v of gypTargets(entryPath)) gyp[v] = type === '0' || type === '7';   // 0.1.8: a directory or link there is no gyp file
     if (type === '0' || type === '7') {                      // pacote installs File / OldFile / ContiguousFile
       // 0.1.5 shadow facts: every regular file's Linux-view path and header size, to the caller's tally (constant memory)
       if (onFile) { const lx = writtenRel(entryPath, false); if (lx != null) try { onFile(lx, size); } catch { /* a tally never fails the walk */ } }
@@ -384,9 +396,9 @@ export function createTarWalker(opts = {}) {
     const out = [];
     for (const [v, label] of [['linux', 'Linux'], ['macos', 'macOS'], ['windows', 'Windows']]) {
       const e = views[v];
-      const g = out.find((x) => x.packageJson === (e?.buf ?? null));
+      const g = out.find((x) => x.packageJson === (e?.buf ?? null) && x.gyp === gyp[v]);
       if (g) g.platforms.push(label);
-      else out.push({ platforms: [label], packageJson: e?.buf ?? null, name: e?.name ?? null });
+      else out.push({ platforms: [label], packageJson: e?.buf ?? null, name: e?.name ?? null, gyp: gyp[v] });
     }
     return out;
   }
