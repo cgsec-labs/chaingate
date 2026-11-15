@@ -778,6 +778,17 @@ host serves that release's third-party notices at `https://shards.cgsec.dev/THIR
 names the file and its sha256, and `chaingate status` and `chaingate doctor` show its address. ChainGate never fetches or
 reads the file to decide anything.
 
+## What changed in 0.1.9
+
+0.1.9 is a fix release for 0.1.8. It changes no decision, policy, check record or seed contract: every version is allowed,
+warned about or blocked exactly as in 0.1.8, under the same policy and the same seed.
+
+- **Package documents with thousands of releases are fast again.** Since 0.1.8 a version named by an advisory is never
+  the release another one is compared with. 0.1.8 asked the seed about each earlier version again for every version it
+  read, so a package document with thousands of releases (many canary or prerelease builds) took minutes instead of
+  seconds on every request, and other downloads waiting behind it could time out with 504. Each version is now asked
+  about once per document.
+
 ## What changed in 0.1.8
 
 - **A seed that is behind no longer hides a break against the latest release.** The seed compares a release with the

@@ -40,11 +40,19 @@ test('D4 README and SEEDS.md say --seed takes the compressed database', () => {
   assert.match(words('SEEDS.md'), /chaingate-seed-v3\.db\.gz/);
 });
 
-test('D5 the package is 0.1.8: package.json and both version fields of package-lock.json', () => {
-  assert.equal(JSON.parse(read('package.json')).version, '0.1.8');
+test('D5 the package is 0.1.9: package.json and both version fields of package-lock.json', () => {
+  assert.equal(JSON.parse(read('package.json')).version, '0.1.9');
   const lock = JSON.parse(read('package-lock.json'));
-  assert.equal(lock.version, '0.1.8');
-  assert.equal(lock.packages[''].version, '0.1.8');
+  assert.equal(lock.version, '0.1.9');
+  assert.equal(lock.packages[''].version, '0.1.9');
+});
+
+test('D5d the 0.1.9 README says it is the 0.1.8 fix release, changes no decision, and names the speed fix', () => {
+  const r = words('README.md');
+  assert.match(r, /## What changed in 0\.1\.9/);
+  assert.ok(r.indexOf('## What changed in 0.1.9') < r.indexOf('## What changed in 0.1.8'), 'the newest release first');
+  assert.match(r, /0\.1\.9 is a fix release for 0\.1\.8\. It changes no decision/);
+  assert.match(r, /thousands of releases/);
 });
 
 test('D5c the 0.1.8 README says what changed: the live recount (3 of 5), the node-gyp build step, the withheld loader, the retry, /6', () => {

@@ -460,6 +460,27 @@ function validateEvaluationConfig({ config = {}, domainVersionCount } = {}) {
 }
 
 /**
+ * Since 0.1.9: the advisory answers "is version v named by an advisory" for one registry document, shared by every version
+ * evaluated from that document in the same synchronous pass (the store evaluates every version of one document in one step).
+ * The answers are dropped when that pass ends (a microtask), and that drop is what keeps a later request, a new pins feed cut
+ * or a seed swap from reading an old answer: the key does not, because the proxy's pins overlay is one function for the life
+ * of the process and a seed swap keeps the same seed object. A process.nextTick callback runs before the drop, so it must not
+ * evaluate a document again expecting fresh answers. Null when there is no document.
+ */
+const EXCLUDE_MEMO = new WeakMap();
+function excludeMemoFor(rawVersions, seed, pkg, overlay) {
+  if (!rawVersions || typeof rawVersions !== 'object') return null;
+  let m = EXCLUDE_MEMO.get(rawVersions);
+  if (!m || m.seed !== seed || m.pkg !== pkg || m.overlay !== overlay) {
+    m = { seed, pkg, overlay, by: new Map() };
+    EXCLUDE_MEMO.set(rawVersions, m);
+    const mine = m;
+    queueMicrotask(() => { if (EXCLUDE_MEMO.get(rawVersions) === mine) EXCLUDE_MEMO.delete(rawVersions); });
+  }
+  return m.by;
+}
+
+/**
  * THE evaluation path: one candidate, derived from what the proxy holds, to a policy decision.
  *
  * The gate calls it and `chaingate check` calls it; there is no second path. Its input handling is
@@ -516,10 +537,16 @@ function evaluateCandidate(seed, { config = {}, domainVersionCount, pinOverlay =
     const staleSeed = staleSeedGap(seed, place, input, publishedS, version);
     // Since 0.1.8 (retier-1.1): a version a recorded advisory names (seed or pins feed) is never the release this one is compared
     // with; a lookup that fails excludes the version as well (it is not "no advisory")
+    // Since 0.1.9: each version's answer is asked once per document and kept for the rest of the pass that evaluates it (the store
+    // evaluates every version of one document in one synchronous step); 0.1.8 asked again on every walk back.
+    const exMemo = excludeMemoFor(input.rawVersions, seed, pkg, pinOverlay);
     const excludeBaseline = (v) => {
       if (v === version) return false;
+      if (exMemo?.has(v)) return exMemo.get(v);
       const lp = POL.lookupPin(seed, pkg, v, pinOverlay);
-      return Boolean(lp.pin) || Boolean(lp.error);
+      const x = Boolean(lp.pin) || Boolean(lp.error);
+      exMemo?.set(v, x);
+      return x;
     };
     // Since 0.1.6 (cft-policy-1.3): the re-tier block, from the registry document in hand. A failure here is no refusal:
     // without a block policy decides as 1.2 did, so the strict rows keep their WARN.
